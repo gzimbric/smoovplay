@@ -31,12 +31,13 @@ Other apps can write the same shared memory, compressed or decoded frames: see [
 
 | | |
 |---|---|
-| `frametap.c`, `frametap.h` | the tap's shared memory, compiled into chiaki-ng (Windows; a no-op elsewhere). Does nothing unless `CHIAKI_FRAMETAP=1` |
+| `frametap.c`, `frametap.h` | the tap's shared memory, compiled into chiaki-ng (Windows and macOS; a no-op elsewhere). Does nothing unless `CHIAKI_FRAMETAP=1` |
 | `frametap_session.cpp`, `frametap_session.h` | what the tap does inside chiaki-ng's StreamSession: copying frames and sound out, keyframe requests, the delay test's presses, the sound delay |
 | `apply_patch.py` | adds the tap to a chiaki-ng checkout: copies the files above in, then one-line edits to chiaki-ng's own files (six calls in streamsession.cpp, a friend line in streamsession.h, the files in CMakeLists.txt, and one check in qmlmainwindow.cpp: `CHIAKI_FRAMETAP_RENDERER=opengl` makes chiaki-ng draw with OpenGL for that session, without its fallback dialog or changing the saved setting, which SmoovPlay's launcher asks for without an NVIDIA card). It fails loudly if chiaki-ng moved the code, and refuses a checkout with an older tap patch: `git checkout -- gui/src/streamsession.cpp gui/CMakeLists.txt` first |
-| `selftest.py`, `selftest.c` | builds a small writer with MSYS2's gcc and checks it against the Python reader byte for byte, including the press, the sound delay and the sound ring. Uses its own tap name, so it runs while chiaki-ng streams |
+| `selftest.py`, `selftest.c` | builds a small writer (MSYS2's gcc on Windows, clang on a Mac) and checks it against the Python reader byte for byte, including the press, the sound delay and the sound ring. Uses its own tap name, so it runs while chiaki-ng streams |
 | `build_windows.sh` | full Windows build in MSYS2, mirroring chiaki-ng's own CI, plus the patch |
 | `run_chiaki_frametap.bat` | starts the built chiaki-ng with the tap on |
+| `build_macos.sh`, `run_chiaki_frametap.command` | the same for macOS (see Build on macOS) |
 | `../framegen/chiaki_tap.py` | the reader: `FrameTap` (shared memory), `AudioTap` (the sound ring), `ChiakiSource` (decode, size-based repeats) |
 | `../scripts/frametap_fake.py` | a fake PS5 for testing without a console: streams a video file through the tap |
 
@@ -55,6 +56,61 @@ C:\msys64\usr\bin\bash.exe -lc "bash chiaki_tap/build_windows.sh /c/src/chiaki-n
 Re-running only rebuilds chiaki-ng. For a newer chiaki-ng, check out its tag in the source folder first; if
 `apply_patch.py` stops with "expected the anchor exactly once", the code it hooks into moved: each edit is one
 line, so find where that line went in the new streamsession.cpp and update its anchor.
+
+## Build on macOS
+
+You need an Apple Silicon Mac with the Xcode command line tools (`xcode-select --install`) and
+[Homebrew](https://brew.sh). `build_macos.sh` installs the rest from Homebrew (the packages chiaki-ng's own macOS
+CI uses, plus SDL3, sdl2-compat and MoltenVK, which the CI builds or downloads itself), applies the patch, builds
+and bundles the app the way the CI does. It needs no sudo, and apart from Homebrew packages it writes only into the
+two folders you give it. From the repo root:
+
+```sh
+git clone --branch v1.10.1 --recurse-submodules https://github.com/streetpea/chiaki-ng.git build/chiaki-ng-src
+bash chiaki_tap/build_macos.sh build/chiaki-ng-src build/chiaki-ng-frametap
+```
+
+The app ends up at `build/chiaki-ng-frametap/chiaki-ng.app`, with `run_chiaki_frametap.command` beside it. Re-running
+the script rebuilds only what changed (after a change to `frametap.c`, say) and bundles the app again.
+
+The app is self-contained: Qt, FFmpeg, SDL and the rest are copied in, and so is MoltenVK, chiaki-ng's Vulkan driver
+on macOS (in `Contents/Resources/vulkan/icd.d`, where the Vulkan loader looks first; finding it there, the loader
+doesn't load Homebrew's). The script assembles the app in `chiaki-ng.new/`, signs it ad hoc from the inside out (every
+library, the WebEngine helper, each framework, then the app), checks the signature and that nothing in it still loads
+from Homebrew, and only then swaps it in, so a running chiaki-ng never sees a half-built app. Quit chiaki-ng before
+re-running: the script won't replace an app that's running.
+
+Start it with the tap on by double-clicking `run_chiaki_frametap.command` in Finder, or from a terminal:
+
+```sh
+build/chiaki-ng-frametap/run_chiaki_frametap.command
+CHIAKI_FRAMETAP_NAME=mytest build/chiaki-ng-frametap/run_chiaki_frametap.command   # another tap name
+```
+
+It starts the app through `open`, so it carries on when the terminal closes, and hands over `CHIAKI_FRAMETAP=1` and
+every other `CHIAKI_*` variable you set (an app started by `open` doesn't get the shell's environment otherwise).
+Quit a chiaki-ng that's already running first: the launcher refuses to start a second one.
+
+A few things that differ from Windows:
+
+- **The renderer.** chiaki-ng draws with Vulkan on macOS too, through MoltenVK (Vulkan on top of Metal, bundled in
+  the app), and falls back to OpenGL 4.1. `CHIAKI_FRAMETAP_RENDERER=opengl` switches it to OpenGL there as well,
+  but there's no reason to set it on a Mac: the crash it works around was chiaki-ng's Vulkan on an AMD card under
+  Windows, and macOS's OpenGL is Apple's deprecated 4.1, only chiaki-ng's fallback there. (The Windows launcher
+  sets it whenever there's no NVIDIA card, which on a Mac would be always; a Mac launcher shouldn't copy that.)
+- **A crash at Vulkan start switches chiaki-ng to OpenGL for good.** chiaki-ng notes when Vulkan didn't finish
+  starting and uses OpenGL from then on (saved in `com.chiaki.Chiaki`; it says so in a dialog). Switch back under
+  Settings > Video > Renderer Backend, or `defaults write com.chiaki.Chiaki settings.render_backend vulkan`.
+- **The shared memory.** On a Mac the tap is POSIX shared memory named `/` plus what follows the tap name's last
+  backslash (`Local\chiaki-frametap` is `/chiaki-frametap`), and the reader polls it every half millisecond instead
+  of waiting on an event; [docs/frame-tap.md](../docs/frame-tap.md) has the details. macOS allows 31 characters for
+  such a name, so a `CHIAKI_FRAMETAP_NAME` (or `--chiaki-tap`) can be at most 24 characters after its last backslash,
+  leaving room for the sound ring's `-audio`. The memory stays until the Mac restarts; only the pages used take
+  memory.
+- **Homebrew's Qt 6 and a linked qt@5.** If `qt@5` was linked with `brew link --force`, Homebrew won't install Qt 6
+  beside it, and the script stops and says so. `brew unlink qt@5` fixes it: qt@5 stays installed, with its tools in
+  `$(brew --prefix)/opt/qt@5/bin`. A linked `openssl@4` is fine: the script puts openssl@3's headers first, where
+  chiaki-ng's CI unlinks openssl@4 instead.
 
 ## Testing with a PS5
 

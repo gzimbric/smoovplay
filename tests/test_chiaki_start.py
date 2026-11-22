@@ -11,9 +11,7 @@ import cv2
 import numpy as np
 import pytest
 
-pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="the frame tap is Windows-only")
-
-from framegen.chiaki_tap import ChiakiSource, FrameTap  # noqa: E402
+from framegen.chiaki_tap import ChiakiSource, FrameTap, unlink  # noqa: E402
 from framegen.io import Waiting  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -68,7 +66,7 @@ def _take(it, n: int, out: list) -> None:
 
 
 def test_a_pipeline_ready_quickly_starts_at_the_streams_first_picture(clip, made):
-    tap = f"Local\\sp-test-start-quick-{os.getpid()}"
+    tap = f"Local\\sp-quick-{os.getpid()}"  # (short: on macOS the name and "-audio" fit in 31 characters)
     fake = _fake(clip, tap)
     try:
         src = ChiakiSource("sw", wait_s=20, tap_name=tap)
@@ -80,6 +78,7 @@ def test_a_pipeline_ready_quickly_starts_at_the_streams_first_picture(clip, made
         src.close()
     finally:
         out = fake.communicate(timeout=30)[0].decode(errors="replace")
+        unlink(tap)  # (POSIX: shared memory lasts until it's removed)
     assert len(made) == 1 and made[0] >= t_go, out
     assert len(ticks) >= 340, out  # every frame (360), from the first
     assert src.idr_requests == 0 and src.skipped == 0, out
@@ -87,7 +86,7 @@ def test_a_pipeline_ready_quickly_starts_at_the_streams_first_picture(clip, made
 
 
 def test_a_pipeline_ready_later_gets_a_refresh_frame_and_so_does_a_restart(clip, made):
-    tap = f"Local\\sp-test-start-late-{os.getpid()}"
+    tap = f"Local\\sp-late-{os.getpid()}"
     fake = _fake(clip, tap)
     try:
         src = ChiakiSource("sw", wait_s=20, tap_name=tap)
@@ -105,6 +104,7 @@ def test_a_pipeline_ready_later_gets_a_refresh_frame_and_so_does_a_restart(clip,
         src.close()
     finally:
         out = fake.communicate(timeout=30)[0].decode(errors="replace")
+        unlink(tap)
     assert len(made) == 1, out  # one decoder, made once the pipeline asked for frames; kept through the restart
     assert len(first) == 40 and asked >= 1, out
     assert first[0].damaged  # held until the refresh frame has made the picture whole
@@ -114,7 +114,7 @@ def test_a_pipeline_ready_later_gets_a_refresh_frame_and_so_does_a_restart(clip,
 
 
 def test_the_no_picture_hints(monkeypatch):
-    name = f"Local\\sp-test-why-{os.getpid()}"
+    name = f"Local\\sp-why-{os.getpid()}"
     src = ChiakiSource.__new__(ChiakiSource)  # just the parts why() reads: no reader thread
     src.tap = FrameTap(name, name + "-frame")
     src._beat = time.perf_counter()
@@ -137,3 +137,4 @@ def test_the_no_picture_hints(monkeypatch):
         assert "decoder has stopped" in src.why()  # the reader's loop hasn't gone round for 5 s
     finally:
         src.tap.close()
+        unlink(name)

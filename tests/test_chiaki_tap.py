@@ -1,11 +1,18 @@
+import os
+import shutil
+import subprocess
 import sys
+import threading
+import time
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="the frame tap is Windows-only")
+from framegen.chiaki_tap import (SHM_NAME_MAX, SLOTS, WINDOWS, FrameTap, SizeRepeatDetector, check_name,  # noqa: E402
+                                 is_keyframe, posix_name, unlink)
 
-from framegen.chiaki_tap import SLOTS, FrameTap, SizeRepeatDetector, is_keyframe  # noqa: E402
+ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture
@@ -13,6 +20,7 @@ def tap():
     t = FrameTap("Local\\chiaki-frametap-test", "Local\\chiaki-frametap-test-frame")
     yield t
     t.close()
+    unlink("Local\\chiaki-frametap-test")  # (POSIX: shared memory lasts until it's removed)
 
 
 def test_roundtrip(tap):
@@ -118,6 +126,77 @@ def test_sound_ring_roundtrip_split_and_times():
         assert a.read_new() == [] and a.next is None
     finally:
         a.close()
+        unlink("Local\\chiaki-frametap-test")
+
+
+# ---- POSIX (macOS): names, either side first, and waiting without an event
+@pytest.mark.skipif(WINDOWS, reason="POSIX shared memory names")
+def test_posix_names():
+    assert posix_name("Local\\chiaki-frametap") == "/chiaki-frametap"  # chiaki-ng's, from frametap.h's FRAMETAP_NAME
+    assert posix_name("Local\\smoovplay-tap") == posix_name("/smoovplay-tap") == posix_name("smoovplay-tap")
+    check_name("Local\\chiaki-frametap-selftest")  # the self-test's: its sound ring is exactly 31 on macOS
+    room = SHM_NAME_MAX - 1 - len("-audio")
+    check_name("x" * room)
+    with pytest.raises(ValueError, match="sound ring"):
+        check_name("Local\\" + "x" * (room + 1))  # fits on its own, but not with "-audio"
+    with pytest.raises(ValueError, match="sound ring"):
+        FrameTap("Local\\" + "x" * (room + 1))  # fails at once, before any memory is made
+    for bad in ("", "Local\\", "a/b"):
+        with pytest.raises(ValueError):
+            posix_name(bad)
+
+
+@pytest.mark.skipif(WINDOWS, reason="POSIX shared memory")
+def test_posix_either_side_first_sees_the_same_memory():
+    name = f"sp-first-{os.getpid()}"
+    unlink(name)
+    try:
+        reader = FrameTap(name)  # made it (and sized it)
+        writer = FrameTap(name)  # found it sized: macOS refuses a second ftruncate, which is fine
+        writer.begin(1, 64, 64, 60)
+        writer.push(b"\x00\x00\x01x")
+        h = reader.header()
+        assert h.live and h.write_seq == 1 and h.qpc_freq == 1_000_000_000
+        assert reader.read(0, h.qpc_freq).data == b"\x00\x00\x01x"
+        assert 0 <= time.perf_counter() - reader.read(0, h.qpc_freq).t_arrival < 1.0  # the same clock both sides
+        writer.close()
+        reader.close()
+    finally:
+        unlink(name)
+
+
+@pytest.mark.skipif(WINDOWS, reason="POSIX: the reader polls instead of an event")
+def test_posix_wait_wakes_on_a_frame_and_times_out(tap):
+    tap.begin(1, 64, 64, 60)
+    writer = FrameTap("Local\\chiaki-frametap-test")
+    try:
+        tap.header()
+        t0 = time.perf_counter()
+        tap.wait(0.05)  # nothing comes: the timeout
+        assert 0.045 < time.perf_counter() - t0 < 0.2
+        timer = threading.Timer(0.05, writer.push, (b"frame",))
+        timer.start()
+        tap.header()
+        t0 = time.perf_counter()
+        tap.wait(2.0)
+        waited = time.perf_counter() - t0
+        timer.join()
+        assert tap.header().write_seq == 1 and waited < 0.5  # woken by the frame, not the timeout
+        writer.push(b"another")  # a frame since this thread's last header(): wait() returns at once
+        t0 = time.perf_counter()
+        tap.wait(2.0)
+        assert time.perf_counter() - t0 < 0.05
+    finally:
+        writer.close()
+
+
+@pytest.mark.skipif(sys.platform != "darwin" or not (shutil.which("clang") or shutil.which("cc")),
+                    reason="builds with clang on macOS; on Windows run chiaki_tap/selftest.py with MSYS2's gcc")
+def test_c_writer_selftest():
+    """chiaki_tap/frametap.c, built with clang, against this reader byte for byte (chiaki_tap/selftest.py)."""
+    r = subprocess.run([sys.executable, str(ROOT / "chiaki_tap" / "selftest.py")], capture_output=True, text=True,
+                       timeout=120)
+    assert r.returncode == 0 and r.stdout.startswith("OK:"), r.stdout + r.stderr
 
 
 def test_the_patch_asks_chiaki_ng_for_opengl_once_and_only_when_told(tmp_path):

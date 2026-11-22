@@ -65,17 +65,23 @@ class RifeInterpolator:
         scale: float = 1.0,
         fp16: bool = True,
         cuda_graph: bool = True,
-        device: str = "cuda",
+        device: str | None = None,
         reference: bool = False,
         backend: str = "torch",
         build_engine: bool = True,
         hdr: bool = False,
+        metal: bool = True,
     ) -> None:
         """`reference=True` runs the unmodified vs-rife forward (for validating FastIFNet).
         backend="trt" runs the flow network as a TensorRT engine (built and cached on first use; with
         build_engine=False a missing engine raises FileNotFoundError instead).
         hdr: frames are float16 PQ (framegen/hdr.py pq16) instead of uint8; `in_u8` is then their 8-bit stand-in
-        for the pipeline's checks, worked out in load()."""
+        for the pipeline's checks, worked out in load().
+        device: None for the best one here (framegen/gpu.py: CUDA, Apple's GPU, else the CPU). CUDA graphs are only
+        made on CUDA; elsewhere every call runs eagerly.
+        On Apple's GPU (device "mps", fp16, backend "torch") the flow network runs as framegen/metalrife.py's
+        MetalIFNet (PyTorch's convolutions with hand-written Metal kernels for everything else, about 2.5x faster).
+        metal=False or SMOOVPLAY_METAL=0 runs eager FastIFNet instead, as does a Metal that can't build the kernels."""
         if version not in MODELS:
             raise ValueError(f"unknown model {version!r}; choose from {list(MODELS)}")
         if scale not in (0.25, 0.5, 1.0, 2.0):
@@ -83,7 +89,9 @@ class RifeInterpolator:
 
         self.w, self.h = width, height
         self.version, self.scale = version, scale
-        self.device = torch.device(device)
+        from . import gpu
+        self.device = torch.device(device or gpu.device())
+        cuda_graph = cuda_graph and self.device.type == "cuda"
         self.dtype = torch.half if fp16 else torch.float
         self.hdr = hdr
         self.frame_dtype = torch.float16 if hdr else torch.uint8  # what load() takes and interpolate() gives
@@ -132,7 +140,12 @@ class RifeInterpolator:
         with torch.no_grad():
             fshape = self.encode(torch.zeros((1, 3, ph, pw), dtype=dt, device=dev)).shape
         self.fast = None if reference else FastIFNet(self.flownet, ph, pw, dt, dev)
-        if self.fast is not None:  # per slot: fp32 [img | features]
+        self.metal = None
+        if self.fast is not None and backend == "torch" and metal:
+            self.metal = self._metal_engine()
+        if self.metal is not None:  # per slot: (ph, pw, 8) fp16 [img | features | 0]
+            self.src = [self.metal.new_slot() for _ in range(2)]
+        elif self.fast is not None:  # per slot: fp32 [img | features]
             self.src = [torch.zeros((1, 3 + fshape[1], ph, pw), device=dev) for _ in range(2)]
         else:
             self.img = [torch.zeros((1, 3, ph, pw), dtype=dt, device=dev) for _ in range(2)]
@@ -157,9 +170,32 @@ class RifeInterpolator:
                     self._graphs[("interp", slot, steady)] = self._capture(
                         lambda s=slot, st=steady: self._interp_eager(1 - s, s, st))
 
+    def _metal_engine(self):
+        """framegen/metalrife.py's MetalIFNet when it applies here (Apple's GPU, fp16), else None (eager FastIFNet)."""
+        import os
+        if self.device.type != "mps" or self.dtype != torch.half or os.environ.get("SMOOVPLAY_METAL", "1") == "0":
+            return None
+        from . import metalrife
+        if not metalrife.supported(self.flownet.scale_list):
+            return None
+        try:
+            m = metalrife.MetalIFNet(self.flownet, self.encode, self.h, self.w, self.ph, self.pw, self.device)
+            slots = [m.new_slot(), m.new_slot()]
+            for s in slots:  # one run through every kernel, so a failure shows now, while eager can take over
+                m.prepare(self.inp, s)
+            m.interpolate(slots[0], slots[1], 0.5, self.out_u8)
+            torch.mps.synchronize()
+            return m
+        except Exception as e:  # noqa: BLE001 - e.g. a Metal compiler that rejects the kernels: eager still works
+            print(f"[rife] Metal kernels unavailable ({str(e)[:200]}); running eagerly")
+            return None
+
     # ---- eager kernels (also what gets captured into graphs) -----------------
     @torch.no_grad()
     def _prepare_eager(self, slot: int) -> None:
+        if self.metal is not None:
+            self.metal.prepare(self.inp, self.src[slot])
+            return
         x = self.inp.permute(2, 0, 1).flip(0).unsqueeze(0).to(self.dtype)  # BGR->RGB
         if not self.hdr:
             x = x.div_(255.0)  # 0..1 (pq16 already is)
@@ -173,7 +209,12 @@ class RifeInterpolator:
 
     @torch.no_grad()
     def _interp_eager(self, a: int, b: int, steady: bool = False) -> None:
-        if self.trt is not None:
+        if self.metal is not None and not steady:
+            self.metal.interpolate(self.src[a], self.src[b], self._t, self.out_u8)  # straight into out_u8
+            return
+        if self.metal is not None:
+            mid = self.metal.interpolate_mid(self.src[a], self.src[b], self._t)
+        elif self.trt is not None:
             mid = self.trt(self.src[a], self.src[b])
         elif self.fast is not None:
             mid = self.fast(self.src[a], self.src[b])
@@ -191,6 +232,8 @@ class RifeInterpolator:
 
     def _rgb(self, slot: int) -> torch.Tensor:
         """Slot's real frame, (1, 3, ph, pw) RGB 0..1."""
+        if self.metal is not None:
+            return self.metal.rgb(self.src[slot])
         return (self.src[slot][:, :3] if self.fast is not None else self.img[slot]).float()
 
     def _steady(self, mid: torch.Tensor, a: int, b: int) -> torch.Tensor:
@@ -249,7 +292,9 @@ class RifeInterpolator:
         if t != self._t:  # the graphs read these static planes, so no recapture is needed
             if self.trt is not None:
                 self.trt.set_timestep(t)
-            if self.fast is not None:
+            if self.metal is not None:
+                pass  # (takes t as an argument)
+            elif self.fast is not None:
                 self.fast.set_timestep(t)
             else:
                 self.timestep.fill_(t)
@@ -263,8 +308,11 @@ class RifeInterpolator:
         return self.out_u8
 
     def load(self, frame_u8: torch.Tensor) -> None:
-        """Copy an HxWx3 frame (GPU or pinned CPU; uint8, or float16 if hdr) into the static input."""
-        self.inp.copy_(frame_u8, non_blocking=True)
+        """Copy an HxWx3 frame (GPU or pinned CPU; uint8, or float16 if hdr) into the static input.
+        Asynchronous only on CUDA (from pinned memory the caller keeps until it's done). On Apple's GPU an
+        asynchronous copy reads the CPU memory when the GPU gets to it, so a frame written into the same buffer
+        before then (the pipeline's even timing loads two in a row) would replace this one."""
+        self.inp.copy_(frame_u8, non_blocking=self.device.type == "cuda")
         if self.hdr:
             from .hdr import to_u8
             to_u8(self.inp, self.in_u8)

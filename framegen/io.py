@@ -321,6 +321,20 @@ def windows_hdr_on() -> bool:
         return False
 
 
+def _first_size(glfw, w: int, h: int) -> tuple[int, int]:
+    """The window's size when it opens: the frame's, at most 1600x900. On a Mac also at most 90% of the main
+    display's usable area (a 13-inch MacBook is about 1470 points wide), keeping the frame's shape."""
+    ww, wh = min(w, 1600), min(h, 900)
+    if sys.platform == "darwin":
+        try:
+            _, _, aw, ah = glfw.get_monitor_workarea(glfw.get_primary_monitor())
+            k = min(1.0, 0.9 * aw / ww, 0.9 * ah / wh)
+            ww, wh = int(ww * k), int(wh * k)
+        except Exception:  # noqa: BLE001 - as on other systems
+            pass
+    return ww, wh
+
+
 def window_monitor(win: tuple[int, int, int, int], monitors: list[tuple]):
     """The monitor a window (x, y, w, h) is mostly on, of monitors given as (handle, x, y, w, h): the one with the
     most of the window on it, or the first (GLFW lists the primary monitor first) when it's on none of them."""
@@ -331,6 +345,27 @@ def window_monitor(win: tuple[int, int, int, int], monitors: list[tuple]):
         if area > most:
             best, most = mon, area
     return best
+
+
+def _mac_hide_bars(hide: bool) -> None:
+    """macOS: hide the menu bar and the Dock while SmoovPlay is the app in front (they slide in when the pointer
+    reaches them, and come back by themselves when another app is in front), so a borderless window can cover the
+    whole screen, as fullscreen; hide False puts them back. Through the Objective-C runtime, as GLFW has no call for
+    it. A failure only leaves them showing."""
+    import ctypes
+    import ctypes.util
+    try:
+        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+        objc.objc_getClass.restype, objc.objc_getClass.argtypes = ctypes.c_void_p, [ctypes.c_char_p]
+        objc.sel_registerName.restype, objc.sel_registerName.argtypes = ctypes.c_void_p, [ctypes.c_char_p]
+        send = ctypes.cast(objc.objc_msgSend, ctypes.c_void_p).value
+        get = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(send)
+        put = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong)(send)
+        app = get(objc.objc_getClass(b"NSApplication"), objc.sel_registerName(b"sharedApplication"))
+        # NSApplicationPresentationAutoHideDock | AutoHideMenuBar, or Default
+        put(app, objc.sel_registerName(b"setPresentationOptions:"), (1 | 4) if hide else 0)
+    except Exception as e:  # noqa: BLE001 - only the bars: the picture goes on
+        print(f"[display] couldn't {'hide' if hide else 'show'} the menu bar and the Dock ({str(e)[:160]})")
 
 
 def _say_if_slow(what: str, t0: float, limit_ms: float = 250.0) -> None:
@@ -522,6 +557,7 @@ class GLWindowSink:
         import glfw
         from OpenGL import GL
 
+        from .glsl import context_hints
         from .menu import Menu
         from .settings import Settings
 
@@ -542,7 +578,9 @@ class GLWindowSink:
                                     (glfw.FOCUSED, glfw.FALSE), (glfw.FOCUS_ON_SHOW, glfw.FALSE),
                                     (glfw.MOUSE_PASSTHROUGH, glfw.TRUE)):
                     glfw.window_hint(hint, value)
-            self.win = self.glwin = glfw.create_window(min(w, 1600), min(h, 900), "SmoovPlay", None, None)
+            context_hints(glfw)  # (a Mac: OpenGL 4.1 core, for the shaders)
+            ww, wh = _first_size(glfw, w, h)
+            self.win = self.glwin = glfw.create_window(ww, wh, "SmoovPlay", None, None)
             glfw.default_window_hints()
             glfw.make_context_current(self.win)
         glfw.swap_interval(1 if st.vsync else 0)
@@ -787,7 +825,10 @@ class GLWindowSink:
     # ---- presentation ----------------------------------------------------------
     def _set_icon(self, glfw) -> None:
         """SmoovPlay's logo in the title bar and on the taskbar instead of Python's: the plain SP at 16-32 px, the
-        full logo at 48 and 64 (framegen/assets, from docs/brand). A missing icon never stops a session."""
+        full logo at 48 and 64 (framegen/assets, from docs/brand). A missing icon never stops a session. Not on a Mac,
+        where windows have no icons of their own (GLFW only warns): the Dock shows the program's."""
+        if sys.platform == "darwin":
+            return
         try:
             from pathlib import Path
 
@@ -842,11 +883,14 @@ class GLWindowSink:
         context of its own (GLFW NO_API); OpenGL draws on a hidden window (framegen/dxgi_present.py). In a window that
         skips the compositor's copy: less delay, and G-Sync/FreeSync work. Leaves self.dx None (and no windows) if
         any of it fails, so the caller opens the usual OpenGL window. hdr: a 10-bit HDR10 swap chain (HDR output).
-        keep_hdr: an 8-bit one because Windows' HDR is on (KEEP_HDR); only what's logged differs."""
+        keep_hdr: an 8-bit one because Windows' HDR is on (KEEP_HDR); only what's logged differs. DXGI is Windows'
+        own: elsewhere (a Mac) this always fails, before any window opens, and says so."""
         glfw = self.glfw
-        from .dxgi_present import DxgiPresenter
         win = glwin = None
         try:
+            if sys.platform != "win32":
+                raise RuntimeError("DXGI is Windows-only")
+            from .dxgi_present import DxgiPresenter
             glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
             glwin = glfw.create_window(64, 64, "framegen (OpenGL)", None, None)
             glfw.default_window_hints()
@@ -1083,7 +1127,7 @@ class GLWindowSink:
         """Fullscreen as a borderless window over the monitor, as games' borderless mode (the standard presentation's
         fullscreen, and HDR output's): no GLFW fullscreen monitor, so no always-on-top window (Alt+Tab to another
         program puts that one in front) and no video mode request. Windows tucks the taskbar under it while it's in
-        front."""
+        front; on a Mac the menu bar and the Dock are hidden while SmoovPlay is in front (_mac_hide_bars)."""
         glfw, win = self.glfw, self.win
         if self._borderless == on:
             return
@@ -1093,11 +1137,15 @@ class GLWindowSink:
             mon = self._monitor_under_window()
             mx, my = glfw.get_monitor_pos(mon)
             mode = glfw.get_video_mode(mon)
+            if sys.platform == "darwin":  # first, or macOS keeps the window under the menu bar
+                _mac_hide_bars(True)
             glfw.set_window_attrib(win, glfw.DECORATED, glfw.FALSE)
             glfw.set_window_pos(win, mx, my)
             glfw.set_window_size(win, mode.size.width, mode.size.height)
         else:
             x, y, ww, wh = self.windowed_pos or (80, 80, min(self.w, 1600), min(self.h, 900))
+            if sys.platform == "darwin":
+                _mac_hide_bars(False)
             glfw.set_window_attrib(win, glfw.DECORATED, glfw.TRUE)
             glfw.set_window_pos(win, x, y)
             glfw.set_window_size(win, ww, wh)
@@ -1534,6 +1582,8 @@ class GLWindowSink:
         if self.dx is not None:
             self.dx.close()
             self.glfw.destroy_window(self.glwin)
+        if self._borderless and sys.platform == "darwin":
+            _mac_hide_bars(False)  # (for the next window, as the program goes on)
         self.glfw.destroy_window(self.win)
         self.glfw.terminate()
 

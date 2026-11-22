@@ -84,15 +84,14 @@ void main() {
 
 class Panorama:
     """The picture is drawn as usual, fit to the screen's height, into this one's texture (RGBA16F, so HDR keeps its
-    precision), then bent across the whole screen. Needs a current GL 4.5 context."""
+    precision), then bent across the whole screen. Needs a current GL 4.5 context (on a Mac, the 4.1 core one
+    framegen/glsl.py asks for)."""
 
     def __init__(self, GL) -> None:
-        from OpenGL.GL import shaders
-
         from .fsr import _VERT
+        from .glsl import program
         self.GL = GL
-        self.prog = shaders.compileProgram(shaders.compileShader(_VERT, GL.GL_VERTEX_SHADER),
-                                           shaders.compileShader(_FRAG, GL.GL_FRAGMENT_SHADER), validate=False)
+        self.prog = program(GL, _VERT, _FRAG)
         self.u_screen = GL.glGetUniformLocation(self.prog, "screen")
         self.u_t = GL.glGetUniformLocation(self.prog, "t")
         self.vao = GL.glGenVertexArrays(1)

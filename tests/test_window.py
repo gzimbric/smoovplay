@@ -6,10 +6,16 @@ import numpy as np
 import pytest
 import torch
 
+import sys
+
 from framegen import window
 from framegen.cadence import DuplicateDetector
 from framegen.sources import EXPERIMENTAL, KINDS, list_sources, make_detector
 from framegen.window import AppWindow, Grab, Rect, WindowSource, graph, pick, plan_grab
+
+# Window capture finds windows through user32 and DWM (stood in for here, but called through WINFUNCTYPE), so
+# these run on Windows only; the rest are platform-free logic.
+windows_only = pytest.mark.skipif(sys.platform != "win32", reason="window capture is Windows-only")
 
 MON = Rect(0, 0, 2560, 1440)
 OUTPUTS = ["\\\\.\\DISPLAY1", "\\\\.\\DISPLAY2"]
@@ -123,6 +129,7 @@ class _Shell:
         monkeypatch.setattr(window, "client_rect", lambda h: Rect(0, 0, 1280, 720))
 
 
+@windows_only
 def test_a_store_apps_frame_is_listed_as_the_app_inside_it(monkeypatch):
     _Shell(monkeypatch)
     found = {w.hwnd: w for w in window.find_windows()}
@@ -154,6 +161,7 @@ class _SwitchedAwayShell(_FullScreenShell):
     TOP = {**_FullScreenShell.TOP, 100: ("applicationframehost.exe", "Xbox", [])}
 
 
+@windows_only
 @pytest.mark.parametrize("shell", [_FullScreenShell, _SwitchedAwayShell])
 def test_a_store_app_in_full_screen_is_noted_not_listed(monkeypatch, shell):
     shell(monkeypatch)
@@ -164,6 +172,7 @@ def test_a_store_app_in_full_screen_is_noted_not_listed(monkeypatch, shell):
     assert left == {"xboxpcapp.exe": {window.FULL_SCREEN}}
 
 
+@windows_only
 def test_play_says_to_leave_full_screen(monkeypatch):
     _FullScreenShell(monkeypatch)
     with pytest.raises(RuntimeError, match="the Xbox app is in full screen.*Shift\\+Win\\+Enter"):
@@ -487,6 +496,7 @@ def test_to_bgr_scales_on_the_gpu_or_cpu():
     assert to_bgr(bgra, 1280, 720).shape == (720, 1280, 3)
 
 
+@windows_only
 def test_open_window_scales_to_the_streams_size(monkeypatch):
     _Desk(monkeypatch)
     monkeypatch.setattr(window, "find_windows", lambda left_out=None: list(WINDOWS))
@@ -496,6 +506,7 @@ def test_open_window_scales_to_the_streams_size(monkeypatch):
 
 
 
+@windows_only
 def test_a_running_streaming_app_left_off_the_list_says_why(monkeypatch):
     shell = _Shell(monkeypatch)
     u32 = window._api()[0]

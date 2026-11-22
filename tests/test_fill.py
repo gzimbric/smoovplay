@@ -57,18 +57,21 @@ def test_the_setting_says_it_is_the_same_16_9_picture():
     assert "16:9" in s.impact["picture"]
 
 
-# ---- Panorama's pass, held to panorama_u (needs OpenGL 4.5: skipped without a graphics card)
+# ---- Panorama's pass, held to panorama_u (needs OpenGL 4.5, or 4.1 on a Mac: skipped without a graphics card)
 @pytest.fixture(scope="module")
 def gl():
     glfw = pytest.importorskip("glfw")
     from OpenGL import GL
+
+    from framegen.glsl import context_hints
     if not glfw.init():
         pytest.skip("no OpenGL")
     glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+    context_hints(glfw)  # (a Mac: OpenGL 4.1 core)
     win = glfw.create_window(64, 64, "test", None, None)
     if not win:
         glfw.terminate()
-        pytest.skip("no OpenGL 4.5 context")
+        pytest.skip("no OpenGL 4.5 (Mac: 4.1) context")
     glfw.make_context_current(win)
     GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
     GL.glPixelStorei(GL.GL_PACK_ALIGNMENT, 1)

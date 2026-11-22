@@ -1,6 +1,8 @@
-"""Build selftest.c against frametap.c with MSYS2's gcc and check its frames with the Python reader.
+"""Build selftest.c against frametap.c with MSYS2's gcc (Windows) or clang (macOS) and check its frames with the
+Python reader.
 
     .venv\\Scripts\\python chiaki_tap\\selftest.py [MSYS2 folder, default C:\\msys64]
+    .venv/bin/python chiaki_tap/selftest.py [C compiler, default clang]                  # macOS
 
 Verifies the C writer (what runs inside chiaki-ng) and framegen/chiaki_tap.py agree on every byte: header
 fields, frame data, sizes, loss/recovered flags, the keyframe-request flag, the delay test's button press, the
@@ -9,6 +11,8 @@ and times, including a chunk split over several slots) and the end-of-stream mar
 its own (CHIAKI_FRAMETAP_NAME), so it can run while chiaki-ng is streaming.
 """
 import os
+import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -18,16 +22,21 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 from framegen.chiaki_tap import (AUDIO_SUFFIX, BUTTON_OPTIONS, FEATURE_AUDIO_DELAY, FEATURE_AUDIO_TAP,  # noqa: E402
-                                 FEATURE_PRESS, AudioTap, FrameTap)
+                                 FEATURE_PRESS, WINDOWS, AudioTap, FrameTap, qpc_freq, unlink)
 
 NAME = r"Local\chiaki-frametap-selftest"
 
 
 def main() -> int:
-    msys = Path(sys.argv[1] if len(sys.argv) > 1 else r"C:\msys64")  # MSYS2's default install folder
-    gcc = msys / "mingw64" / "bin" / "gcc.exe"
-    exe = Path(tempfile.gettempdir()) / "frametap_selftest.exe"
-    env = dict(os.environ, PATH=str(gcc.parent) + os.pathsep + os.environ["PATH"], CHIAKI_FRAMETAP_NAME=NAME)
+    if WINDOWS:
+        msys = Path(sys.argv[1] if len(sys.argv) > 1 else r"C:\msys64")  # MSYS2's default install folder
+        gcc = msys / "mingw64" / "bin" / "gcc.exe"
+        exe = Path(tempfile.gettempdir()) / "frametap_selftest.exe"
+        env = dict(os.environ, PATH=str(gcc.parent) + os.pathsep + os.environ["PATH"], CHIAKI_FRAMETAP_NAME=NAME)
+    else:  # macOS: Apple's clang (POSIX shared memory, frametap.c's other half)
+        gcc = Path(sys.argv[1] if len(sys.argv) > 1 else shutil.which("clang") or "cc")
+        exe = Path(tempfile.gettempdir()) / "frametap_selftest"
+        env = dict(os.environ, CHIAKI_FRAMETAP_NAME=NAME)
     subprocess.run([str(gcc), "-O2", "-Wall", "-o", str(exe), str(HERE / "selftest.c"), str(HERE / "frametap.c")],
                    check=True, env=env)
 
@@ -37,12 +46,15 @@ def main() -> int:
     sound.end()
     proc = subprocess.Popen([str(exe)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     t_end = time.perf_counter() + 10
+    ages = []  # how long after the C writer stamped each frame (its clock) we read it (ours): the clocks agree
     for i in range(40):  # read each frame as it arrives, like ChiakiSource (the ring holds only 32)
         while time.perf_counter() < t_end and (not tap.header().live or tap.header().write_seq <= i):
             tap.wait(0.1)
         h = tap.header()
         assert h.live and (h.version, h.codec, h.width, h.height, h.max_fps) == (1, 1, 1920, 1080, 60), h
+        assert h.qpc_freq == qpc_freq(), (h.qpc_freq, qpc_freq())
         p = tap.read(i, h.qpc_freq)
+        ages.append(time.perf_counter() - p.t_arrival if p is not None else 0.0)
         size = 1000 + i if i % 2 else 50000 + i * 1000
         want = bytes((i * 31 + j) & 0xFF for j in range(size))
         assert p is not None and p.data == want, f"frame {i}: data mismatch"
@@ -79,7 +91,10 @@ def main() -> int:
     assert not sound.live(), "sound ring's end not marked"
     print(f"OK: 40 frames and 21 chunks of sound byte-identical, flags and timestamps right, keyframe request, "
           f"press and sound delay "
-          f"({out.strip()})")
+          f"({out.strip()}); frames read {statistics.median(ages) * 1000:.2f} ms (median) after the writer stamped them")
+    tap.close()
+    sound.close()
+    unlink(NAME)  # (POSIX: the test's shared memory would otherwise stay until a restart)
     return 0
 
 

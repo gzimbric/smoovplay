@@ -10,6 +10,8 @@ generate the 3 frames in between and score them against the real ones. That is t
 (every 2nd frame, t = 1/2) is printed alongside for reference.
 
     python scripts/bench_120.py testdata/clip_1080p60.mp4 testdata/another_1080p60.mp4 --scales 1.0 0.5
+
+Runs on NVIDIA's CUDA or Apple's GPU (framegen/gpu.py).
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from framegen import gpu  # noqa: E402
 from framegen.interpolator import RifeInterpolator  # noqa: E402
 from framegen.pipeline import psnr  # noqa: E402
 
@@ -65,9 +68,11 @@ def main() -> int:
     w, h = 1920, 1080
     with av.open(a.videos[0]) as c:
         w, h = c.streams.video[0].codec_context.width, c.streams.video[0].codec_context.height
-    pinned = torch.empty((h, w, 3), dtype=torch.uint8).pin_memory()
-    out_pinned = torch.empty((h, w, 3), dtype=torch.uint8).pin_memory()
-    print(f"{torch.cuda.get_device_name(0)}  {w}x{h}  RIFE {a.model}")
+    dev = gpu.device()
+    pin = dev == "cuda"  # (pinned memory is CUDA's; on a Mac the memory is shared anyway)
+    pinned = torch.empty((h, w, 3), dtype=torch.uint8, pin_memory=pin)
+    out_pinned = torch.empty((h, w, 3), dtype=torch.uint8, pin_memory=pin)
+    print(f"{gpu.name()}  {w}x{h}  RIFE {a.model}")
     m = lambda xs: float(np.mean([x for x in xs if np.isfinite(x)]))  # noqa: E731
 
     for scale in a.scales:
@@ -75,8 +80,9 @@ def main() -> int:
 
         def load(img, slot):
             np.copyto(pinned.numpy(), img)
-            it.load(pinned)  # asynchronous: wait for it before the pinned buffer is reused
-            torch.cuda.current_stream().synchronize()
+            it.load(pinned)  # asynchronous on CUDA: wait for it before the pinned buffer is reused
+            if pin:
+                torch.cuda.current_stream().synchronize()
             it.prepare(slot)
 
         # ---- speed: per real frame, 1 midpoint (60 Hz output) vs 3 in-betweens (120 Hz), downloads included
@@ -86,7 +92,7 @@ def main() -> int:
                 if k == 0:
                     load(g[0], 0)
                 slot = (k + 1) % 2
-                torch.cuda.synchronize()
+                gpu.synchronize()
                 t0 = time.perf_counter()
                 load(g[4], slot)
                 for t in ts:
@@ -102,19 +108,19 @@ def main() -> int:
             sc = {t: {"rife": [], "blend": [], "repeat": []} for t in TS}
             mid60 = {"rife": [], "blend": [], "repeat": []}
             for g in groups(video, a.start, a.seconds):
-                gpu = [torch.from_numpy(x).cuda() for x in g]
+                ref = [torch.from_numpy(x).to(dev) for x in g]
                 load(g[0], 0)
                 load(g[4], 1)
                 for j, t in enumerate(TS, 1):
-                    sc[t]["rife"].append(psnr(it.interpolate(1, t), gpu[j]))
-                    sc[t]["blend"].append(psnr((gpu[0].float() * (1 - t) + gpu[4].float() * t).round(), gpu[j]))
-                    sc[t]["repeat"].append(psnr(gpu[0], gpu[j]))  # a 15 fps game shows the old frame
+                    sc[t]["rife"].append(psnr(it.interpolate(1, t), ref[j]))
+                    sc[t]["blend"].append(psnr((ref[0].float() * (1 - t) + ref[4].float() * t).round(), ref[j]))
+                    sc[t]["repeat"].append(psnr(ref[0], ref[j]))  # a 15 fps game shows the old frame
                 for p, q in ((0, 2), (2, 4)):  # 30 -> 60 on the same frames
                     load(g[p], 0)
                     load(g[q], 1)
-                    mid60["rife"].append(psnr(it.interpolate(1, 0.5), gpu[p + 1]))
-                    mid60["blend"].append(psnr(((gpu[p].float() + gpu[q].float()) * 0.5).round(), gpu[p + 1]))
-                    mid60["repeat"].append(psnr(gpu[p], gpu[p + 1]))
+                    mid60["rife"].append(psnr(it.interpolate(1, 0.5), ref[p + 1]))
+                    mid60["blend"].append(psnr(((ref[p].float() + ref[q].float()) * 0.5).round(), ref[p + 1]))
+                    mid60["repeat"].append(psnr(ref[p], ref[p + 1]))
             allr = [x for t in TS for x in sc[t]["rife"]]
             print(f"scale {scale}: {Path(video).stem}, {len(sc[0.5]['rife'])} groups.  dB: RIFE | blend | repeat")
             for t in TS:
@@ -123,7 +129,7 @@ def main() -> int:
                   f"{m([x for t in TS for x in sc[t]['repeat']]):5.2f}   (worst RIFE {min(allr):.2f})")
             print(f"    30->60  t=0.5     {m(mid60['rife']):5.2f} | {m(mid60['blend']):5.2f} | {m(mid60['repeat']):5.2f}")
         del it
-        torch.cuda.empty_cache()
+        gpu.empty_cache()
     return 0
 
 

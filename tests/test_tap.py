@@ -1,16 +1,13 @@
 """The frame tap's decoded frames (framegen/tap.py, docs/frame-tap.md): layout, flags, and TapSource end to end on
 the CPU, with the Python writer standing in for another app."""
-import sys
 import threading
 import time
 
 import numpy as np
 import pytest
 
-pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="the frame tap is Windows-only")
-
 from framegen.chiaki_tap import (CAPACITY, FEATURE_VARIABLE, FLAG_NEW, FLAG_REPEAT, SLOT_SIZE, SLOTS,  # noqa: E402
-                                 FrameTap, raw_layout)
+                                 FrameTap, raw_layout, unlink)
 from framegen.io import Tick, Waiting  # noqa: E402
 
 NAME = "Local\\smoovplay-tap-test"
@@ -23,6 +20,7 @@ def tap():
     yield t
     t.end()
     t.close()
+    unlink(NAME)  # (POSIX: shared memory lasts until it's removed)
 
 
 def test_raw_layout_fits_the_same_memory():

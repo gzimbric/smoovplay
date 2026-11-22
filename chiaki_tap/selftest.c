@@ -1,17 +1,30 @@
 // Checks that frametap.c (the C writer inside chiaki-ng) and framegen/chiaki_tap.py (the Python reader) agree
-// on the shared-memory layout. Run through chiaki_tap/selftest.py, which builds this with MSYS2's gcc: it writes
-// 40 frames with known contents and flags and 21 chunks of sound (the last too big for one slot, so it's split), waits
-// for the reader to ask for a keyframe, then answers a button press (as chiaki-ng does for the delay test) and reports
-// the sound delay the reader set.
+// on the shared-memory layout. Run through chiaki_tap/selftest.py, which builds this with MSYS2's gcc on Windows and
+// clang on macOS: it writes 40 frames with known contents and flags and 21 chunks of sound (the last too big for one
+// slot, so it's split), waits for the reader to ask for a keyframe, then answers a button press (as chiaki-ng does for
+// the delay test) and reports the sound delay the reader set.
 #include "frametap.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include <time.h>
+static void Sleep(unsigned ms)
+{
+	struct timespec ts = {(time_t)(ms / 1000), (long)(ms % 1000) * 1000000L};
+	nanosleep(&ts, NULL);
+}
+#endif
 
 int main(void)
 {
+#ifdef _WIN32
 	_putenv("CHIAKI_FRAMETAP=1");
+#else
+	setenv("CHIAKI_FRAMETAP", "1", 1);
+#endif
 	if(!frametap_enabled() || !frametap_begin(1, 1920, 1080, 60))
 	{
 		fprintf(stderr, "frametap_begin failed\n");

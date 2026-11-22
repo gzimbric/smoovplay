@@ -13,14 +13,20 @@ Compared with a capture card, each frame also carries what the stream knows abou
     scenes).
   - damaged: frames were lost before this one, or it's the PS5's recovery frame after a loss. The pipeline
     holds instead of interpolating, so a broken frame isn't smeared into the generated one.
-Windows only (named file mapping + named event).
+
+Windows: a named file mapping and a named event. macOS (and Linux): the same layout in POSIX shared memory
+(shm_open), named from the Windows name by posix_name ("Local\\chiaki-frametap" is "/chiaki-frametap"). There's no
+event there: a reader polls the header every half millisecond while it waits (FrameTap.wait). Times are
+QueryPerformanceCounter ticks on Windows, and a monotonic clock in nanoseconds elsewhere (qpc_freq 1e9).
 """
 
 from __future__ import annotations
 
 import csv
 import ctypes
+import errno
 import mmap
+import os
 import queue
 import struct
 import sys
@@ -80,7 +86,13 @@ AUDIO_HEADER, AUDIO_SLOT_HEADER, AUDIO_SLOTS, AUDIO_SLOT_SIZE = 64, 32, 512, 819
 AUDIO_TOTAL = AUDIO_HEADER + AUDIO_SLOTS * AUDIO_SLOT_SIZE
 BUTTON_OPTIONS, BUTTON_PS = 1 << 12, 1 << 15  # ChiakiControllerButton
 
-if sys.platform == "win32":
+WINDOWS = sys.platform == "win32"
+# POSIX shared memory names: "/" and the name, at most this long with the "/" (macOS's PSHMNAMLEN).
+SHM_NAME_MAX = 31 if sys.platform == "darwin" else 255
+POLL_S = 0.0005  # POSIX: how often a waiting reader looks at the header (about 0.6% of a core while it waits)
+_WATCH = struct.Struct("<I28xQ4xI")  # magic, write_seq, session: what changes when a frame comes or a stream starts
+
+if WINDOWS:
     _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     _k32.CreateEventW.restype = ctypes.c_void_p
     _k32.CreateEventW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_wchar_p]
@@ -88,11 +100,102 @@ if sys.platform == "win32":
     _k32.SetEvent.argtypes = [ctypes.c_void_p]
     _k32.CloseHandle.argtypes = [ctypes.c_void_p]
 
+    def qpc() -> int:
+        v = ctypes.c_int64()
+        _k32.QueryPerformanceCounter(ctypes.byref(v))
+        return v.value
 
-def qpc() -> int:
-    v = ctypes.c_int64()
-    _k32.QueryPerformanceCounter(ctypes.byref(v))
-    return v.value
+    def qpc_freq() -> int:
+        freq = ctypes.c_int64()
+        _k32.QueryPerformanceFrequency(ctypes.byref(freq))
+        return freq.value
+
+    def _fence() -> None:
+        pass  # (x86 keeps stores in order, and the Windows writers' Interlocked calls are full barriers)
+else:
+    def qpc() -> int:
+        """Now, in nanoseconds: time.monotonic_ns(), which on macOS is mach_absolute_time (the clock frametap.c reads
+        with clock_gettime_nsec_np(CLOCK_UPTIME_RAW); macOS's CLOCK_MONOTONIC also counts time asleep, so it's off by
+        days) and on Linux CLOCK_MONOTONIC. The header's qpc_freq is then 1e9."""
+        return time.monotonic_ns()
+
+    def qpc_freq() -> int:
+        return 1_000_000_000
+
+    # Apple's chips (like any ARM) may make one core's stores visible to another out of order, so the Python writer
+    # and reader put a full barrier where frametap.c has one, as the slot protocol needs.
+    try:
+        _fence = ctypes.CDLL(None).OSMemoryBarrier
+        _fence.restype, _fence.argtypes = None, []
+    except (OSError, AttributeError):  # (not macOS)
+        def _fence() -> None:
+            pass
+
+
+def posix_name(name: str) -> str:
+    """A tap's name as a POSIX shared-memory name: what follows the last backslash, after a "/" ("Local\\chiaki-frametap"
+    is "/chiaki-frametap"; "/name" and "name" are "/name" too). ValueError if nothing is left, it has a "/" in it, or
+    it's too long for this system (macOS: SHM_NAME_MAX, 31 characters with the "/")."""
+    base = name.rsplit("\\", 1)[-1].lstrip("/")
+    if not base or "/" in base:
+        raise ValueError(f"the frame tap's name {name!r} isn't usable as shared memory here (try a plain name)")
+    full = "/" + base
+    if len(full.encode()) > SHM_NAME_MAX:
+        raise ValueError(f"the frame tap's name {name!r} is too long here: as shared memory it's {full!r}, "
+                         f"{len(full.encode())} characters, and this system allows {SHM_NAME_MAX}")
+    return full
+
+
+def check_name(name: str) -> None:
+    """POSIX: ValueError unless the tap's name and its sound ring's (the name + AUDIO_SUFFIX) both fit, so a name that's
+    too long fails at once rather than when the sound starts. Windows: nothing (its names have room)."""
+    if WINDOWS:
+        return
+    posix_name(name)
+    try:
+        posix_name(name + AUDIO_SUFFIX)
+    except ValueError:
+        room = SHM_NAME_MAX - 1 - len(AUDIO_SUFFIX)
+        raise ValueError(f"the frame tap's name {name!r} is too long here: its sound ring would be "
+                         f"{posix_name(name) + AUDIO_SUFFIX!r} and this system allows {SHM_NAME_MAX} characters, so "
+                         f"the name can have at most {room} (after any Local\\)") from None
+
+
+def _shm_map(name: str, size: int) -> mmap.mmap:
+    """POSIX: `size` bytes of the shared memory `name` (posix_name), created if it isn't there. Either side may come
+    first: macOS sets a shared-memory object's size only once, while it's still empty, so the second side to try gets
+    EINVAL and finds it already sized. The object lasts until shm_unlink (unlink below) or a restart, like a file:
+    neither side removes it, as a reader that did would leave chiaki-ng writing into memory nobody else can open."""
+    import _posixshmem  # (multiprocessing.shared_memory would hand it to Python's resource tracker, which unlinks it)
+    path = posix_name(name)
+    fd = _posixshmem.shm_open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        if os.fstat(fd).st_size == 0:
+            try:
+                os.ftruncate(fd, size)
+            except OSError as e:
+                if e.errno != errno.EINVAL:  # EINVAL: the other side sized it first
+                    raise
+        have = os.fstat(fd).st_size  # (macOS rounds it up to whole pages)
+        if have < size:
+            raise OSError(f"the shared memory {path} is {have} bytes, too small for the frame tap ({size}): something "
+                          f"else made it. Remove it (framegen.chiaki_tap.unlink) or use another name")
+        return mmap.mmap(fd, size)
+    finally:
+        os.close(fd)
+
+
+def unlink(name: str) -> None:
+    """POSIX: remove the tap `name` and its sound ring (memory already mapped stays usable until it's closed); for
+    tests and clean-up. Windows: nothing to do (a mapping goes when its last handle closes)."""
+    if WINDOWS:
+        return
+    import _posixshmem
+    for n in (name, name + AUDIO_SUFFIX):
+        try:
+            _posixshmem.shm_unlink(posix_name(n))
+        except (FileNotFoundError, ValueError):
+            pass
 
 
 @dataclass
@@ -129,13 +232,20 @@ class Packet:
 
 
 class FrameTap:
-    """The shared ring. Either side may create it first; both see the same memory."""
+    """The shared ring. Either side may create it first; both see the same memory.
+
+    POSIX: event_name is unused (there's no event; wait() polls), and the name has to fit SHM_NAME_MAX with the sound
+    ring's suffix (check_name), else ValueError."""
 
     def __init__(self, name: str = NAME, event_name: str = EVENT_NAME) -> None:
-        if sys.platform != "win32":
-            raise RuntimeError("the chiaki frame tap is Windows-only")
-        self.mm = mmap.mmap(-1, TOTAL, tagname=name)
-        self.event = _k32.CreateEventW(None, 0, 0, event_name)
+        if WINDOWS:
+            self.mm = mmap.mmap(-1, TOTAL, tagname=name)
+            self.event = _k32.CreateEventW(None, 0, 0, event_name)
+        else:
+            check_name(name)
+            self.mm = _shm_map(name, TOTAL)
+            self.event = None
+        self._seen = threading.local()  # POSIX: what this thread's last header() saw, for wait()
 
     def header(self) -> Header:
         magic, version, n, size, codec, w, h, fps = struct.unpack_from("<8I", self.mm, 0)
@@ -144,6 +254,8 @@ class FrameTap:
         (freq,) = struct.unpack_from("<Q", self.mm, 48)
         (features,) = struct.unpack_from("<I", self.mm, 64)
         (colour,) = struct.unpack_from("<I", self.mm, 92)
+        if not WINDOWS:
+            self._seen.v = (magic, write_seq, session)
         if version < VERSION_RAW or not (4 <= n <= SLOTS and SLOT_HEADER < size and n * size <= CAPACITY):
             n, size, colour = SLOTS, SLOT_SIZE, 0  # version 1 (chiaki-ng): the fixed layout
         return Header(magic, version, codec, w, h, fps, write_seq, session, freq, n, size, colour, features)
@@ -179,7 +291,24 @@ class FrameTap:
         struct.pack_into("<I", self.mm, 88, max(0, min(500, int(ms))))
 
     def wait(self, timeout_s: float) -> None:
-        _k32.WaitForSingleObject(self.event, int(timeout_s * 1000))
+        """Until the writer sends a frame or starts or ends a stream (since this thread's last header()), or timeout_s.
+        Windows: the writer's event. POSIX: macOS has no sem_timedwait, so this looks at the header every POLL_S,
+        which keeps the writers as simple as they are on Windows; it adds about 0.3 ms to a frame's wait on average."""
+        if WINDOWS:
+            _k32.WaitForSingleObject(self.event, int(timeout_s * 1000))
+            return
+        seen = getattr(self._seen, "v", None)
+        t_end = time.perf_counter() + timeout_s
+        while True:
+            now = _WATCH.unpack_from(self.mm, 0)
+            if seen is None:  # no header() yet on this thread: wait for a change from now
+                seen = now
+            elif now != seen:
+                return
+            left = t_end - time.perf_counter()
+            if left <= 0:
+                return
+            time.sleep(min(POLL_S, left))
 
     def read(self, seq: int, qpc_freq: int, slots: int = SLOTS, slot_size: int = SLOT_SIZE,
              into=None) -> Packet | None:
@@ -187,9 +316,11 @@ class FrameTap:
         the writer's layout (Header.slots, .slot_size). into: a uint8 numpy array to copy the frame into instead of
         a new bytes object (a decoded frame, megabytes); the Packet's data is then b"" and its size is in `size`."""
         off = HEADER + (seq % slots) * slot_size
+        _fence()  # (after the header's write_seq was read)
         s0, q, size, lost, rec, flags = struct.unpack_from("<QQIiII", self.mm, off)
         if s0 != seq or size > slot_size - SLOT_HEADER:
             return None
+        _fence()
         if into is None:
             data = self.mm[off + SLOT_HEADER: off + SLOT_HEADER + size]
         else:
@@ -197,6 +328,7 @@ class FrameTap:
                 return None
             into[:size] = np.frombuffer(self.mm, np.uint8, size, off + SLOT_HEADER)
             data = b""
+        _fence()
         if struct.unpack_from("<Q", self.mm, off)[0] != seq:  # rewritten while we copied
             return None
         age = (qpc() - q) / qpc_freq if qpc_freq else 0.0
@@ -212,20 +344,21 @@ class FrameTap:
         """Start a stream. A decoded format (RAW_CODECS) gets version 2 and slots of its own (raw_layout).
         features, if given, replaces the header's features field."""
         struct.pack_into("<I", self.mm, 0, 0)
-        freq = ctypes.c_int64()
-        _k32.QueryPerformanceFrequency(ctypes.byref(freq))
+        _fence()
+        freq = qpc_freq()
         if codec in RAW_CODECS:
             version, (self._slots, self._slot_size) = VERSION_RAW, raw_layout(RAW_CODECS[codec], width, height)
         else:
             version, self._slots, self._slot_size = VERSION, SLOTS, SLOT_SIZE
         struct.pack_into("<7I", self.mm, 4, version, self._slots, self._slot_size, codec, width, height, max_fps)
         struct.pack_into("<QI", self.mm, 32, 0, 0)
-        struct.pack_into("<Q", self.mm, 48, freq.value)
+        struct.pack_into("<Q", self.mm, 48, freq)
         struct.pack_into("<I", self.mm, 92, colour if codec in RAW_CODECS else 0)
         if features is not None:
             struct.pack_into("<I", self.mm, 64, features)
         (session,) = struct.unpack_from("<I", self.mm, 44)
         struct.pack_into("<I", self.mm, 44, session + 1)
+        _fence()
         struct.pack_into("<I", self.mm, 0, MAGIC)
 
     def push(self, data, frames_lost: int = 0, recovered: bool = False, new: bool | None = None) -> None:
@@ -237,14 +370,18 @@ class FrameTap:
         size = min(n, self._slot_size - SLOT_HEADER)
         flags = (FLAG_TRUNCATED if size < n else 0) | {True: FLAG_NEW, False: FLAG_REPEAT, None: 0}[new]
         struct.pack_into("<Q", self.mm, off, U64_MAX)
+        _fence()
         struct.pack_into("<QIiII", self.mm, off + 8, qpc(), size, frames_lost, int(recovered), flags)
         if isinstance(data, np.ndarray):
             np.frombuffer(self.mm, np.uint8, size, off + SLOT_HEADER)[:] = data.reshape(-1)[:size]
         else:
             self.mm[off + SLOT_HEADER: off + SLOT_HEADER + size] = bytes(data[:size])
+        _fence()
         struct.pack_into("<Q", self.mm, off, seq)
+        _fence()
         struct.pack_into("<Q", self.mm, 32, seq + 1)
-        _k32.SetEvent(self.event)
+        if WINDOWS:
+            _k32.SetEvent(self.event)
 
     def take_idr_request(self) -> bool:
         (r,) = struct.unpack_from("<I", self.mm, 40)
@@ -272,10 +409,12 @@ class FrameTap:
 
     def end(self) -> None:
         struct.pack_into("<I", self.mm, 0, 0)
-        _k32.SetEvent(self.event)
+        if WINDOWS:
+            _k32.SetEvent(self.event)
 
     def close(self) -> None:
-        _k32.CloseHandle(self.event)
+        if WINDOWS:
+            _k32.CloseHandle(self.event)
         self.mm.close()
 
 
@@ -284,9 +423,10 @@ class AudioTap:
     instant replay. A chiaki-ng from before this ring never writes it (its `features` lack FEATURE_AUDIO_TAP)."""
 
     def __init__(self, name: str = NAME + AUDIO_SUFFIX) -> None:
-        if sys.platform != "win32":
-            raise RuntimeError("the chiaki frame tap is Windows-only")
-        self.mm = mmap.mmap(-1, AUDIO_TOTAL, tagname=name)
+        if WINDOWS:
+            self.mm = mmap.mmap(-1, AUDIO_TOTAL, tagname=name)
+        else:
+            self.mm = _shm_map(name, AUDIO_TOTAL)
         self.next: int | None = None  # the next chunk to read; None: from wherever the writer is now
 
     def live(self) -> bool:
@@ -314,10 +454,13 @@ class AudioTap:
             seq = self.next
             self.next += 1
             off = AUDIO_HEADER + (seq % AUDIO_SLOTS) * AUDIO_SLOT_SIZE
+            _fence()
             s0, q, size, rate, channels = struct.unpack_from("<QQIII", self.mm, off)
             if s0 != seq or size > AUDIO_SLOT_SIZE - AUDIO_SLOT_HEADER:
                 continue
+            _fence()
             data = self.mm[off + AUDIO_SLOT_HEADER: off + AUDIO_SLOT_HEADER + size]
+            _fence()
             if struct.unpack_from("<Q", self.mm, off)[0] != seq:  # rewritten while we copied
                 continue
             out.append(Sound(now_t - (now_q - q) / freq, data, rate, channels))
@@ -325,11 +468,12 @@ class AudioTap:
 
     # Writer side, for tests and the fake PS5 (scripts/frametap_fake.py); chiaki-ng uses frametap.c.
     def begin(self, rate: int = 48000, channels: int = 2) -> None:
-        freq = ctypes.c_int64()
-        _k32.QueryPerformanceFrequency(ctypes.byref(freq))
+        freq = qpc_freq()
         struct.pack_into("<I", self.mm, 0, 0)
+        _fence()
         struct.pack_into("<5I", self.mm, 4, 1, AUDIO_SLOTS, AUDIO_SLOT_SIZE, rate, channels)
-        struct.pack_into("<QQ", self.mm, 24, 0, freq.value)
+        struct.pack_into("<QQ", self.mm, 24, 0, freq)
+        _fence()
         struct.pack_into("<I", self.mm, 0, AUDIO_MAGIC)
 
     def push(self, pcm: bytes, t_qpc: int | None = None) -> None:
@@ -342,10 +486,13 @@ class AudioTap:
             (seq,) = struct.unpack_from("<Q", self.mm, 24)
             off = AUDIO_HEADER + (seq % AUDIO_SLOTS) * AUDIO_SLOT_SIZE
             struct.pack_into("<Q", self.mm, off, U64_MAX)
+            _fence()
             struct.pack_into("<QIII", self.mm, off + 8, q0 + round(i // (2 * channels) * freq / rate), len(part),
                              rate, channels)
             self.mm[off + AUDIO_SLOT_HEADER: off + AUDIO_SLOT_HEADER + len(part)] = part
+            _fence()
             struct.pack_into("<Q", self.mm, off, seq)
+            _fence()
             struct.pack_into("<Q", self.mm, 24, seq + 1)
 
     def end(self) -> None:
@@ -494,8 +641,11 @@ class ChiakiSource:
         self._sound_session: int | None = None
         self.test = test
         self._last_idr = 0.0
-        self._header_file = Path(tempfile.gettempdir()) / (tap_name.split("\\")[-1] + "-header.bin")
+        self._header_file = Path(tempfile.gettempdir()) / (tap_name.split("\\")[-1].lstrip("/") + "-header.bin")
+        if sys.platform == "darwin" and decoder in ("cuda", "d3d11va"):
+            decoder = "videotoolbox"  # (a Mac has neither: its own hardware decoder instead)
         self.decoder_kind = decoder
+        self._vt_checked = False  # whether the first VideoToolbox picture has been checked (_check_vt)
         t_end = time.perf_counter() + wait_s
         printed = False
         while not (h := self.tap.header()).live:
@@ -557,10 +707,37 @@ class ChiakiSource:
             # which takes turns on the GPU with RIFE; primary_ctx refuses because PyTorch set it up differently.
             ctx = av.CodecContext.create(codec, "r", hwaccel=HWAccel(
                 "cuda", options={"primary_ctx": "0", "current_ctx": "1"}, is_hw_owned=True))
+        elif self.decoder_kind == "videotoolbox":
+            # Apple's hardware decoder (H.264, and H.265 8- and 10-bit). FFmpeg copies each picture out as NV12 (P010
+            # for 10 bits) into memory the CPU reads, which on a Mac is the GPU's memory too, so it costs little.
+            # If VideoToolbox can't take a stream, FFmpeg decodes it in software instead (_check_vt says so).
+            try:
+                ctx = av.CodecContext.create(codec, "r", hwaccel=HWAccel("videotoolbox"))
+                if not ctx.is_hwaccel:
+                    raise RuntimeError(f"no VideoToolbox decoder for {codec}")
+            except Exception as e:  # noqa: BLE001 - the stream still plays, on the CPU
+                print(f"{self.tag} VideoToolbox can't decode here ({str(e)[:120]}): decoding in software",
+                      file=sys.stderr)
+                self.decoder_kind = "sw"
+                return self._new_decoder(codec)
+            self._vt_checked = False
         else:
             ctx = av.CodecContext.create(codec, "r", hwaccel=HWAccel(self.decoder_kind))
         ctx.flags |= av.codec.context.Flags.low_delay
         return ctx
+
+    def _check_vt(self, frames) -> None:
+        """VideoToolbox's first pictures come out as NV12 or P010; FFmpeg's software decoders give planar YUV. Says so
+        once if VideoToolbox turned the stream down and FFmpeg fell back to software."""
+        if self._vt_checked or not frames:
+            return
+        self._vt_checked = True
+        fmt = frames[0].format.name
+        if fmt in ("nv12", "p010le"):
+            print(f"{self.tag} decoding with VideoToolbox")
+        else:
+            print(f"{self.tag} VideoToolbox didn't take this stream ({fmt}): FFmpeg decodes it in software",
+                  file=sys.stderr)
 
     def _reader(self) -> None:
         import av
@@ -680,6 +857,8 @@ class ChiakiSource:
                     frames = dec.decode(av.Packet(pending + p.data if pending else p.data))
                     images = [self._image(fr) for fr in frames]
                 pending, errors = b"", 0
+                if self.decoder_kind == "videotoolbox":
+                    self._check_vt(frames)
             except av.error.FFmpegError as e:
                 # Keep the decoder (it holds the header and reference frames) and hold the next few frames; the
                 # PS5 answers a keyframe request with a refresh frame.
@@ -741,9 +920,10 @@ class ChiakiSource:
             print(f"{self.tag} HDR is on in SmoovPlay's settings, but this stream isn't HDR: shown as usual."
                   + ("" if self.app else " (For HDR, pick chiaki-ng's H.265 HDR codec.)"))
             return
+        from . import gpu
         from .hdr import StreamConverter
-        import torch
-        self.convert = StreamConverter(out, "cuda" if torch.cuda.is_available() else "cpu", display_peak=display_peak)
+        # CUDA, else Apple's GPU on a Mac (about 3 ms a 1080p frame, where the CPU takes about 40), else the CPU
+        self.convert = StreamConverter(out, gpu.device(), display_peak=display_peak)
         print(f"{self.tag} HDR stream: " + ("kept HDR for the HDR display" if out == "pq16" else "shown in SDR")
               + " (HDR is Experimental)")
 

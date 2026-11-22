@@ -79,6 +79,7 @@ There's nothing to install on the console, and it's free and open source.
 | **HDR** from a PS5 | *Experimental.* A contributor has played a real PS5 HDR stream with HDR all the way to an HDR monitor. Since 0.3.2, fullscreen keeps Windows' HDR on. |
 | **Xbox and other streaming apps**, by capturing the app's window | *Experimental.* Recognises the current Xbox app since 0.3.1, from a player's report; a real Xbox stream isn't confirmed yet. |
 | **AMD Radeon and Intel Arc**, through DirectML | *Experimental.* The same frames, about 1.7× more slowly. Not on a real card yet. |
+| **A Mac with Apple silicon**, from source | *Experimental.* PS5 Remote Play through a patched chiaki-ng built for macOS, RIFE on Apple's GPU: 60 fps at full motion detail or 90 at half on an M5 Max, with a stand-in PS5 stream. No installer yet, and not with a real PS5 yet. See [On a Mac](docs/DEVELOPING.md#on-a-mac-experimental). |
 
 **How it's checked:** each release passes SmoovPlay's automated tests (340 for 0.3.2, with a stand-in PS5 stream,
 stand-in capture cards and stand-in HDR frames) and installs as an update over the previous version before it ships.
@@ -318,7 +319,7 @@ frames and AMD FSR 1 for scaling.
 
 | Path | What's in it |
 |---|---|
-| [`framegen/`](framegen/) | The pipeline: video sources, repeat and cut detection, RIFE (PyTorch and TensorRT), FSR 1 and RTX VSR, the OpenGL window and the settings menu |
+| [`framegen/`](framegen/) | The pipeline: video sources, repeat and cut detection, RIFE (PyTorch, TensorRT, and Metal on a Mac), FSR 1 and RTX VSR, the OpenGL window and the settings menu |
 | [`run.py`](run.py) | Command-line entry point |
 | [`chiaki_tap/`](chiaki_tap/) | The patch that adds a frame tap to chiaki-ng |
 | [`docs/frame-tap.md`](docs/frame-tap.md) | How any app can send its frames to SmoovPlay through the same tap (Experimental) |
@@ -336,7 +337,8 @@ py -3.12 -m venv .venv
 ```
 
 **[docs/DEVELOPING.md](docs/DEVELOPING.md)** has the rest: every command and tool, settings and hotkeys, how Instant
-replay and Looks work inside, the scheduler, upscaling, NVIDIA VFG, measured results and known limits.
+replay and Looks work inside, the scheduler, upscaling, NVIDIA VFG, measured results and known limits, and
+[running it on a Mac](docs/DEVELOPING.md#on-a-mac-experimental).
 
 ## Credits and licences
 

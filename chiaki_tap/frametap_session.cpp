@@ -9,6 +9,9 @@
 #include <QMetaObject>
 #include <QTimer>
 
+#include <cstdlib>
+#include <cstring>
+
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -23,7 +26,19 @@ bool FrameTapSession::Begin(StreamSession *session, ChiakiSession *chiaki_sessio
 {
 	if(!frametap_begin((uint32_t)profile.codec, profile.width, profile.height, profile.max_fps))
 		return false;
+#ifdef _WIN32
 	CHIAKI_LOGI(session->GetChiakiLog(), "Frame tap on: copying every video frame to shared memory " FRAMETAP_NAME);
+#else
+	// POSIX shared memory is named "/" plus what follows the tap name's last backslash (frametap.c shm_name)
+	const char *name = getenv("CHIAKI_FRAMETAP_NAME");
+	if(!name || !name[0])
+		name = FRAMETAP_NAME;
+	const char *base = strrchr(name, '\\');
+	base = base ? base + 1 : name;
+	while(*base == '/')
+		base++;
+	CHIAKI_LOGI(session->GetChiakiLog(), "Frame tap on: copying every video frame to shared memory /%s", base);
+#endif
 	chiaki_session_set_video_sample_cb(chiaki_session, VideoSample, session);
 #ifdef _WIN32
 	// SmoovPlay's video window opens as the stream starts, while chiaki-ng (where the player just pressed connect)

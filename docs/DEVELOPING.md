@@ -20,7 +20,7 @@ and how to get it, see the [README](../../README.md).
 ### Setup
 
 Needs 64-bit Windows 10 or 11, an NVIDIA RTX card with a recent driver (or an AMD or Intel card through DirectML,
-Experimental), and Python 3.12.
+Experimental), and Python 3.12. For a Mac, see [On a Mac](#on-a-mac-experimental) below.
 
 ```powershell
 py -3.12 -m venv .venv
@@ -30,6 +30,45 @@ py -3.12 -m venv .venv
 
 RIFE weights download automatically into `models/` on first run. To build the installer and launcher, see
 [installer/README.md](../installer/README.md); to build the patched chiaki-ng, see [chiaki_tap/README.md](../chiaki_tap/README.md).
+
+### On a Mac (Experimental)
+
+SmoovPlay also runs from source on an Apple silicon Mac, from the command line: there's no installer or launcher
+for macOS yet. It needs macOS with Python 3.12, and [Homebrew](https://brew.sh) for chiaki-ng's build.
+
+```sh
+python3.12 -m venv .venv      # or: uv venv --python 3.12 .venv
+.venv/bin/python -m pip install torch -r requirements.txt   # PyPI's torch includes Apple's GPU (Metal)
+.venv/bin/python -m framegen.prepare                        # RIFE's weights, then Auto-detect picks settings
+.venv/bin/python run.py testdata/clip_1080p60.mp4 --realtime --display
+```
+
+For PS5 Remote Play, build the patched chiaki-ng once (`chiaki_tap/build_macos.sh`, see
+[chiaki_tap/README.md](../chiaki_tap/README.md#build-on-macos)), start it with `run_chiaki_frametap.command`, then
+`.venv/bin/python run.py --chiaki --display`. What's different on a Mac:
+
+- **RIFE runs on Apple's GPU** through PyTorch's Metal backend (`framegen/gpu.py`), with Metal kernels of SmoovPlay's
+  own for everything but the convolutions (`framegen/metalrife.py`, used by `RifeInterpolator` on `mps`;
+  `SMOOVPLAY_METAL=0` turns them off). On an M5 Max one 1080p in-between frame takes 6.9 ms at full motion detail
+  and 4.4 ms at half, about 2.6 and 3.1 times faster than plain PyTorch on Metal, with the same output to 0.01 dB.
+  TensorRT, NVIDIA VFG and RTX VSR are NVIDIA's and aren't there.
+- **The frame tap is POSIX shared memory** (`/chiaki-frametap`), polled every half millisecond, with the same layout
+  as on Windows ([frame-tap.md](frame-tap.md)). Remote Play is decoded with VideoToolbox (`--chiaki-decoder
+  videotoolbox`, the default on a Mac): about 1.3 ms a 1080p HEVC frame.
+- **The window is OpenGL 4.1** (`framegen/glsl.py` rewrites the shaders for it), so FSR 1, Looks and Fill the screen
+  all work. Frames reach it through the CPU (the memory is shared with the GPU, so that costs about 3 ms a frame,
+  copy, upload and swap). Fullscreen (F) covers the menu bar and the Dock.
+- **Instant replay** encodes with VideoToolbox's H.264 and saves to `~/Movies/SmoovPlay`. Settings, looks and Auto-detect's
+  times live in `~/Library/Application Support/framegen`.
+- **Not on a Mac yet:** window capture (it uses Windows' Desktop Duplication; a Mac version would use
+  ScreenCaptureKit), HDR output (HDR streams are shown in SDR), shortcuts that work from any window (Ctrl+Alt+R),
+  minimising chiaki-ng, and the launcher. Capture cards go through OpenCV's AVFoundation input, by number
+  (`--capture 0`), untested with a real card.
+
+Measured on an M5 Max with the fake PS5 (`scripts/frametap_fake.py --native`, HEVC, test mode), not yet with a real
+PS5: at 60 fps and full motion detail an interpolation tick took 10.1 ms (p50) and a frame 27 ms from the tap to the
+screen; at 90 fps and half detail 92% of the extra in-between frames were shown on time (40 ms tap to screen), and
+at 90 fps and full detail only 69%, so Auto-detect picks 90 fps at half detail there. 120 fps showed half of them.
 
 ### Usage
 

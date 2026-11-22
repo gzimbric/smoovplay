@@ -27,7 +27,7 @@ before it's shown, with what it knows about it:
 ## Two kinds of frames
 
 - **Compressed** (H.264 or H.265, layout version 1): what a streaming client receives, before decoding. SmoovPlay
-  decodes it on the graphics card (NVDEC). This is what chiaki-ng sends. A decoded repeat is never an exact copy,
+  decodes it on the graphics card (NVDEC; VideoToolbox on a Mac). This is what chiaki-ng sends. A decoded repeat is never an exact copy,
   but changes far less than a new frame, so SmoovPlay tells repeats by comparing the pictures (it learns the line
   between the two from the last few frames) without being told.
 - **Decoded** (NV12 or BGRA, layout version 2): finished pictures, for an app that only has those. SmoovPlay
@@ -50,7 +50,7 @@ starting it). `frametap_send.py` options:
 
 ## The shared memory
 
-Windows only. Three named objects, all opened with "create, or open if it exists", so either side can start first:
+On Windows, three named objects, all opened with "create, or open if it exists", so either side can start first:
 
 | Object | Name | What |
 |---|---|---|
@@ -61,6 +61,23 @@ Windows only. Three named objects, all opened with "create, or open if it exists
 chiaki-ng's tap is named `Local\chiaki-frametap`. Create the mapping with
 `CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, 67112960, name)` and map all of it. All
 numbers are little-endian. Times are `QueryPerformanceCounter` values; the header carries their frequency.
+
+**On macOS** the layout, sizes and protocol are the same, in POSIX shared memory:
+
+- The name is `/` plus what follows the Windows name's last backslash: `Local\smoovplay-tap` is `/smoovplay-tap`,
+  chiaki-ng's is `/chiaki-frametap`, and the sound ring adds `-audio` as on Windows. macOS allows 31 characters with
+  the `/`, so a name can have at most 24 after any `Local\` (SmoovPlay refuses a longer one).
+- Open it with `shm_open(path, O_RDWR | O_CREAT, 0600)`. Either side may come first, and macOS sets a shared-memory
+  object's size only once, while it's empty: `ftruncate` it to the size only if `fstat` says 0 (if both sides try at
+  once, the second gets `EINVAL`, which is fine), then check that `fstat` gives at least the size (macOS rounds it up
+  to whole pages) and `mmap` it `MAP_SHARED`. Don't `shm_unlink` it: it lasts until a restart, and the next reader or
+  writer opens the same memory.
+- There's no event: SmoovPlay looks at `write_seq` every half millisecond while it waits.
+- Times are nanoseconds of `clock_gettime_nsec_np(CLOCK_UPTIME_RAW)` (the same as `mach_absolute_time`, and as
+  Python's `time.monotonic_ns()`), and `qpc_freq` is 1,000,000,000. Not `CLOCK_MONOTONIC`: on macOS that one also
+  counts the time the Mac slept, so it's days off.
+- Use real barriers (`__atomic_thread_fence(__ATOMIC_SEQ_CST)`) where the steps below say so: Apple's chips, unlike
+  x86, may show another core your stores out of order.
 
 ## Header (the first 4096 bytes)
 
@@ -168,6 +185,6 @@ sound comes about SmoovPlay's delay ahead of the picture, as it does with window
   [`scripts/frametap_fake.py`](../scripts/frametap_fake.py) is a compressed one, a stand-in for a PS5.
 - **C:** [`chiaki_tap/frametap.c`](../chiaki_tap/frametap.c) is chiaki-ng's writer for compressed frames and sound
   (AGPL 3.0, like chiaki-ng). [`docs/frame-tap-writer.c`](frame-tap-writer.c) is a small decoded-frame writer
-  (MIT), checked against SmoovPlay's reader by `tests/test_tap_c_writer.py`.
+  (MIT), checked against SmoovPlay's reader by `tests/test_tap_c_writer.py`. Both build for Windows and macOS.
 - **The reader:** [`framegen/tap.py`](../framegen/tap.py) for decoded frames, and `ChiakiSource` in
   [`framegen/chiaki_tap.py`](../framegen/chiaki_tap.py) for compressed ones.

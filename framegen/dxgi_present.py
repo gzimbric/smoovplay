@@ -40,9 +40,14 @@ from __future__ import annotations
 
 import ctypes
 import os
+import sys
 import time
 import uuid
-from ctypes import POINTER, WINFUNCTYPE, byref, c_char_p, c_int, c_long, c_size_t, c_uint, c_ulong, c_void_p
+from ctypes import POINTER, byref, c_char_p, c_int, c_long, c_size_t, c_uint, c_ulong, c_void_p
+
+# Windows-only, but importable elsewhere (its constants and structures are used by the tests and by io.py's checks);
+# nothing here touches DXGI until a function is called.
+WINFUNCTYPE = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)
 
 # ---------------------------------------------------------------------------------------------- Windows constants
 DXGI_FORMAT_UNKNOWN = 0
@@ -276,7 +281,10 @@ class _Point(ctypes.Structure):
 
 
 def display_hdr(hwnd=None) -> dict | None:
-    """The display a window is on (most of it), or without one the main display, from outputs(); None if unknown."""
+    """The display a window is on (most of it), or without one the main display, from outputs(); None if unknown
+    (and always off Windows)."""
+    if sys.platform != "win32":
+        return None
     u32 = ctypes.WinDLL("user32")
     if hwnd is not None:
         u32.MonitorFromWindow.argtypes, u32.MonitorFromWindow.restype = [c_void_p, c_uint], c_void_p
