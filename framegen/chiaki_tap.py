@@ -176,7 +176,13 @@ def _shm_map(name: str, size: int) -> mmap.mmap:
             except OSError as e:
                 if e.errno != errno.EINVAL:  # EINVAL: the other side sized it first
                     raise
-        have = os.fstat(fd).st_size  # (macOS rounds it up to whole pages)
+        # When both sides size it at once, the one that gets EINVAL can still see 0 bytes for a moment, until the
+        # other's ftruncate shows (about 1 in 600 simultaneous opens, found by the Rust reader's stress test): give
+        # that up to 200 ms.
+        have, t_end = os.fstat(fd).st_size, time.perf_counter() + 0.2
+        while have == 0 and time.perf_counter() < t_end:
+            time.sleep(0.0002)
+            have = os.fstat(fd).st_size  # (macOS rounds it up to whole pages)
         if have < size:
             raise OSError(f"the shared memory {path} is {have} bytes, too small for the frame tap ({size}): something "
                           f"else made it. Remove it (framegen.chiaki_tap.unlink) or use another name")

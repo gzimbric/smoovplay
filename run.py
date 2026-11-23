@@ -645,7 +645,6 @@ def main() -> int:
         unavailable["engine"] = "On a Mac, RIFE runs through PyTorch on Apple's GPU (Metal)."
         unavailable["model"] = "NVIDIA VFG needs an NVIDIA RTX card."
         unavailable["present"] = "On a Mac, the window always presents through OpenGL."
-        unavailable["minimize_chiaki"] = "Not on a Mac yet: chiaki-ng's window stays where it is."
     hdr10_rows = {k: "Not with HDR output yet." for k in ("look_on", "look", "look_clips")}
     hdr10_rows["present"] = "HDR output always uses the low-delay presentation."
     if hdr10[0]:
@@ -697,6 +696,8 @@ def main() -> int:
 
     def minimize_chiaki(key: str = "minimize_chiaki") -> None:
         if key != "minimize_chiaki" or not (picked == "chiaki" and window is not None):
+            return
+        if mac_mode:  # the Mac app (mac/app) hides and shows chiaki-ng's window itself, following this setting
             return
         from framegen.winutil import SW_SHOWMINNOACTIVE, SW_SHOWNOACTIVATE, show, windows_of
         if settings.minimize_chiaki and not hidden:

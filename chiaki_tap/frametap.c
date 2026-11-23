@@ -324,6 +324,13 @@ static uint8_t *map_shared(const char *path, size_t size)
 	struct stat st;
 	if(fstat(fd, &st) == 0 && st.st_size == 0 && ftruncate(fd, (off_t)size) != 0 && errno != EINVAL)
 		fprintf(stderr, "frametap: ftruncate %s: %s\n", path, strerror(errno));
+	// When both sides size it at once, the one that gets EINVAL can still see 0 bytes for a moment, until the
+	// other's ftruncate shows (about 1 in 600 simultaneous opens): give that up to 200 ms.
+	for(int i = 0; i < 1000 && fstat(fd, &st) == 0 && st.st_size == 0; i++)
+	{
+		struct timespec pause = {0, 200000};
+		nanosleep(&pause, NULL);
+	}
 	void *p = MAP_FAILED;
 	if(fstat(fd, &st) != 0 || (uint64_t)st.st_size < size) // (macOS rounds the size up to whole pages)
 		fprintf(stderr, "frametap: %s is %lld bytes, too small for the frame tap (%zu)\n", path,

@@ -171,17 +171,28 @@ rm -f "$STAGE/Contents/Frameworks/libSDL2-2.0.0.dylib" "$STAGE/Contents/Framewor
 [[ -e "$STAGE/Contents/Frameworks/vulkan" ]] || ln -s libvulkan.1.dylib "$STAGE/Contents/Frameworks/vulkan"
 
 step "sign"
-# Ad hoc, inside out, the order of chiaki-ng's scripts/macos-sign.sh (which signs releases with a Developer ID):
-# every loose library (Qt and QML plugins, FFmpeg and the other dylibs, SDL, MoltenVK in Resources), the WebEngine
-# helper, each framework, then the app with chiaki-ng's entitlements. Apple Silicon runs nothing unsigned, and the
-# edits above broke the libraries' own signatures. No hardened runtime: an ad hoc build has no use for it.
-adhoc() { codesign --force --sign - "$@"; }
-find "$STAGE/Contents" -type f \( -name '*.dylib' -o -name '*.so' \) -print0 | xargs -0 codesign --force --sign -
+# Inside out, the order of chiaki-ng's scripts/macos-sign.sh (which signs releases with a Developer ID): every loose
+# library (Qt and QML plugins, FFmpeg and the other dylibs, SDL, MoltenVK in Resources), the WebEngine helper, each
+# framework, then the app with chiaki-ng's entitlements. Apple Silicon runs nothing unsigned, and the edits above broke
+# the libraries' own signatures. No hardened runtime: a build for this Mac has no use for it.
+# SIGN_IDENTITY picks the identity (a name or SHA-1 from `security find-identity -v -p codesigning`); unset or "auto",
+# the keychain's first Apple Development identity, else ad hoc; "-" forces ad hoc. A real identity keeps the app the
+# same to macOS from build to build, so its Local Network permission (finding the PS5) isn't asked for again.
+IDENTITY="${SIGN_IDENTITY:-auto}"
+if [[ "$IDENTITY" == auto ]]; then
+    IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development: /{print $2; exit}')"
+    IDENTITY="${IDENTITY:--}"
+fi
+echo "signing $([[ "$IDENTITY" == "-" ]] && echo "ad hoc" || echo "with identity $IDENTITY")"
+sign_code() { codesign --force --sign "$IDENTITY" --timestamp=none "$@"; }
+find "$STAGE/Contents" -type f \( -name '*.dylib' -o -name '*.so' \) -print0 |
+    xargs -0 codesign --force --sign "$IDENTITY" --timestamp=none
 find "$STAGE/Contents/Frameworks" -type d -name '*.app' -path '*/Helpers/*' -print0 | while IFS= read -r -d '' h; do
-    adhoc --entitlements "$SRC/scripts/macos/QtWebEngineProcess.entitlements" "$h"
+    sign_code --entitlements "$SRC/scripts/macos/QtWebEngineProcess.entitlements" "$h"
 done
-find "$STAGE/Contents/Frameworks" -maxdepth 1 -type d -name '*.framework' -print0 | xargs -0 codesign --force --sign -
-adhoc --entitlements "$SRC/gui/entitlements.xml" "$STAGE"
+find "$STAGE/Contents/Frameworks" -maxdepth 1 -type d -name '*.framework' -print0 |
+    xargs -0 codesign --force --sign "$IDENTITY" --timestamp=none
+sign_code --entitlements "$SRC/gui/entitlements.xml" "$STAGE"
 codesign --verify --deep --strict --verbose=2 "$STAGE" || die "the app's signature doesn't verify"
 
 # Every library and program in the app: none may still load from Homebrew (it would run here and break on a Mac
