@@ -340,7 +340,7 @@ def gl():
     glfw = pytest.importorskip("glfw")
     from OpenGL import GL
 
-    from framegen.glsl import context_hints
+    from framegen.glsl import TARGET, context_hints
     if not glfw.init():
         pytest.skip("no OpenGL")
     glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
@@ -350,12 +350,13 @@ def gl():
         glfw.terminate()
         pytest.skip("no OpenGL 4.5 context")
     glfw.make_context_current(win)
+    need = (4, 1) if TARGET == 410 else (4, 5)  # on a Mac the shaders are rewritten for 4.1
     version = (GL.glGetString(GL.GL_VERSION) or b"").decode(errors="replace")
     m = re.match(r"(\d+)\.(\d+)", version)
-    if not m or (int(m[1]), int(m[2])) < (4, 5):  # e.g. macOS: 2.1, or 4.1 at most
+    if not m or (int(m[1]), int(m[2])) < need:
         glfw.destroy_window(win)
         glfw.terminate()
-        pytest.skip(f"no OpenGL 4.5 context (got {version})")
+        pytest.skip(f"no OpenGL {need[0]}.{need[1]} context (got {version})")
     GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
     GL.glPixelStorei(GL.GL_PACK_ALIGNMENT, 1)
     yield GL
