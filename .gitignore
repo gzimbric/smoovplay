@@ -9,6 +9,7 @@ installer/build/
 installer/dist/
 installer/.cache/
 native/*/build/
+build/
 *.log
 
 # Kept local, not published: marketing and demo-clip tooling, and working notes
