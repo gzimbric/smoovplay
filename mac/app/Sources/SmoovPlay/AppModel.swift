@@ -140,7 +140,8 @@ final class AppModel: ObservableObject {
 
     init(options: LaunchOptions) {
         self.options = options
-        let choice = UserDefaults.standard.string(forKey: "core") ?? "python"
+        // Nothing picked on the Help page yet: the Rust core once it's built, else run.py (AppPaths.detect decides)
+        let choice = UserDefaults.standard.string(forKey: "core") ?? AppPaths.detect().coreKind.rawValue
         coreChoice = choice
         paths = AppPaths.detect(coreChoice: choice)
         prefs = Prefs(url: AppPaths.detect(coreChoice: choice).prefsFile)
