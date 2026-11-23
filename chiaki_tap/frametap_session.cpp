@@ -17,13 +17,28 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <cstdlib>
+#include <cstring>
 #endif
 
 bool FrameTapSession::Begin(StreamSession *session, ChiakiSession *chiaki_session, const ChiakiConnectVideoProfile &profile)
 {
 	if(!frametap_begin((uint32_t)profile.codec, profile.width, profile.height, profile.max_fps))
 		return false;
+#ifdef _WIN32
 	CHIAKI_LOGI(session->GetChiakiLog(), "Frame tap on: copying every video frame to shared memory " FRAMETAP_NAME);
+#else
+	// POSIX shared memory is "/" and what follows the name's last backslash (frametap_posix.h)
+	const char *name = getenv("CHIAKI_FRAMETAP_NAME");
+	if(!name || !name[0] || strlen(name) > 200)
+		name = FRAMETAP_NAME;
+	const char *leaf = strrchr(name, '\\');
+	leaf = leaf ? leaf + 1 : name;
+	while(*leaf == '/')
+		leaf++;
+	CHIAKI_LOGI(session->GetChiakiLog(), "Frame tap on: copying every video frame to shared memory /%s", leaf);
+#endif
 	chiaki_session_set_video_sample_cb(chiaki_session, VideoSample, session);
 #ifdef _WIN32
 	// SmoovPlay's video window opens as the stream starts, while chiaki-ng (where the player just pressed connect)

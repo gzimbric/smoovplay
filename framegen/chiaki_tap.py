@@ -13,7 +13,7 @@ Compared with a capture card, each frame also carries what the stream knows abou
     scenes).
   - damaged: frames were lost before this one, or it's the PS5's recovery frame after a loss. The pipeline
     holds instead of interpolating, so a broken frame isn't smeared into the generated one.
-Windows and Linux: the operating system parts are in tapsys.py.
+Windows, Linux and macOS, with the operating system parts in tapsys.py.
 """
 
 from __future__ import annotations

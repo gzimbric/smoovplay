@@ -1,7 +1,8 @@
-"""Build selftest.c against frametap.c with gcc (MSYS2's on Windows) and check its frames with the Python reader.
+"""Build selftest.c against frametap.c (MSYS2's gcc on Windows, gcc on Linux, clang on macOS) and check its frames
+with the Python reader.
 
     .venv\\Scripts\\python chiaki_tap\\selftest.py [MSYS2 folder, default C:\\msys64]
-    .venv/bin/python chiaki_tap/selftest.py          (Linux)
+    .venv/bin/python chiaki_tap/selftest.py          (Linux and macOS)
 
 Verifies the C writer (what runs inside chiaki-ng) and framegen/chiaki_tap.py agree on every byte: header
 fields, frame data, sizes, loss/recovered flags, the keyframe-request flag, the delay test's button press, the
@@ -20,6 +21,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 from framegen.chiaki_tap import (AUDIO_SUFFIX, BUTTON_OPTIONS, FEATURE_AUDIO_DELAY, FEATURE_AUDIO_TAP,  # noqa: E402
                                  FEATURE_PRESS, AudioTap, FrameTap)
+from framegen.tapsys import unlink  # noqa: E402
 
 NAME = r"Local\chiaki-frametap-selftest"
 
@@ -31,8 +33,8 @@ def main() -> int:
         exe = Path(tempfile.gettempdir()) / "frametap_selftest.exe"
         env = dict(os.environ, PATH=str(gcc.parent) + os.pathsep + os.environ["PATH"], CHIAKI_FRAMETAP_NAME=NAME)
         extra = []
-    else:  # Linux: the system's gcc (or $CC)
-        gcc = os.environ.get("CC", "gcc")
+    else:  # the system's gcc on Linux, Apple's clang on macOS (or $CC)
+        gcc = os.environ.get("CC", "clang" if sys.platform == "darwin" else "gcc")
         exe = Path(tempfile.gettempdir()) / "frametap_selftest"
         env = dict(os.environ, CHIAKI_FRAMETAP_NAME=NAME)
         extra = ["-D_GNU_SOURCE"]
@@ -88,6 +90,7 @@ def main() -> int:
     print(f"OK: 40 frames and 21 chunks of sound byte-identical, flags and timestamps right, keyframe request, "
           f"press and sound delay "
           f"({out.strip()})")
+    unlink(NAME, NAME + AUDIO_SUFFIX)  # on Linux and macOS it would otherwise stay until a restart
     return 0
 
 
