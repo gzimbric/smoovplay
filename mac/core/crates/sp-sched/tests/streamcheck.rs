@@ -1,6 +1,6 @@
-//! tests/test_streamcheck.py, ported: the same made-up streams (through the real size check, which is sp-tap's, so
-//! the rows it gave come from fixtures/sched/streamcheck.json), the same assertions, and the report must be the
-//! Python's line for line.
+//! tests/test_streamcheck.py, ported with the same made-up streams and assertions. The report must be the Python's
+//! line for line. The streams went through the real size check, which is sp-tap's, so the rows it gave come from
+//! fixtures/sched/streamcheck.json.
 
 use std::sync::OnceLock;
 
@@ -26,7 +26,7 @@ fn f(v: &Value) -> f64 {
     })
 }
 
-/// The case's rows through the Rust StreamCheck; its report, checked against the Python's.
+/// Runs the case's rows through the Rust StreamCheck and checks its report against the Python's.
 fn play(name: &str) -> Option<Vec<String>> {
     let Some(c) = cases() else {
         eprintln!("no fixtures: run tools/sched_traces.py first");

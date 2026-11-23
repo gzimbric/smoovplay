@@ -1,7 +1,7 @@
-//! Remote Play stream check (framegen/streamcheck.py): how well the size-based repeat check read a real game, in
-//! plain words. It keeps what the stream and the picture check already measured, one row per frame, and report()
-//! turns them into lines: the game's frame rate, the rhythm and its breaks (each tied to what was around it), the
-//! picture's view of likely misreads, the sizes, the arrival times and a verdict. The arithmetic is numpy's
+//! The Remote Play stream check (framegen/streamcheck.py). It says in plain words how well the size-based repeat
+//! check read a real game. It keeps what the stream and the picture check already measured, one row per frame, and
+//! report() turns them into lines: the game's frame rate, the rhythm and its breaks (each tied to what was around
+//! it), the picture's view of likely misreads, the sizes, the arrival times and a verdict. The arithmetic is numpy's
 //! (crate::np), so the text matches the Python's.
 
 use sp_core::Tick;
@@ -10,9 +10,9 @@ use crate::cadence::FrameDiff;
 use crate::np;
 
 pub const TICK_MS: f64 = 1000.0 / 60.0;
-/// The first 30 minutes; a check needs about 5.
+/// The first 30 minutes. A check needs about 5.
 pub const MAX_TICKS: usize = 30 * 60 * 60;
-/// size / typical new frame, around the size check's 0.4: where size can't really tell.
+/// The range of size over a typical new frame, around the size check's 0.4, where size can't really tell.
 pub const AMBIGUOUS: (f64, f64) = (0.25, 0.6);
 /// Frames calibrated together for the picture's view (1 s).
 pub const STRETCH: usize = 60;
@@ -157,29 +157,29 @@ fn verdict(
     format!("Verdict: the size check misread this 30 fps game too often ({reads}). Please send this report")
 }
 
-/// One row per Remote Play frame the pipeline saw; report() turns them into plain-language lines.
+/// One row per Remote Play frame the pipeline saw. report() turns them into plain-language lines.
 #[derive(Clone, Debug)]
 pub struct StreamCheck {
     pub max_ticks: usize,
-    /// Arrival, s.
+    /// Arrival time, in seconds.
     pub t: Vec<f64>,
-    /// The tap's frame number: a jump means frames never reached the pipeline.
+    /// The tap's frame number. A jump means frames never reached the pipeline.
     pub seq: Vec<i64>,
     /// Compressed bytes.
     pub size: Vec<i64>,
-    /// The typical new frame size the check compared with (NaN: keyframe, warm-up).
+    /// The typical new frame size the check compared with, or NaN for a keyframe or during warm-up.
     pub reference: Vec<f64>,
-    /// Size check: 1 new, 0 repeat, -1 undecided (the picture check decided).
+    /// The size check's call: 1 new, 0 repeat, -1 undecided (the picture check decided).
     pub decision: Vec<i8>,
     /// Keyframe, or a frame so big it was treated as one.
     pub key: Vec<bool>,
     /// Frames were lost before it, or it's the PS5's recovery frame.
     pub lost: Vec<bool>,
-    /// The picture check: average change from the frame before (0-255)...
+    /// The picture check's average change from the frame before, 0 to 255.
     pub mean_diff: Vec<f64>,
-    /// ...and the biggest change anywhere in the picture.
+    /// The picture check's biggest change anywhere in the picture.
     pub max_diff: Vec<f64>,
-    /// Frames played with "Simulate a 30 fps game" on: not part of the check.
+    /// Frames played with "Simulate a 30 fps game" on, which are not part of the check.
     pub simulated: usize,
     /// Frames past max_ticks.
     pub extra: usize,
@@ -237,8 +237,8 @@ impl StreamCheck {
         self.max_diff.push(if max_diff.is_finite() { max_diff } else { f64::NAN });
     }
 
-    /// From the pipeline's on_tick: a Remote Play tick (its extra: seq, size, size_ref, size_new, keyframe, big,
-    /// frames_lost, recovered) and the picture check's FrameDiff.
+    /// Adds a row from the pipeline's on_tick, given a Remote Play tick and the picture check's FrameDiff. The tick's
+    /// extra holds seq, size, size_ref, size_new, keyframe, big, frames_lost and recovered.
     pub fn add_tick(&mut self, tick: &Tick, diff: &FrameDiff) {
         if tick.truth_new.is_some() {
             self.simulated += 1; // test mode replaced this frame
@@ -331,7 +331,7 @@ impl StreamCheck {
         let (miss, extra_new, checked) = picture_flags(dec, md, mx, key);
         let looks: Vec<bool> = (0..n).map(|i| miss[i] || extra_new[i]).collect();
 
-        // The rhythm: consecutive frames, both decided, nothing missing between them.
+        // The rhythm, over consecutive frames that are both decided with nothing missing between them.
         let ok: Vec<bool> = (0..n - 1).map(|i| step[i] == 1 && dec[i + 1] >= 0 && dec[i] >= 0).collect();
         let pairs = count(ok.iter().copied());
         let alt = count((0..n - 1).map(|i| ok[i] && dec[i] != dec[i + 1]));
@@ -387,7 +387,7 @@ impl StreamCheck {
                 } else if checked[i] && checked[i - 1] {
                     5
                 } else {
-                    6 // a near-still stretch: the picture can't separate them either
+                    6 // a near-still stretch, where the picture can't separate them either
                 };
                 causes[k] += 1;
             }

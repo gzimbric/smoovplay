@@ -1,15 +1,17 @@
 //! Files standing in for a card (capture.py CardSource.video_file and raw_file), played at their own rate from when
 //! the pipeline starts reading, through the same per-frame path as a card's frames ([`crate::pipe`]).
 //!
-//! - [`CardSource::video_file`]: any video AVFoundation reads (H.264, HEVC, ProRes... in .mp4 or .mov), decoded by
-//!   AVAssetReader straight into NV12 and read in the file's own colours (its matrix and range tags; untagged is
-//!   BT.601 limited range, as FFmpeg takes it). That's the picture the Python's stand-in ends up with: it reformats
-//!   the recording into the raw path's colours and reads it back with them, a round trip (so --capture-colour
-//!   doesn't change a stand-in there either). Each picture is handed on as a card's would be. Its sound,
-//!   16-bit PCM at the file's own rate (two channels at most), waits until the picture gets to it, in pieces of at
-//!   most 1024 sample frames (an AAC frame, what PyAV hands the Python), so it comes out with its picture.
-//! - [`CardSource::raw_file`]: raw frames as a card sends them (nv12, yuyv422, uyvy422, bgr0), at `fps`.
-//! - [`CardSource::raw_frames`]: the same from memory, None for a frame the card sent damaged (for tests).
+//! - [`CardSource::video_file`] takes any video AVFoundation reads, such as H.264, HEVC or ProRes in .mp4 or .mov.
+//!   AVAssetReader decodes it straight into NV12, read in the file's own colours from its matrix and range tags.
+//!   Untagged is BT.601 limited range, as FFmpeg takes it. That's the picture the Python's stand-in ends up with. It
+//!   reformats the recording into the raw path's colours and reads it back with them, a round trip, so
+//!   --capture-colour doesn't change a stand-in there either. Each picture is handed on as a card's would be. Its
+//!   sound, 16-bit PCM at the file's own rate (two channels at most), waits until the picture gets to it. It goes in
+//!   pieces of at most 1024 sample frames, an AAC frame and what PyAV hands the Python, so it comes out with its
+//!   picture.
+//! - [`CardSource::raw_file`] reads raw frames as a card sends them (nv12, yuyv422, uyvy422, bgr0), at `fps`.
+//! - [`CardSource::raw_frames`] does the same from memory, with None for a frame the card sent damaged. It's for
+//!   tests.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::sync_channel;
@@ -57,7 +59,7 @@ fn err(e: impl std::fmt::Display) -> sp_core::Error {
     sp_core::Error::Other(e.to_string())
 }
 
-/// AVAssetReader's output settings for video: NV12 in the range the raw path reads it as, IOSurface-backed.
+/// AVAssetReader's output settings for video. NV12, IOSurface-backed, in the range the raw path reads it as.
 fn video_settings(full_range: bool) -> CFRetained<objc2_core_foundation::CFDictionary> {
     let empty = cf::dict(&[]);
     let pf = cf::num(if full_range { NV12_FULL } else { NV12_VIDEO } as i64);
@@ -70,7 +72,7 @@ fn video_settings(full_range: bool) -> CFRetained<objc2_core_foundation::CFDicti
     }
 }
 
-/// 16-bit interleaved linear PCM, `channels` channels, at `rate` (0: the source's).
+/// 16-bit interleaved linear PCM, `channels` channels, at `rate` (0 for the source's).
 pub(crate) fn pcm_settings(channels: u32, rate: f64) -> Retained<NSDictionary<NSString, AnyObject>> {
     unsafe {
         let mut keys: Vec<&NSString> = vec![
@@ -105,7 +107,7 @@ pub(crate) struct Readers {
     pub sound: Option<(Retained<AVAssetReader>, Retained<AVAssetReaderTrackOutput>)>,
 }
 
-/// A video track's own colours: (BT.709, full range), from its format description's tags.
+/// A video track's own colours as (BT.709, full range), from its format description's tags.
 fn track_colours(track: &AVAssetTrack) -> (bool, bool) {
     unsafe {
         let first = track.formatDescriptions().firstObject();
@@ -124,7 +126,7 @@ fn track_colours(track: &AVAssetTrack) -> (bool, bool) {
     }
 }
 
-#[allow(deprecated)] // (tracksWithMediaType: the async loader needs a run loop; this thread has none)
+#[allow(deprecated)] // tracksWithMediaType, because the async loader needs a run loop and this thread has none
 pub(crate) fn open_readers(path: &Path, want_sound: bool) -> Result<(Readers, Meta), String> {
     unsafe {
         let abs = std::fs::canonicalize(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -184,7 +186,7 @@ fn seconds(t: objc2_core_media::CMTime) -> Option<f64> {
     s.is_finite().then_some(s)
 }
 
-/// Hands the picture's sound to the pipe, up to `until`: read from the file as far as needed, in pieces.
+/// Hands the picture's sound to the pipe, up to `until`. It's read from the file as far as needed, in pieces.
 struct SoundReader {
     out: Retained<AVAssetReaderTrackOutput>,
     _reader: Retained<AVAssetReader>,
@@ -213,8 +215,8 @@ impl SoundReader {
 }
 
 impl CardSource {
-    /// A recording standing in for a card: decoded and sent through the raw NV12 path, at its own rate, its sound
-    /// (if `opts.audio`) held until the picture gets to it.
+    /// A recording standing in for a card, decoded and sent through the raw NV12 path at its own rate. With
+    /// `opts.audio`, its sound is held until the picture gets to it.
     pub fn video_file(path: &Path, opts: CardOptions) -> sp_core::Result<CardSource> {
         if !path.exists() {
             return Err(sp_core::Error::Io(std::io::Error::new(std::io::ErrorKind::NotFound, path.display().to_string())));
@@ -263,8 +265,8 @@ impl CardSource {
         Ok(src)
     }
 
-    /// Raw frames read exactly as a card's are (capture.py CardSource.raw_file): `fmt` nv12, yuyv422, uyvy422 or
-    /// bgr0, `w` x `h`, at `fps`.
+    /// Raw frames read exactly as a card's are (capture.py CardSource.raw_file). `fmt` is nv12, yuyv422, uyvy422 or
+    /// bgr0, the size is `w` x `h`, and they play at `fps`.
     pub fn raw_file(path: &Path, w: usize, h: usize, fmt: &str, fps: f64, opts: CardOptions) -> sp_core::Result<CardSource> {
         let data = std::fs::read(path)?;
         let n = frame_bytes(fmt, w, h)?;
@@ -272,7 +274,7 @@ impl CardSource {
         Self::raw_source(frames, w, h, fmt, fps, opts, "Capture card (a raw file standing in)")
     }
 
-    /// Raw frames from memory, as raw_file reads them; None for a frame the card sent that can't be read.
+    /// Raw frames from memory, as raw_file reads them. None stands for a frame the card sent that can't be read.
     pub fn raw_frames(frames: Vec<Option<Vec<u8>>>, w: usize, h: usize, fmt: &str, fps: f64, opts: CardOptions) -> sp_core::Result<CardSource> {
         frame_bytes(fmt, w, h)?;
         Self::raw_source(frames, w, h, fmt, fps, opts, "Capture card (raw frames standing in)")
@@ -308,7 +310,7 @@ fn frame_bytes(fmt: &str, w: usize, h: usize) -> sp_core::Result<usize> {
     Ok((w as f64 * h as f64 * bpp.ok_or_else(|| err(format!("can't read raw {fmt} frames")))?) as usize)
 }
 
-/// A card delivers on the HDMI clock: frame n of something standing in goes out at t0 + n / fps.
+/// A card delivers on the HDMI clock, so frame n of something standing in goes out at t0 + n / fps.
 fn pace(t0: f64, n: u64, fps: f64) -> Option<f64> {
     let wait = t0 + n as f64 / fps - now();
     if wait > 0.0 {
@@ -330,7 +332,7 @@ fn play_raw(pipe: &Pipe, frames: Vec<Option<Vec<u8>>>, fmt: &str) {
         if let Some(t) = pace(t0, n, pipe.fps) {
             t_arrival = t;
         }
-        let t_src = Some(n as f64 / pipe.fps); // the "card's" clock
+        let t_src = Some(n as f64 / pipe.fps); // the clock of the card it stands in for
         let (w, h, bt709, full) = (pipe.w, pipe.h, pipe.bt709, pipe.full_range);
         let r = pipe.frame(t_arrival, t_src, |conv| match &f {
             Some(data) => convert_raw(conv, data, fmt, w, h, bt709, full),
@@ -354,7 +356,7 @@ fn play_file(pipe: &Pipe, readers: Readers, fps: f64) {
         let Some(sb) = (unsafe { vout.copyNextSampleBuffer() }) else { break };
         let sb: &CMSampleBuffer = &sb;
         if unsafe { sb.num_samples() } == 0 {
-            continue; // (a marker, no picture)
+            continue; // a marker, no picture
         }
         let t_src = seconds(unsafe { sb.presentation_time_stamp() }).unwrap_or(n as f64 / fps);
         let mut t_arrival = now();

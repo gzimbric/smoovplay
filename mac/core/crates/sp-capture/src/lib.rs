@@ -1,31 +1,38 @@
 //! Capture cards for SmoovPlay's macOS core (Experimental), ported from framegen/capture.py and framegen/audio.py.
 //!
-//! - [`CardSource`]: a card as an sp_core::Source, read through AVFoundation (an AVCaptureSession whose video data
-//!   output hands over IOSurface-backed CVPixelBuffers in the card's own format where it's NV12, timed by the
-//!   session's clock), turned into BGRA8 frames by sp-media's [`sp_media::Converter`] with capture.py raw_to_bgr's
-//!   maths. Test mode, Waiting while no frames come, dropped and damaged counts, and the card's sound from the same
-//!   session, played through [`Player`] and kept for instant replay ([`sp_core::Source::read_sound`]).
-//! - Stand-ins, through the same per-frame path ([`pipe`]): [`CardSource::video_file`] (any video file AVFoundation
-//!   reads, at its own rate, its sound held until the picture gets to it), [`CardSource::raw_file`] and
-//!   [`CardSource::raw_frames`] (raw frames as a card sends them).
-//! - [`devices`]: the Mac's capture devices and their modes, [`pick_mode`] and [`pick_audio`], and the JSON of
-//!   `python -m framegen.capture --list --json` / `--formats NAME --json` ([`cli`]).
-//! - [`audio`]: the DelayLine that holds the sound back to meet the picture, and [`sound_report`].
-//! - [`open_capture`]: run.py's `--capture` (a card by name, unique ID or number, or a file), with its sound
+//! - [`CardSource`] is a card as an sp_core::Source, read through AVFoundation. An AVCaptureSession's video data
+//!   output hands over IOSurface-backed CVPixelBuffers, timed by the session's clock and in the card's own format
+//!   where it's NV12. sp-media's [`sp_media::Converter`] turns them into BGRA8 frames with capture.py raw_to_bgr's
+//!   maths. It also has test mode, Waiting while no frames come, dropped and damaged counts, and the card's sound
+//!   from the same session, played through [`Player`] and kept for instant replay ([`sp_core::Source::read_sound`]).
+//! - Stand-ins go through the same per-frame path ([`pipe`]). [`CardSource::video_file`] plays any video file
+//!   AVFoundation reads at its own rate, with its sound held until the picture gets to it. [`CardSource::raw_file`]
+//!   and [`CardSource::raw_frames`] take raw frames as a card sends them.
+//! - [`devices`] has the Mac's capture devices and their modes, [`pick_mode`] and [`pick_audio`]. [`cli`] gives the
+//!   JSON of `python -m framegen.capture --list --json` and `--formats NAME --json`.
+//! - [`audio`] has the DelayLine that holds the sound back to meet the picture, and [`sound_report`].
+//! - [`open_capture`] is run.py's `--capture` (a card by name, unique ID or number, or a file), with its sound
 //!   device picked.
-//! - examples: `capture` (`--list [--json]`, `--formats NAME [--json]`) and `card_check` (reads a card or a file
-//!   for a while and says how it went: frame rate, drops, damaged frames, lateness, sound).
+//! - The examples are `capture` (`--list [--json]`, `--formats NAME [--json]`) and `card_check`, which reads a card
+//!   or a file for a while and says how it went: frame rate, drops, damaged frames, lateness, sound.
 //!
-//! Checked without a card (tests/): pick_mode and pick_audio against the Python on 339 and 32 cases, the DelayLine
-//! byte for byte against the Python's on seven traces, the stand-ins' frames against the Python's (PyAV's decode
-//! read with raw_to_bgr, within a level), the sound's timing against the picture (within a frame), the outputs'
-//! delegates with a file's sample buffers through Objective-C, and the Player on the Mac's output (silence).
+//! The tests in tests/ need no card. They check pick_mode and pick_audio against the Python on 339 and 32 cases, and
+//! the DelayLine byte for byte against the Python's on seven traces. The stand-ins' frames match the Python's
+//! (PyAV's decode read with raw_to_bgr) to within a level, and the sound's timing matches the picture to within a
+//! frame. The outputs' delegates get a file's sample buffers through Objective-C, and the Player plays silence on
+//! the Mac's output.
 //!
-//! Only a real card can show (live testing is for later; nothing here opens a camera or microphone): what its
-//! formats look like to AVFoundation (whether 420v/420f/yuvs/dmb1 are listed per size and rate, and which pick_mode
-//! takes), that the session keeps the format and frame rate asked for, the session clock's timestamps (frames'
-//! lateness, sound against picture), whether its sound comes as its own device or on the video device, drops and
-//! breaks macOS reports, MJPEG decoded by macOS, the camera and microphone prompts, and unplugging it while playing.
+//! Live testing is for later, and nothing here opens a camera or microphone. Only a real card can show:
+//!
+//! - what its formats look like to AVFoundation, whether 420v, 420f, yuvs and dmb1 are listed per size and rate,
+//!   and which one pick_mode takes
+//! - that the session keeps the format and frame rate asked for
+//! - the session clock's timestamps, for frames' lateness and sound against picture
+//! - whether its sound comes as its own device or on the video device
+//! - drops and breaks macOS reports
+//! - MJPEG decoded by macOS
+//! - the camera and microphone prompts
+//! - unplugging it while playing
 
 pub mod audio;
 pub mod cli;

@@ -3,9 +3,10 @@
 //!     cargo run --release -p sp-media --example tap_dump -- 'Local\NAME' [--test-mode] [--ticks N] [--wait S]
 //!         [--hdr sdr8|pq16] [--jsonl OUT] [--quiet]
 //!
-//! Compressed frames (chiaki-ng, the fake PS5) go through ChiakiSource; decoded frames through TapSource (open_tap
-//! picks). --jsonl writes one JSON line per tick with the fields mac/core/tools/media_ticks.py writes for the Python
-//! reader, for comparing the two. At the end: decode time and delay (arrival to the pipeline) p50/p95, and counts.
+//! Compressed frames (chiaki-ng, the fake PS5) go through ChiakiSource and decoded frames through TapSource, as
+//! open_tap picks. --jsonl writes one JSON line per tick with the fields mac/core/tools/media_ticks.py writes for the
+//! Python reader, for comparing the two. At the end it prints decode time and delay (arrival to the pipeline) at p50
+//! and p95, and counts.
 
 use std::io::Write;
 

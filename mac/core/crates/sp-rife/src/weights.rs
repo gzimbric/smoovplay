@@ -1,7 +1,8 @@
-//! RIFE checkpoints as vs-rife publishes them (flownet_v{version}.pkl): a `torch.save` zip archive holding a pickled
-//! dict of tensor names to tensors (data.pkl) and each tensor's bytes (data/N). Read here without Python: a reader
-//! for the zip's stored (uncompressed) entries, which is all torch.save writes, and a small unpickler that knows the
-//! opcodes and the two callables (`collections.OrderedDict`, `torch._utils._rebuild_tensor_v2`) such a dict uses.
+//! RIFE checkpoints as vs-rife publishes them (flownet_v{version}.pkl). Each is a `torch.save` zip archive holding a
+//! pickled dict of tensor names to tensors (data.pkl) and each tensor's bytes (data/N). This reads them without
+//! Python. It has a reader for the zip's stored (uncompressed) entries, which is all torch.save writes, and a small
+//! unpickler that knows the opcodes and the two callables such a dict uses, `collections.OrderedDict` and
+//! `torch._utils._rebuild_tensor_v2`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -33,12 +34,12 @@ pub fn default_model_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("SMOOVPLAY_MODELS") {
         return PathBuf::from(dir);
     }
-    // crates/sp-rife -> mac/core -> mac -> repo root
+    // four levels up from mac/core/crates/sp-rife is the repo root
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../models")
 }
 
-/// The checkpoint for `version` in `dir`, downloaded first if it isn't there (with curl, as the Python does when
-/// its own download fails, so the Mac's TLS inspection proxy and system certificates apply).
+/// The checkpoint for `version` in `dir`, downloaded first if it isn't there. The download uses curl, as the Python
+/// does when its own download fails, so the Mac's TLS inspection proxy and system certificates apply.
 pub fn ensure_weights(version: &str, dir: &Path) -> Result<PathBuf> {
     ensure_weights_from(version, dir, WEIGHTS_URL)
 }
@@ -103,7 +104,7 @@ fn u32_at(b: &[u8], o: usize) -> std::result::Result<usize, String> {
 
 impl<'a> Zip<'a> {
     fn parse(bytes: &'a [u8]) -> std::result::Result<Zip<'a>, String> {
-        // The end of central directory record: 22 bytes plus a comment of up to 64 KiB, at the very end.
+        // The end of central directory record is 22 bytes plus a comment of up to 64 KiB, at the very end.
         let lo = bytes.len().saturating_sub(22 + 65535);
         let eocd = (lo..bytes.len().saturating_sub(21))
             .rev()
@@ -399,7 +400,7 @@ fn unpickle(b: &[u8]) -> std::result::Result<Value, String> {
                 stack.push(v)
             }
             b'b' => {
-                stack.pop().ok_or("stack underflow")?; // BUILD: the state (a dict's metadata) isn't needed
+                stack.pop().ok_or("stack underflow")?; // BUILD, whose state (a dict's metadata) isn't needed
             }
             b's' => {
                 let v = stack.pop().ok_or("stack underflow")?;

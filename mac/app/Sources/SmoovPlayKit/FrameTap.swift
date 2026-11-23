@@ -1,6 +1,7 @@
-// A frame tap writer for decoded frames (docs/frame-tap.md, layout version 2): the app's window capture hands each
-// picture to the core this way, as any app may. POSIX shared memory "/" + the name, 4096 + 64 MiB, created by
-// whichever side comes first and never removed; the reader polls write_seq, so there's no event.
+// A frame tap writer for decoded frames (docs/frame-tap.md, layout version 2). The app's window capture hands each
+// picture to the core this way, as any app may. The tap is POSIX shared memory named "/" plus the tap's name,
+// 4096 + 64 MiB, created by whichever side comes first and never removed. The reader polls write_seq, so there's
+// no event.
 //
 // Header (little-endian): 0 magic 'CFTP', 4 version, 8 slot_count, 12 slot_size, 16 codec, 20 width, 24 height,
 // 28 max_fps, 32 u64 write_seq, 40 idr_request, 44 session, 48 u64 qpc_freq, 56 u64 reader_heartbeat,
@@ -25,8 +26,8 @@ public final class FrameTapWriter: @unchecked Sendable {
 
     public struct TapError: Error, CustomStringConvertible { public let description: String }
 
-    /// "/" + what follows the name's last backslash ("Local\smoovplay-tap" is "/smoovplay-tap"), checked to leave
-    /// room for the sound ring's "-audio", as framegen/chiaki_tap.py check_name does.
+    /// "/" plus what follows the name's last backslash ("Local\smoovplay-tap" becomes "/smoovplay-tap"). It's
+    /// checked to leave room for the sound ring's "-audio", as framegen/chiaki_tap.py check_name does.
     public static func posixName(_ name: String) throws -> String {
         let base = String(name.split(separator: "\\", omittingEmptySubsequences: false).last ?? "")
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -40,8 +41,8 @@ public final class FrameTapWriter: @unchecked Sendable {
         return full
     }
 
-    /// (slot_count, slot_size) for frames of this many bytes: slots a whole number of MiB that hold one frame and
-    /// its slot header, as many as fit (at most 32), at least 4 (framegen.chiaki_tap.raw_layout).
+    /// (slot_count, slot_size) for frames of this many bytes (framegen.chiaki_tap.raw_layout). Each slot is a whole
+    /// number of MiB and holds one frame and its slot header. There are as many as fit, at most 32 and at least 4.
     public static func rawLayout(frameBytes: Int) throws -> (count: Int, size: Int) {
         let need = slotHeader + frameBytes
         let mib = 1 << 20
@@ -108,9 +109,9 @@ public final class FrameTapWriter: @unchecked Sendable {
         written = 0
     }
 
-    /// One frame: `height` rows of `width * 4` bytes (BGRA), each `bytesPerRow` apart in `pixels`. new: the
-    /// writer's word on it (true new content, false a repeat of the frame before, nil not known). at: when the
-    /// frame was made, in CLOCK_UPTIME_RAW nanoseconds (default now).
+    /// Writes one frame, `height` rows of `width * 4` bytes (BGRA), each `bytesPerRow` apart in `pixels`. new is
+    /// the writer's word on it: true for new content, false for a repeat of the frame before, nil if not known. at
+    /// is when the frame was made, in CLOCK_UPTIME_RAW nanoseconds, and defaults to now.
     public func push(pixels: UnsafeRawPointer, bytesPerRow: Int, new: Bool?, at: UInt64? = nil) {
         lock.lock()
         defer { lock.unlock() }
@@ -141,7 +142,7 @@ public final class FrameTapWriter: @unchecked Sendable {
         written += 1
     }
 
-    /// Ends the stream: magic 0 (the reader says "the app stopped sending frames").
+    /// Ends the stream by setting magic to 0. The reader then says "the app stopped sending frames".
     public func end() {
         lock.lock()
         defer { lock.unlock() }
@@ -166,7 +167,7 @@ public final class FrameTapWriter: @unchecked Sendable {
         base = nil
     }
 
-    /// Removes the shared memory (tests: the tap is otherwise left for the next reader or writer).
+    /// Removes the shared memory, for tests. Otherwise the tap is left for the next reader or writer.
     public static func unlink(_ name: String) {
         guard let p = try? posixName(name) else { return }
         _ = p.withCString { sp_shm_unlink($0) }

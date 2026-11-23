@@ -1,5 +1,5 @@
-//! The MPSGraph layers against a plain CPU reference (PyTorch's Conv2d / ConvTranspose2d semantics), on small random
-//! tensors: checks layouts (NHWC data, OIHW weights, the transposed convolution's weight order) and padding.
+//! The MPSGraph layers against a plain CPU reference with PyTorch's Conv2d and ConvTranspose2d semantics, on small
+//! random tensors. Checks layouts (NHWC data, OIHW weights, the transposed convolution's weight order) and padding.
 
 use half::f16;
 use objc2_metal::{MTLBuffer, MTLCommandBuffer};
@@ -18,7 +18,7 @@ impl Rng {
     }
 }
 
-/// x: (h, w, c) NHWC. Returns (oh, ow, cout).
+/// `x` is (h, w, c), NHWC. The output is (oh, ow, cout).
 fn conv_ref(x: &[f32], h: usize, w: usize, c: &Conv) -> (Vec<f32>, usize, usize) {
     let oh = (h + 2 * c.pad - c.k) / c.stride + 1;
     let ow = (w + 2 * c.pad - c.k) / c.stride + 1;
@@ -47,7 +47,7 @@ fn conv_ref(x: &[f32], h: usize, w: usize, c: &Conv) -> (Vec<f32>, usize, usize)
     (out, oh, ow)
 }
 
-/// PyTorch ConvTranspose2d: weights (cin, cout, k, k).
+/// PyTorch's ConvTranspose2d, with weights (cin, cout, k, k).
 fn deconv_ref(x: &[f32], h: usize, w: usize, c: &Conv) -> (Vec<f32>, usize, usize) {
     let oh = (h - 1) * c.stride + c.k - 2 * c.pad;
     let ow = (w - 1) * c.stride + c.k - 2 * c.pad;

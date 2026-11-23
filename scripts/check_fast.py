@@ -1,4 +1,4 @@
-"""Verify FastIFNet matches the reference vs-rife forward on real frame pairs (on this machine's GPU: CUDA, or Apple's
+"""Verify FastIFNet matches the reference vs-rife forward on real frame pairs, on this machine's GPU (CUDA, or Apple's
 through Metal, framegen/gpu.py). On Apple's GPU it also checks MetalIFNet (framegen/metalrife.py), the engine the
 Mac runs, against the same reference.
 

@@ -1,16 +1,17 @@
 #!/bin/bash
-# Builds build/SmoovPlay.app from this package: the release binary, an Info.plist, the icon (docs/brand's SVG, or
-# installer/icon's PNGs without rsvg-convert), signed ad hoc from the inside out, then checked.
+# Builds build/SmoovPlay.app from this package, with the release binary, an Info.plist and the icon (docs/brand's
+# SVG, or installer/icon's PNGs without rsvg-convert). It's signed from the inside out (ad hoc unless there's an
+# identity, see Signing below), then checked.
 #
 #   ./bundle.sh            # build/SmoovPlay.app
-#   ./bundle.sh --open     # ...and open it
+#   ./bundle.sh --open     # build it and open it
 #   ./bundle.sh --debug    # a debug build (faster to build)
 #
-# Signing: SIGN_IDENTITY picks the code-signing identity (a name or SHA-1 from `security find-identity -v -p
-# codesigning`); unset or "auto", the keychain's first Apple Development identity, else ad hoc; "-" forces ad hoc.
-# A real identity matters while testing window capture: macOS ties the Screen Recording permission to the app's
-# signature, and an ad hoc signature changes with every build, so each new build would have to be allowed again.
-# The first signing with a keychain identity asks to use its key: Always Allow makes that once.
+# Signing: SIGN_IDENTITY picks the code-signing identity, a name or SHA-1 from `security find-identity -v -p
+# codesigning`. Unset or "auto" picks the keychain's first Apple Development identity, else ad hoc. "-" forces ad
+# hoc. A real identity matters while testing window capture. macOS ties the Screen Recording permission to the
+# app's signature, and an ad hoc signature changes with every build, so each new build would have to be allowed
+# again. The first signing with a keychain identity asks to use its key, and Always Allow means it asks only once.
 # Uses Xcode's toolchain when it's there (DEVELOPER_DIR), else the command line tools.
 set -euo pipefail
 
@@ -42,7 +43,7 @@ rm -rf "$NEW"
 mkdir -p "$NEW/Contents/MacOS" "$NEW/Contents/Resources"
 cp "$BIN" "$NEW/Contents/MacOS/SmoovPlay"
 
-# ---- the icon: a Mac icon's body is 824 of its 1024 pixels, so the brand's square goes in that much smaller
+# ---- the icon. A Mac icon's body is 824 of its 1024 pixels, so the brand's square goes in that much smaller
 ICONSET="$OUT/AppIcon.iconset"
 rm -rf "$ICONSET"
 mkdir -p "$ICONSET"
@@ -97,7 +98,7 @@ cat > "$NEW/Contents/Info.plist" <<EOF
 EOF
 plutil -lint "$NEW/Contents/Info.plist" >/dev/null
 
-# ---- sign from the inside out (there's one binary), then the app; check it
+# ---- sign from the inside out (there's one binary), then the app, and check it
 IDENTITY="${SIGN_IDENTITY:-auto}"
 if [[ "$IDENTITY" == auto ]]; then
     IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development: /{print $2; exit}')"

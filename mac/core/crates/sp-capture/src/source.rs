@@ -13,8 +13,8 @@ use crate::devices::{self, g, pick_audio, pick_mode, Device, Mode};
 use crate::pipe::{Pipe, SoundFactory, DAMAGED_GIVE_UP_S};
 use crate::session::Live;
 
-/// How to read the card's colours: auto (limited range unless the card says full; BT.709 from 720 lines up, BT.601
-/// below, as video players assume), or as given.
+/// How to read the card's colours, auto or as given. Auto is limited range unless the card says full, with BT.709
+/// from 720 lines up and BT.601 below, as video players assume.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Colour {
     #[default]
@@ -49,7 +49,7 @@ pub struct CardOptions {
     /// Test mode ("Simulate a 30 fps game"), applied before the queue.
     pub test: Option<SharedTestMode>,
     pub colour: Colour,
-    /// Ticks queued for the pipeline; when it falls behind the oldest goes.
+    /// Ticks queued for the pipeline. When it falls behind the oldest goes.
     pub queue_size: usize,
     /// What plays the sound (a card's, or a file's standing in), or None for no sound.
     pub audio: Option<SoundFactory>,
@@ -63,13 +63,13 @@ impl Default for CardOptions {
     }
 }
 
-/// Frames from a capture card as Ticks: delivered on a thread of their own (the capture session's queue, or the
-/// stand-in's reader) and queued, not "latest only", which would break repeat detection; when the pipeline falls
-/// behind the oldest goes and is counted in [`CardSource::dropped`].
+/// Frames from a capture card as Ticks. They're delivered on a thread of their own (the capture session's queue, or
+/// the stand-in's reader) and queued, because keeping only the latest would break repeat detection. When the pipeline
+/// falls behind the oldest goes and is counted in [`CardSource::dropped`].
 ///
-/// Open a card with [`CardSource::open`] (or [`open_capture`], run.py's way). Files stand in for one, played at their
-/// own rate from when the pipeline starts reading: [`CardSource::video_file`] (any video, its sound too),
-/// [`CardSource::raw_file`] and [`CardSource::raw_frames`] (raw frames read exactly as a card's are).
+/// Open a card with [`CardSource::open`], or with [`open_capture`] as run.py does. Files stand in for one, played at
+/// their own rate from when the pipeline starts reading. [`CardSource::video_file`] takes any video, its sound too.
+/// [`CardSource::raw_file`] and [`CardSource::raw_frames`] read raw frames exactly as a card's are read.
 pub struct CardSource {
     pub(crate) info: SourceInfo,
     pub(crate) pipe: Arc<Pipe>,
@@ -151,15 +151,15 @@ impl CardSource {
     pub fn can_press(&self) -> bool {
         false
     }
-    /// There's sound, and something plays it: the pipeline holds it back to meet the picture (Sound in sync).
+    /// There's sound and something plays it, so the pipeline holds it back to meet the picture (Sound in sync).
     pub fn can_delay_audio(&self) -> bool {
         self.pipe.can_delay_audio()
     }
-    /// How much later the sound arrives than the picture, after their own timestamps (0 if not known).
+    /// How much later the sound arrives than the picture, going by their own timestamps (0 if not known).
     pub fn sound_late_s(&self) -> f64 {
         self.pipe.sound_late_s()
     }
-    /// The once-a-minute sound line, now (for tests; None if nothing would be said is not distinguished).
+    /// Says the once-a-minute sound line now, for tests. It doesn't tell whether there was anything to say.
     pub fn report_sound(&self) {
         self.pipe.report_sound(false)
     }
@@ -194,7 +194,7 @@ impl Source for CardSource {
         if let (Some(Event::Waiting(_)), Some(l)) = (&ev, &self.live)
             && !l.connected()
         {
-            // the card went away: end the stream, as the Python's reader does when FFmpeg's read fails
+            // the card went away, so end the stream, as the Python's reader does when FFmpeg's read fails
             self.pipe.stop_with("the capture card was disconnected");
             return None;
         }
@@ -215,7 +215,7 @@ impl Source for CardSource {
         }
         self.closed = true;
         self.pipe.stop.store(true, Ordering::SeqCst);
-        self.pipe.start(); // (a stand-in still waiting for the pipeline)
+        self.pipe.start(); // a stand-in still waiting for the pipeline
         if let Some(l) = self.live.take() {
             l.stop();
         }
@@ -274,15 +274,15 @@ impl Default for CaptureArgs {
     }
 }
 
-/// Which sound device goes with the card (run.py open_capture): `audio` as --capture-audio gives it ("auto" picks
-/// by name, and failing that tries the card's own sound), among `devices`. None: no sound.
+/// Which sound device among `devices` goes with the card (run.py open_capture). `audio` is as --capture-audio gives
+/// it. "auto" picks by name, and failing that tries the card's own sound. None means no sound.
 pub fn pick_sound_device(card: &str, audio: &str, devices: &[Device], say: &mut dyn FnMut(String)) -> Option<String> {
     let names: Vec<&str> = devices.iter().filter(|d| d.kind == "audio").map(|d| d.name.as_str()).collect();
     match audio {
         "off" => None,
         "auto" => pick_audio(card, devices).or_else(|| {
-            // Some cards carry their sound on the video device itself, not as a sound device of their own:
-            // try that (CardSource::open plays the picture alone if not).
+            // Some cards carry their sound on the video device itself, not as a sound device of their own, so try
+            // that. CardSource::open plays the picture alone if not.
             say("[capture] no sound device named like the card: trying the card's own sound".into());
             Some(card.to_string())
         }),
@@ -291,18 +291,18 @@ pub fn pick_sound_device(card: &str, audio: &str, devices: &[Device], say: &mut 
     }
 }
 
-/// run.py open_capture: a card by name or number, or a file standing in for one. `sound`: what plays the card's
-/// sound (None, or --capture-audio off: the picture only).
+/// run.py open_capture. Opens a card by name or number, or a file standing in for one. `sound` is what plays the
+/// card's sound. None, or --capture-audio off, gives the picture only.
 pub fn open_capture(a: &CaptureArgs, sound: Option<SoundFactory>) -> Result<CardSource, String> {
     let colour = Colour::parse(&a.colour).ok_or_else(|| format!("--capture-colour {}: not a choice", a.colour))?;
     let sound = if a.audio == "off" { None } else { sound };
     let opts = |audio| CardOptions { test: a.test.clone(), colour, audio, ..Default::default() };
     if Path::new(&a.capture).is_file() {
-        // a recording standing in for a card: decoded, sent through the raw NV12 path
+        // a recording standing in for a card, decoded and sent through the raw NV12 path
         return CardSource::video_file(Path::new(&a.capture), opts(sound)).map_err(|e| e.to_string());
     }
     let devices = devices::list_devices();
-    // (opened by unique ID once known, as two devices can share a name; the sound device is picked by the name)
+    // Opened by unique ID once known, as two devices can share a name. The sound device is picked by the name.
     let (mut name, mut card) = (a.capture.clone(), a.capture.clone());
     if let Ok(i) = name.parse::<usize>() {
         let video: Vec<&Device> = devices.iter().filter(|d| d.kind == "video" || d.kind == "unknown").collect();

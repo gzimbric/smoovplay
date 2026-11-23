@@ -1,5 +1,5 @@
-//! Does MPSGraph run the blocks' first convolution as fast on 28 input channels (exactly what RIFE uses) as on 32
-//! (metalrife.py's padding)? Times block 1..3's whole stacks both ways at 1080p.
+//! Does MPSGraph run the blocks' first convolution as fast on 28 input channels, exactly what RIFE uses, as on the
+//! 32 metalrife.py pads to? Times the whole stacks of blocks 1 to 3 both ways at 1080p.
 
 use std::time::Instant;
 

@@ -1,14 +1,15 @@
-//! VideoToolbox decoding of H.264 and HEVC access units as the frame tap delivers them: Annex-B, the codec header
-//! (parameter sets) arriving on its own once per stream (the PS5 sends it out of band) or in-band with keyframes.
+//! VideoToolbox decoding of H.264 and HEVC access units as the frame tap delivers them. They come as Annex-B. The
+//! codec header (parameter sets) arrives on its own once per stream, as the PS5 sends it out of band, or in-band
+//! with keyframes.
 //!
-//! The decoder keeps the stream's parameter sets and makes its format description from them; each access unit's
-//! other NAL units go to VideoToolbox as one AVCC sample (4-byte big-endian lengths). Decoding is synchronous (no
-//! asynchronous or temporal-order flags), so each picture comes out before `decode` returns, in decode order (the
-//! PS5 and the fake PS5 send no B-frames). Pictures come out as IOSurface-backed, Metal-compatible CVPixelBuffers:
-//! NV12 ('420v' / '420f') for 8-bit streams and P010 ('x420' / 'xf20') for 10-bit ones, never VideoToolbox's
-//! compressed formats, which Metal can't read.
+//! The decoder keeps the stream's parameter sets and makes its format description from them. Each access unit's
+//! other NAL units go to VideoToolbox as one AVCC sample with 4-byte big-endian lengths. Decoding is synchronous,
+//! with no asynchronous or temporal-order flags, so each picture comes out before `decode` returns. They come in
+//! decode order because the PS5 and the fake PS5 send no B-frames. Pictures are IOSurface-backed, Metal-compatible
+//! CVPixelBuffers. That means NV12 ('420v' or '420f') for 8-bit streams and P010 ('x420' or 'xf20') for 10-bit
+//! ones, never VideoToolbox's compressed formats, which Metal can't read.
 //!
-//! No sample is marked as a sync sample or not: a PS5 answers a keyframe request with an intra frame whose NAL type
+//! No sample is marked as a sync sample or not. A PS5 answers a keyframe request with an intra frame whose NAL type
 //! isn't a keyframe's (chiaki_tap/README.md, "First PS5 session"), and VideoToolbox decodes it like any other.
 
 use std::ffi::c_void;
@@ -44,7 +45,7 @@ pub const P010_FULL: u32 = fourcc(b"xf20");
 /// Why an access unit didn't decode.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum DecodeError {
-    /// A picture before any codec header: nothing is decodable without it.
+    /// A picture came before any codec header. Nothing decodes without one.
     #[error("no codec header (parameter sets) yet")]
     NoParams,
     /// The parameter sets didn't make a format description.
@@ -80,7 +81,7 @@ enum Out {
     Failed(i32),
 }
 
-/// Where the output callback leaves pictures (boxed: its address is the callback's refcon).
+/// Where the output callback leaves pictures. It's boxed because its address is the callback's refcon.
 struct Sink {
     out: Mutex<Vec<Out>>,
 }
@@ -107,21 +108,21 @@ unsafe extern "C-unwind" fn on_output(
 
 pub struct VtDecoder {
     codec: Codec,
-    /// The stream's parameter sets: NAL units without start codes or trailing zeros, in the order they came.
+    /// The stream's parameter sets as NAL units without start codes or trailing zeros, in the order they came.
     params: Vec<Vec<u8>>,
     format: Option<CFRetained<CMFormatDescription>>,
     format_stale: bool,
     session: Option<CFRetained<VTDecompressionSession>>,
     pixel_format: u32,
     sink: Box<Sink>,
-    /// Whether the current session decodes on the media engine (VideoToolbox's own word on it).
+    /// Whether the current session decodes on the media engine, as VideoToolbox reports it.
     pub hardware: bool,
     /// Sessions made so far (a new one for a new codec header that the old session can't take, or after `reset`).
     pub sessions: u32,
     sample: Vec<u8>,
 }
 
-// The session and format are CF objects; a decoder is used from one thread at a time.
+// The session and format are CF objects, and a decoder is used from one thread at a time.
 unsafe impl Send for VtDecoder {}
 
 impl VtDecoder {
@@ -186,7 +187,7 @@ impl VtDecoder {
             Codec::H264 => &[7, 8],
             Codec::Hevc => &[32, 33, 34],
         };
-        // One of each kind at least, the latest of each (a stream normally has exactly one)
+        // At least one of each kind, the latest of each. A stream normally has exactly one.
         let mut sets: Vec<&[u8]> = Vec::new();
         for &t in want {
             let u = self.params.iter().rev().find(|u| !u.is_empty() && self.codec.unit_type(u[0]) == t);
@@ -225,7 +226,7 @@ impl VtDecoder {
         Ok(unsafe { CFRetained::from_raw(NonNull::new(out as *mut CMFormatDescription).unwrap()) })
     }
 
-    /// 8 or 10 bits, from the SPS; and full range, from the format description's colour description (if any).
+    /// 8 or 10 bits from the SPS, and full range from the format description's colour description if it has one.
     fn pixel_format_for(&self, format: &CMFormatDescription) -> u32 {
         let sps_type = if self.codec == Codec::H264 { 7 } else { 33 };
         let bits = self
@@ -307,7 +308,7 @@ impl VtDecoder {
             return Err(DecodeError::NoParams);
         }
         let format = self.make_format()?;
-        // (a new bit depth or range needs a new pixel format, so a new session)
+        // A new bit depth or range needs a new pixel format, so a new session.
         let same_pixels = self.pixel_format_for(&format) == self.pixel_format;
         let keep = match (&self.session, &self.format) {
             (Some(s), Some(_)) => same_pixels && unsafe { s.can_accept_format_description(&format) },
@@ -321,16 +322,16 @@ impl VtDecoder {
         Ok(())
     }
 
-    /// Decodes one access unit (Annex-B). Parameter sets in it become the stream's; a unit without a picture (the
-    /// codec header on its own, say) gives no pictures. Err for a picture before any parameter sets, or when
-    /// VideoToolbox fails it (the session is kept: it holds the reference pictures; a new one is made only when
-    /// VideoToolbox says the session itself is gone).
+    /// Decodes one access unit (Annex-B). Parameter sets in it become the stream's. A unit without a picture, such
+    /// as the codec header on its own, gives no pictures. Err for a picture before any parameter sets, or when
+    /// VideoToolbox fails it. The session is kept after a failure because it holds the reference pictures. A new
+    /// one is made only when VideoToolbox says the session itself is gone.
     pub fn decode(&mut self, annexb: &[u8]) -> Result<Vec<Decoded>, DecodeError> {
         let units = nal::nal_units(annexb, self.codec);
         if units.iter().any(|(t, _)| self.codec.is_param(*t)) {
             self.set_params(annexb);
         }
-        // The sample: every unit but the parameter sets, AVCC-style
+        // The sample is every unit but the parameter sets, AVCC-style
         self.sample.clear();
         let mut pictures = 0;
         for (t, u) in &units {
@@ -348,7 +349,8 @@ impl VtDecoder {
         self.ensure_session()?;
         let result = self.decode_sample();
         if let Err(DecodeError::Status { status: -12903, .. }) = result {
-            // The session went (the GPU or media engine was reset, the Mac slept): a new one from the same header
+            // The session is gone because the GPU or media engine was reset or the Mac slept. Make a new one from
+            // the same header.
             self.reset();
             self.ensure_session()?;
             return self.decode_sample();
@@ -442,7 +444,7 @@ impl Drop for VtDecoder {
 }
 
 impl VtDecoder {
-    /// The current format description's extensions (colour description, bit depth, the hvcC/avcC), for debugging.
+    /// The current format description's extensions (colour description, bit depth, the hvcC or avcC), for debugging.
     pub fn format_description(&self) -> String {
         match &self.format {
             Some(f) => {

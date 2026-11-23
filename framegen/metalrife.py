@@ -1,10 +1,10 @@
-"""RIFE's flow network on Apple's GPU: PyTorch's (MPS) convolutions with hand-written Metal kernels for the rest.
+"""RIFE's flow network on Apple's GPU, with PyTorch's MPS convolutions and hand-written Metal kernels for the rest.
 
 FastIFNet's math (framegen/fastrife.py), laid out for the Mac. Eager FastIFNet on MPS spends under half of a 1080p
-forward in convolutions; the rest is full-resolution glue: warping [image | features] after every block, upsampling
-each block's output to full resolution, downsampling the warped tensors again for the next block, concatenating the
-next block's input, and converting the result to 8 bits, each a separate pass over tens of megabytes. Here they are
-one kernel per block plus one at the end, touching only the pixels that are used:
+forward in convolutions. The rest is full-resolution glue, each step a separate pass over tens of megabytes: warping
+[image | features] after every block, upsampling each block's output to full resolution, downsampling the warped
+tensors again for the next block, concatenating the next block's input, and converting the result to 8 bits. Here
+they are one kernel per block plus one at the end, and they touch only the pixels that are used:
 
 * A block's input is built in one pass at the block's own resolution. Bilinear downsampling by a whole factor s
   (PyTorch's, align_corners=False) averages the 2x2 pixels at the centre of each s x s cell, so only those four
@@ -14,15 +14,16 @@ one kernel per block plus one at the end, touching only the pixels that are used
   The last block's 8 feature channels are never used, so its transposed convolution makes only flow and mask.
 * The last pass warps the two images, blends them by the mask and writes the uint8 BGR frame.
 * Frames are kept as fp16 [r, g, b, f0, f1, f2, f3, 0] pixels (16 bytes, two half4 loads per bilinear tap). That's
-  exact: the image and the encoder's features are fp16 to begin with. The warps interpolate in fp32.
-* In the residual blocks, the per-channel `beta` is folded into the convolution's weights and the add + LeakyReLU
-  is one kernel. The encoder's last layer (a 16 -> 4 transposed convolution, slow in MPS) is a kernel that also
-  packs the frame slot.
+  exact, because the image and the encoder's features are fp16 to begin with. The warps interpolate in fp32.
+* In the residual blocks, the per-channel `beta` is folded into the convolution's weights, and the add and the
+  LeakyReLU are one kernel. The encoder's last layer, a transposed convolution from 16 channels to 4 that is slow in
+  MPS, is a kernel that also packs the frame slot.
 
-On an M5 Max at 1080p (RIFE 4.22 lite): 6.9 ms per in-between frame at full motion detail, 4.4 ms at half (eager
-FastIFNet: 18.0 / 13.7), and 0.7 ms to prepare a frame (2.5). Results match eager FastIFNet to fp16 rounding
-(scripts/check_fast.py, tests/test_metalrife.py). Whole-number block scales only (motion detail 1.0, 0.5, 0.25):
-`supported()` says whether it applies; otherwise RifeInterpolator runs eager FastIFNet.
+On an M5 Max at 1080p with RIFE 4.22 lite, an in-between frame takes 6.9 ms at full motion detail and 4.4 ms at
+half, against 18.0 and 13.7 ms for eager FastIFNet. Preparing a frame takes 0.7 ms (2.5 eager). Results match eager
+FastIFNet to fp16 rounding (scripts/check_fast.py, tests/test_metalrife.py). It takes whole-number block scales only,
+so motion detail 1.0, 0.5 or 0.25. `supported()` says whether it applies, and otherwise RifeInterpolator runs eager
+FastIFNet.
 """
 from __future__ import annotations
 
@@ -34,7 +35,7 @@ KERNELS = r"""
 using namespace metal;
 
 // One block's output, read from its transposed convolution before the PixelShuffle(2):
-// tmp[c, y, x] = d[c*4 + (y&1)*2 + (x&1), y/2, x/2]. s: its scale (full res = s * (h, w)).
+// tmp[c, y, x] = d[c*4 + (y&1)*2 + (x&1), y/2, x/2]. s is its scale, so full resolution is s * (h, w).
 struct Tmp {
     device const half* d;
     int s, h, w;
@@ -104,7 +105,7 @@ inline float up(Tmp t, Taps k, int c) {
     return (1.0f - k.ly) * ((1.0f - k.lx) * a + k.lx * b) + k.ly * ((1.0f - k.lx) * e + k.lx * f);
 }
 
-// Flow after blocks 0..n-1 at full-resolution pixel (Y, X): the sum of each block's upsampled flow times its scale.
+// Flow after blocks 0..n-1 at full-resolution pixel (Y, X), the sum of each block's upsampled flow times its scale.
 inline float4 flow_at(thread const Tmps& T, int n, int Y, int X) {
     float4 fl = float4(0.0f);
     for (int j = 0; j < n; ++j) {
@@ -115,7 +116,7 @@ inline float4 flow_at(thread const Tmps& T, int n, int Y, int X) {
     return fl;
 }
 
-// Bilinear sample of an fp16 [8-channel] frame at (px, py) in pixels; border padding, align_corners=True.
+// Bilinear sample of an 8-channel fp16 frame at (px, py) in pixels, with border padding and align_corners=True.
 inline void warp8(device const half4* S, int PH, int PW, float px, float py, thread float4& lo, thread float4& hi) {
     float ix = clamp(px, 0.0f, float(PW - 1)), iy = clamp(py, 0.0f, float(PH - 1));
     int x0 = int(ix), y0 = int(iy);
@@ -140,7 +141,7 @@ inline float3 warp3(device const half4* S, int PH, int PW, float px, float py) {
     return v.xyz;
 }
 
-// Input of block n (channels_last, 16 channels for block 0, 32 after; the last ones are zero):
+// Input of block n, channels_last, with 16 channels for block 0 and 32 after (the last ones are zero):
 //   [a_img 3, b_img 3, a_feat 4, b_feat 4, t] for block 0, then [mask, feat 8, flow / so 4]
 // where a, b are the frames warped by the flow so far and everything is downsampled by `so` (block n's scale).
 // p header: PH, PW, n, so, 0. Grid: (PW / so, PH / so).
@@ -154,7 +155,7 @@ kernel void block_input(device half4* xo [[buffer(0)]],
     int Wo = PW / so, Ho = PH / so;
     if (int(g.x) >= Wo || int(g.y) >= Ho) return;
     Tmps T = tmps(d0, d1, d2, d3, d4, p);
-    Tmp tl = pick(T, max(n - 1, 0));  // the latest block: its mask and features
+    Tmp tl = pick(T, max(n - 1, 0));  // the latest block, for its mask and features
     int k = so == 1 ? 1 : 2;
     int by = so == 1 ? int(g.y) : int(g.y) * so + so / 2 - 1;
     int bx = so == 1 ? int(g.x) : int(g.x) * so + so / 2 - 1;
@@ -203,7 +204,7 @@ kernel void block_input(device half4* xo [[buffer(0)]],
     xo[o + 7] = half4(0.0f);
 }
 
-// The in-between frame at (Y, X): both images warped by the final flow, blended by sigmoid(mask).
+// The in-between frame at (Y, X), both images warped by the final flow and blended by sigmoid(mask).
 inline float3 final_mid(device const half4* S0, device const half4* S1, thread const Tmps& T, int n,
                         int PH, int PW, int Y, int X) {
     float4 fl = flow_at(T, n, Y, X);
@@ -243,7 +244,7 @@ kernel void final_f16(device half* out [[buffer(0)]],
     out[o] = half(mid.z); out[o + 1] = half(mid.y); out[o + 2] = half(mid.x);  // BGR
 }
 
-// fp32 (1, 3, PH, PW) RGB, unclamped: for Steady HUD, which blends real pixels in before the conversion.
+// Unclamped fp32 (1, 3, PH, PW) RGB for Steady HUD, which blends real pixels in before the conversion.
 // Grid: (PW, PH).
 kernel void final_mid_f32(device float* out [[buffer(0)]],
                           device const half4* S0 [[buffer(1)]],
@@ -258,7 +259,8 @@ kernel void final_mid_f32(device float* out [[buffer(0)]],
     out[o] = mid.x; out[o + plane] = mid.y; out[o + 2 * plane] = mid.z;
 }
 
-// HxWx3 BGR frame -> the encoder's input: (PH, PW, 4) fp16 [r, g, b, 0] 0..1, zero padded. p: H, W, PH, PW.
+// Turns an HxWx3 BGR frame into the encoder's input, (PH, PW, 4) fp16 [r, g, b, 0] 0..1, zero padded.
+// p: H, W, PH, PW.
 kernel void frame_in_u8(device half4* x [[buffer(0)]], device const uchar* f [[buffer(1)]],
                         constant long* p [[buffer(2)]], uint2 g [[thread_position_in_grid]]) {
     int H = int(p[0]), W = int(p[1]), PH = int(p[2]), PW = int(p[3]);
@@ -333,7 +335,7 @@ MAX_BLOCKS = 5
 
 
 def supported(scale_list) -> bool:
-    """Whether every block's scale is a whole number (motion detail 1.0, 0.5, 0.25; not 2.0)."""
+    """Whether every block's scale is a whole number (motion detail 1.0, 0.5 or 0.25, not 2.0)."""
     return len(scale_list) <= MAX_BLOCKS and all(float(s).is_integer() and s >= 1 for s in scale_list)
 
 
@@ -341,7 +343,7 @@ _lib = None
 
 
 def library():
-    """The compiled kernels (compiled once per process, a fraction of a second)."""
+    """The compiled kernels. They compile once per process, in a fraction of a second."""
     global _lib
     if _lib is None:
         _lib = torch.mps.compile_shader(KERNELS)
@@ -349,7 +351,7 @@ def library():
 
 
 def _conv(src: torch.nn.Conv2d, cin: int | None = None, beta: torch.Tensor | None = None) -> torch.nn.Conv2d:
-    """A copy of src (channels_last), with its input zero-padded to `cin` channels and/or `beta` folded in."""
+    """A copy of src (channels_last), with its input zero-padded to `cin` channels, `beta` folded in, or both."""
     w, b = src.weight.detach(), src.bias.detach()
     if beta is not None:
         beta = beta.detach().reshape(-1).to(w.dtype)
@@ -375,13 +377,14 @@ def _deconv(src: torch.nn.ConvTranspose2d, cout: int) -> torch.nn.ConvTranspose2
 
 
 class _Block:
-    """One IFBlock's convolutions: input (channels_last, padded to 16 or 32 channels) -> its transposed conv's output."""
+    """One IFBlock's convolutions, from its input (channels_last, padded to 16 or 32 channels) to its transposed conv's
+    output."""
 
     def __init__(self, blk: torch.nn.Module, cin: int, last: bool) -> None:
         self.c0a = _conv(blk.conv0[0][0], cin)
         self.c0b = _conv(blk.conv0[1][0])
         self.res = [_conv(rc.conv, beta=rc.beta) for rc in blk.convblock]
-        # The last block's features (channels 5..12 once pixel-shuffled, 20..51 before) are never used: only its
+        # The last block's features (channels 5..12 once pixel-shuffled, 20..51 before) are never used, so only its
         # flow and mask are computed.
         self.deconv = _deconv(blk.lastconv[0], 20 if last else blk.lastconv[0].out_channels)
 
@@ -392,11 +395,12 @@ class _Block:
             y = c(x)
             lib.add_lrelu(y, x, threads=y.numel() // 4)
             x = y
-        return self.deconv(x)  # (1, 52, h/2, w/2): 13 channels at (h, w) once pixel-shuffled (last: 20, 5)
+        return self.deconv(x)  # (1, 52, h/2, w/2), 13 channels at (h, w) once pixel-shuffled (the last block: 20, 5)
 
 
 class MetalIFNet:
-    """FastIFNet's forward for MPS: frames in `make_src` slots of (PH, PW, 8) fp16, output written in place."""
+    """FastIFNet's forward for MPS. Frames sit in `make_src` slots of (PH, PW, 8) fp16, and the output is written in
+    place."""
 
     def __init__(self, net: torch.nn.Module, encode: torch.nn.Module, h: int, w: int, ph: int, pw: int,
                  device: torch.device) -> None:
@@ -417,7 +421,7 @@ class MetalIFNet:
             self.blocks = [_Block(getattr(net, f"block{i}"), 16 if i == 0 else 32, i == n - 1) for i in range(n)]
             # the encoder (framegen/rife Head), channels_last, its last layer a kernel
             self.enc = [_conv(encode.cnn0, 4), _conv(encode.cnn1), _conv(encode.cnn2)]
-            w3 = encode.cnn3.weight.detach().float()  # (16 in, 4 out, 4, 4) -> (ky, kx, in, out)
+            w3 = encode.cnn3.weight.detach().float()  # (16 in, 4 out, 4, 4), permuted below to (ky, kx, in, out)
             if tuple(w3.shape) != (16, 4, 4, 4) or encode.cnn3.stride != (2, 2) or encode.cnn3.padding != (1, 1):
                 raise ValueError("MetalIFNet expects RIFE 4.2x's encoder")
             self.enc_w = w3.permute(2, 3, 0, 1).contiguous()
@@ -440,7 +444,7 @@ class MetalIFNet:
 
     @torch.no_grad()
     def prepare(self, frame: torch.Tensor, slot: torch.Tensor) -> None:
-        """An HxWx3 BGR frame on the GPU (uint8, or fp16 0..1) -> encoded into `slot`."""
+        """Encodes an HxWx3 BGR frame on the GPU (uint8, or fp16 0..1) into `slot`."""
         k = self.lib.frame_in_u8 if frame.dtype == torch.uint8 else self.lib.frame_in_f16
         k(self.xin, frame, [self.h, self.w, self.ph, self.pw], threads=self.grid_full, group_size=(32, 8))
         a = F.leaky_relu(self.enc[0](self.xin), 0.2, inplace=True)
@@ -456,7 +460,8 @@ class MetalIFNet:
 
     @staticmethod
     def _args(ds: list[torch.Tensor], tp: list[int], head: list[int], spare: torch.Tensor) -> list:
-        """The TMP_ARGS of a kernel: five block outputs (unused ones: any tensor) and the parameter list."""
+        """The TMP_ARGS of a kernel: five block outputs (any tensor stands in for an unused one) and the parameter
+        list."""
         return ds + [spare] * (MAX_BLOCKS - len(ds)) + [head + tp + [0] * (6 * MAX_BLOCKS - len(tp))]
 
     @torch.no_grad()
@@ -476,7 +481,7 @@ class MetalIFNet:
 
     @torch.no_grad()
     def interpolate(self, src0: torch.Tensor, src1: torch.Tensor, t: float, out: torch.Tensor) -> None:
-        """The frame at t between two slots -> `out`, HxWx3 BGR (uint8, or fp16 0..1)."""
+        """Writes the frame at t between two slots to `out`, HxWx3 BGR (uint8, or fp16 0..1)."""
         ds, tp = self.flow(src0, src1, t)
         k = self.lib.final_u8 if out.dtype == torch.uint8 else self.lib.final_f16
         k(out, src0, src1, *self._args(ds, tp, [self.ph, self.pw, len(ds), self.h, self.w], src0),
@@ -484,7 +489,7 @@ class MetalIFNet:
 
     @torch.no_grad()
     def interpolate_mid(self, src0: torch.Tensor, src1: torch.Tensor, t: float) -> torch.Tensor:
-        """The frame at t as (1, 3, PH, PW) fp32 RGB, unclamped (FastIFNet's output; for Steady HUD)."""
+        """The frame at t as (1, 3, PH, PW) fp32 RGB, unclamped (FastIFNet's output, for Steady HUD)."""
         ds, tp = self.flow(src0, src1, t)
         self.lib.final_mid_f32(self.mid, src0, src1, *self._args(ds, tp, [self.ph, self.pw, len(ds), self.h, self.w],
                                                                  src0), threads=self.grid_full, group_size=(32, 8))

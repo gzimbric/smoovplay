@@ -57,9 +57,9 @@ impl PyRng {
     }
 }
 
-/// tests/test_audio.py _card: a card's 20 ms packets as the reader thread hands them over, held up now and then
-/// (hold_ms, every every_s; the packets meanwhile all come at once at the end), and the output's 10 ms blocks.
-/// (time, true for a packet in / false for a block out), in order.
+/// tests/test_audio.py _card. A card's 20 ms packets as the reader thread hands them over, and the output's 10 ms
+/// blocks. The reader is held up for hold_ms every every_s, and the packets meanwhile all come at once at the end.
+/// Returns (time, true for a packet in or false for a block out), in order.
 pub fn card(secs: f64, hold_ms: f64, every_s: f64, seed: u64, first_at: Option<f64>) -> Vec<(f64, bool)> {
     let mut rnd = PyRng::new(seed);
     let (mut ev, mut held, mut nxt) = (Vec::new(), 0usize, first_at.unwrap_or(every_s));
@@ -81,7 +81,7 @@ pub fn card(secs: f64, hold_ms: f64, every_s: f64, seed: u64, first_at: Option<f
     ev
 }
 
-/// An image of flat 16x16 colour blocks (test_capture.py _blocks): chroma differences stay at block edges, so
+/// An image of flat 16x16 colour blocks (test_capture.py _blocks). Chroma differences stay at block edges, so
 /// pictures are compared at block centres. BGR, h x w.
 pub fn blocks(h: usize, w: usize, seed: u64) -> Vec<u8> {
     let mut rnd = PyRng::new(seed);
@@ -112,7 +112,7 @@ pub fn max_diff(a: &[i32], b: &[i32]) -> i32 {
     a.iter().zip(b).map(|(x, y)| (x - y).abs()).max().unwrap_or(0)
 }
 
-/// BGR to Y'CbCr, BT.601 limited range (what OpenCV's BGR2YUV_I420 makes): Y, U, V full size.
+/// BGR to Y'CbCr in BT.601 limited range, as OpenCV's BGR2YUV_I420 makes it. Y, U and V are full size.
 fn ycc(bgr: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     let n = bgr.len() / 3;
     let (mut y, mut u, mut v) = (vec![0; n], vec![0; n], vec![0; n]);

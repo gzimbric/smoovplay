@@ -1,11 +1,12 @@
-//! Draws a look (crate::looks) with Metal (framegen/looks_gl.py's LookRenderer). looks::stages() splits a look into
-//! passes; each pass is one fragment function made for that run of nodes, so a run of per-pixel nodes costs one pass
-//! however many there are; a node that reads other pixels starts a new pass, which reads the one before it from a
-//! half-float texture of the output's size. Bloom, halation, blur and clarity also build a blurred copy of that input
-//! (six halvings, then back up). The first pass reads the picture (FSR's result at the output's size, or the frame
-//! itself, which it resizes) and the last writes to the target's rectangle.
+//! Draws a look (crate::looks) with Metal, like framegen/looks_gl.py's LookRenderer. looks::stages() splits a look
+//! into passes. Each pass is one fragment function made for that run of nodes, so a run of per-pixel nodes costs one
+//! pass however many there are. A node that reads other pixels starts a new pass, which reads the one before it from a
+//! half-float texture of the output's size. Bloom, halation, blur and clarity also build a blurred copy of that input,
+//! six halvings down and then back up. The first pass reads the picture, either FSR's result at the output's size or
+//! the frame itself, which it resizes. The last pass writes to the target's rectangle.
 //!
-//! Passes are compiled once per layout of nodes (a few ms); setting changes only change the float buffer.
+//! Passes are compiled once per layout of nodes, which takes a few ms. Changing a setting only changes the float
+//! buffer.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -38,11 +39,11 @@ struct PassPlan {
     lib_id: usize,
     params: Vec<f32>,
     luts: Vec<Retained<Tex>>,
-    /// The blurred copy: (bright-pass threshold or -1, how much wider levels count), for bloom, blur...
+    /// The blurred copy for bloom, blur and the rest, as (bright-pass threshold or -1, how much wider levels count).
     pyramid: Option<(f32, f32)>,
 }
 
-/// A look's passes. Cheap to keep; made again when the look changes.
+/// A look's passes. Cheap to keep, and made again when the look changes.
 pub struct LookPlan {
     passes: Vec<PassPlan>,
     pub look: Arc<Look>,
@@ -237,13 +238,14 @@ impl LookRenderer {
         t
     }
 
-    /// An image at the output's size for the upscaler to draw into; draw() then reads it as `src`.
+    /// An image at the output's size for the upscaler to draw into, which draw() then reads as `src`.
     pub fn input_target(&mut self, purpose: &'static str, w: usize, h: usize) -> Retained<Tex> {
         self.targets(purpose, w, h).ping[0].clone()
     }
 
-    /// The look from `src` (any size; the first pass resizes it) into `target`'s rectangle `rect` (which may go past
-    /// its edges), the first pass into the target clearing it (`load`).
+    /// Draws the look from `src` into the rectangle `rect` of `target`. `src` can be any size because the first pass
+    /// resizes it, and `rect` may go past the target's edges. The pass that writes into the target uses `load`, so it
+    /// can clear it.
     #[allow(clippy::too_many_arguments)]
     pub fn draw(&mut self, pipes: &mut Pipelines, cmd: &Cmd, plan: &LookPlan, src: &Tex, target: &Tex, rect: Rect,
                 load: Load, frame: u64, purpose: &'static str) -> Result<()> {
@@ -285,7 +287,7 @@ impl LookRenderer {
         Ok(())
     }
 
-    /// The blurred copy of `src` (output-sized): its first level, half the size.
+    /// The blurred copy of the output-sized `src`. Returns its first level, at half the size.
     #[allow(clippy::too_many_arguments)]
     fn pyramid(&mut self, pipes: &mut Pipelines, cmd: &Cmd, purpose: &'static str, w: usize, h: usize, src: &Tex,
                thr: f32, r: f32) -> Result<Retained<Tex>> {

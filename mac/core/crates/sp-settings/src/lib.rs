@@ -3,7 +3,7 @@
 //! Windows version. Files, protocol lines and share codes are byte for byte what the Python reads and writes, so the
 //! Swift app talks to the Rust core exactly as the Windows launcher talks to `run.py --control`.
 //!
-//! - [`settings`]: the registry ([`settings::specs`]), [`settings::Settings`] (load/save/override/watch/step) and
+//! - [`settings`]: the registry ([`settings::specs`]), [`settings::Settings`] (load, save, override, watch, step) and
 //!   [`settings::specs_json`] (what `python -m framegen.settings` prints).
 //! - [`remote`]: the `[settings-state]` protocol ([`remote::Remote`]).
 //! - [`looks`]: the look format, normalize(), built-ins, the library and LUTs, share codes, the CLI subcommands.

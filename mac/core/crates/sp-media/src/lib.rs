@@ -1,13 +1,14 @@
-//! Video in for SmoovPlay's macOS core: the frame tap's compressed frames decoded by VideoToolbox, the pictures
-//! turned into Metal frames on the GPU, and the sources that yield them as ticks.
+//! Video in for SmoovPlay's macOS core. VideoToolbox decodes the frame tap's compressed frames, the GPU turns the
+//! pictures into Metal frames, and the sources yield those as ticks.
 //!
-//! - [`VtDecoder`]: H.264 / HEVC Annex-B access units, parameter sets kept and reused, IOSurface-backed NV12 or P010
-//!   pictures out.
-//! - [`Converter`]: those pictures as sp_core frames without copies (CVMetalTextureCache), with the Python path's
-//!   colour maths: SDR as PyAV's `to_ndarray("bgr24")`, HDR as framegen/hdr.py ("sdr8", "pq16").
-//! - Sources (sp_core::Source): [`ChiakiSource`] (PS5 Remote Play through chiaki-ng's tap), [`TapSource`] (another
-//!   app's decoded frames; [`open_tap`] picks), [`FileSource`] and [`Ps5SimSource`] (video files), with
-//!   [`TestMode`] ("Simulate a 30 fps game") and [`Clock60`] (a variable-rate source on a 60 Hz beat).
+//! - [`VtDecoder`] decodes H.264 or HEVC Annex-B access units to IOSurface-backed NV12 or P010 pictures, keeping and
+//!   reusing the parameter sets.
+//! - [`Converter`] makes those pictures into sp_core frames without copies, through a CVMetalTextureCache. It uses
+//!   the Python path's colour maths, SDR as PyAV's `to_ndarray("bgr24")` and HDR as framegen/hdr.py ("sdr8", "pq16").
+//! - The sources are sp_core::Source. [`ChiakiSource`] is PS5 Remote Play through chiaki-ng's tap. [`TapSource`]
+//!   takes another app's decoded frames, and [`open_tap`] picks between the two. [`FileSource`] and [`Ps5SimSource`]
+//!   play video files. [`TestMode`] is "Simulate a 30 fps game", and [`Clock60`] puts a variable-rate source on a
+//!   60 Hz beat.
 
 pub mod cf;
 pub mod chiaki;

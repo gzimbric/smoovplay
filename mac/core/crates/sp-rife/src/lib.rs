@@ -1,15 +1,15 @@
-//! RIFE frame interpolation on Apple's GPU, for SmoovPlay's macOS core: framegen/interpolator.py's
+//! RIFE frame interpolation on Apple's GPU, for SmoovPlay's macOS core. This is framegen/interpolator.py's
 //! RifeInterpolator as it runs on a Mac (framegen/metalrife.py's MetalIFNet), without Python.
 //!
 //! * Weights are read straight from vs-rife's checkpoint (weights.rs), downloaded first if missing.
 //! * The convolutions run as MPSGraph executables, one per IFBlock and one for the encoder, compiled once for the
-//!   stream's size (graph.rs); everything between them is metalrife.py's Metal kernels (kernels.rs): building each
+//!   stream's size (graph.rs). Everything between them is metalrife.py's Metal kernels (kernels.rs): building each
 //!   block's input from the frames warped by the flow so far, the last pass that warps, blends and writes the frame,
 //!   the encoder's last layer, and Steady HUD.
 //! * Frames come in and go out as [`sp_core::Frame`] textures (BGRA8, or RGBA16F PQ for HDR), with no CPU copies.
 //!
 //! A stream's real frames go through [`Interpolator::load`] then [`Interpolator::prepare`] into one of two
-//! ping-pong slots, once each; [`Interpolator::interpolate`] draws the frame at a fraction t between the two slots.
+//! ping-pong slots, once each. [`Interpolator::interpolate`] draws the frame at a fraction t between the two slots.
 
 use std::path::PathBuf;
 
@@ -30,22 +30,22 @@ pub use sp_core::{Error, Result};
 use kernels::Buffer;
 use net::Net;
 
-/// framegen/steady.py STEADY_HUD_THRESHOLD: the default Steady HUD threshold.
+/// The default Steady HUD threshold (framegen/steady.py STEADY_HUD_THRESHOLD).
 pub const STEADY_HUD_THRESHOLD: f32 = 0.03;
 
 /// What to build (framegen/interpolator.py RifeInterpolator's arguments that apply on a Mac).
 #[derive(Clone, Debug)]
 pub struct Options {
-    /// "4.22.lite" (the default; also "4.25", "4.26", "4.25.lite").
+    /// "4.22.lite" (the default), "4.25", "4.26" or "4.25.lite".
     pub version: String,
     /// Motion detail (framegen's `scale`): 1.0, 0.5 or 0.25.
     pub scale: f32,
     /// Half precision, as the Python Mac engine. Only true is supported.
     pub fp16: bool,
-    /// HDR output: interpolate() returns RGBA16F frames (PQ BT.2020 0..1), as framegen's pq16. Loaded frames may
-    /// be either kind; the model sees 0..1 either way.
+    /// HDR output. interpolate() returns RGBA16F frames (PQ BT.2020 0..1), as framegen's pq16. Loaded frames may
+    /// be either kind, and the model sees 0..1 either way.
     pub hdr: bool,
-    /// Where checkpoints live (None: the repo's models/ folder, or $SMOOVPLAY_MODELS).
+    /// Where checkpoints live. None means the repo's models/ folder, or $SMOOVPLAY_MODELS.
     pub model_dir: Option<PathBuf>,
 }
 
@@ -60,7 +60,7 @@ impl Default for Options {
 const OUTPUTS: usize = 4;
 
 /// framegen/interpolator.py's RifeInterpolator for the Mac (see the crate docs). interpolate() returns one of four
-/// output frames, used in turn, so a frame stays intact while the next three are drawn; with
+/// output frames, used in turn, so a frame stays intact while the next three are drawn. With
 /// [`RifeInterpolator::set_blocking`] off it returns before the GPU has drawn it.
 pub struct RifeInterpolator {
     net: Net,
@@ -79,7 +79,7 @@ pub struct RifeInterpolator {
     last: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
 }
 
-// Metal objects are thread-safe; the interpolator is used from one thread at a time (&mut self).
+// Metal objects are thread-safe, and the interpolator is used from one thread at a time (&mut self).
 unsafe impl Send for RifeInterpolator {}
 
 impl RifeInterpolator {
@@ -122,8 +122,8 @@ impl RifeInterpolator {
         Ok(it)
     }
 
-    /// One run through every kernel and executable on a blank frame: MPSGraph specialises an executable the first
-    /// time it's encoded (10 to 20 ms here), which shouldn't land on the stream's first frames.
+    /// One run through every kernel and executable on a blank frame. MPSGraph specialises an executable the first
+    /// time it's encoded (10 to 20 ms here), and that shouldn't land on the stream's first frames.
     fn warm_up(&mut self) {
         let blank = Frame::from_bgra(&vec![0u8; self.net.w * self.net.h * 4], self.net.w, self.net.h);
         for slot in 0..2 {
@@ -153,8 +153,8 @@ impl RifeInterpolator {
         (self.net.pw, self.net.ph)
     }
 
-    /// Whether interpolate() waits for the GPU (the default: the frame it returns is finished). With false it
-    /// returns once the work is committed to the shared queue (sp_core::Gpu): anything else on that queue runs
+    /// Whether interpolate() waits for the GPU. It does by default, so the frame it returns is finished. With false
+    /// it returns once the work is committed to the shared queue (sp_core::Gpu). Anything else on that queue runs
     /// after it, and [`RifeInterpolator::wait`] waits for it.
     pub fn set_blocking(&mut self, blocking: bool) {
         self.blocking = blocking;
@@ -173,7 +173,7 @@ impl RifeInterpolator {
 
     fn commit(&mut self, cb: Retained<MPSCommandBuffer>) {
         cb.commit();
-        // The buffer the MPSCommandBuffer is on now: MPSGraph may have committed earlier ones, which run first.
+        // The buffer the MPSCommandBuffer is on now. MPSGraph may have committed earlier ones, which run first.
         self.last = Some(unsafe { cb.commandBuffer() });
     }
 
@@ -210,7 +210,7 @@ impl RifeInterpolator {
         let out = self.outputs[0].clone();
         let slot = Retained::clone(&self.slots[1]);
         let r = self.net.profile(&frame, &self.slots[0], &slot, &out);
-        // (profile wrote encode_out into slot 1 from the loaded frame: prepare it again so the slots stay right)
+        // profile wrote encode_out into slot 1 from the loaded frame, so prepare it again to keep the slots right
         self.prepare(1);
         self.wait();
         r
@@ -234,7 +234,7 @@ impl Interpolator for RifeInterpolator {
         (self.net.w, self.net.h)
     }
 
-    /// Takes the frame (no copy: frames are immutable); prepare() reads it on the GPU.
+    /// Takes the frame without a copy, since frames are immutable. prepare() reads it on the GPU.
     fn load(&mut self, frame: &Frame) {
         assert_eq!(
             (frame.width, frame.height),
@@ -277,8 +277,8 @@ impl Interpolator for RifeInterpolator {
         let was_off = self.steady <= 0.0;
         self.steady = threshold.max(0.0);
         if threshold > 0.0 && was_off {
-            // Turned on mid-pair: the current pair's mask now (the older frame's edges weren't worked out while it
-            // was off).
+            // Turned on mid-pair, so work out the current pair's mask now. The older frame's edges weren't worked
+            // out while it was off.
             if let Some(newest) = self.newest {
                 let cb = self.command_buffer();
                 self.encode_steady(&cb, newest, true);

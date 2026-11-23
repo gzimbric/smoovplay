@@ -1,15 +1,15 @@
-// The Settings page's model: its rows come from the pipeline's own list (python -m framegen.settings), so a new
+// The Settings page's model. Its rows come from the pipeline's own list (python -m framegen.settings), so a new
 // setting appears with no app change, as on Windows (installer/launcher/SettingsPage.cs).
 //
-// Layout: the big choices first ("quick": frame rate, model, upscaler), then Auto-detect, then the rest in folding
+// The big choices come first ("quick": frame rate, model, upscaler), then Auto-detect, then the rest in folding
 // sections by group. A setting that only matters with another ("applies") is hidden while it doesn't. Two to four
-// choices are a row of choices with the picked one's hint under it; more are a dropdown; on/off is a switch.
+// choices make a row with the picked one's hint under it, more make a dropdown, and an on or off setting is a
+// switch.
 //
-// Nothing playing: a change is written to the settings file, which the next session reads.
-// Playing: a change goes to the running core ("set <key> <json>"), which applies it at once, and the page follows
-// the core's "[settings-state]" lines, so changes made in the video window's menu show up here too.
-// Starting (before the video is up): the rows are locked, because the core has read the file but can't take
-// commands yet.
+// With nothing playing, a change is written to the settings file, which the next session reads. While playing, a
+// change goes to the running core ("set <key> <json>"), which applies it at once. The page follows the core's
+// "[settings-state]" lines, so changes made in the video window's menu show up here too. While the session starts,
+// before the video is up, the rows are locked, because the core has read the file but can't take commands yet.
 import Foundation
 
 public struct SettingChoice: Equatable, Sendable {
@@ -75,7 +75,7 @@ public struct SettingSpecs: Sendable {
     public subscript(key: String) -> SettingSpec? { specs.first(where: { $0.key == key }) }
 }
 
-/// The pipeline's settings.json: a flat object, rewritten in the core's own layout (indent 2, no byte-order mark).
+/// The pipeline's settings.json, a flat object rewritten in the core's own layout (indent 2, no byte-order mark).
 public struct SettingsFile: Sendable {
     public let url: URL
     public init(_ url: URL) { self.url = url }
@@ -128,7 +128,7 @@ public struct RowModel: Equatable, Identifiable, Sendable {
     public var visible: Bool
     public var enabled: Bool
     public var note: String?  // why it can't be changed now
-    public var hint: String  // segments: the picked one's hint
+    public var hint: String  // for segments, the picked one's hint
     public var restartTag: String?  // "after a restart" while playing, for settings that aren't live
     public var experimental: Bool
     public var later: String
@@ -156,7 +156,7 @@ public struct SettingsPage: Equatable, Sendable {
 }
 
 /// Builds the Settings page from the specs, the live state (while a session reports one) or the file, and the
-/// source picked on the Play page. Pure: the same inputs give the same page.
+/// source picked on the Play page. It's pure, so the same inputs give the same page.
 public struct SettingsModel: Sendable {
     public var specs: SettingSpecs
     public var state: SettingsState?
@@ -178,8 +178,8 @@ public struct SettingsModel: Sendable {
     public var live: Bool { state != nil }
     public var locked: Bool { !live && sessionRunning }
 
-    /// Choices an NVIDIA card would add: with nothing playing on a Mac they're shown greyed out, as the core does
-    /// while playing (run.py's mac_mode rows).
+    /// The choices a Mac can use. With nothing playing, the ones an NVIDIA card would add are shown greyed out, as
+    /// the core does while playing (run.py's mac_mode rows).
     static let macOnly: [String: Set<String>] = [
         "scaler": ["fsr", "bilinear"], "engine": ["auto", "torch"], "model": ["4.22.lite"], "present": ["gl"],
         "hdr": ["off", "sdr"],
@@ -237,7 +237,7 @@ public struct SettingsModel: Sendable {
         let hz = picks.first(where: { $0.key == "hz" })
         let rate = interp?.onOff == true && hz != nil
         for spec in picks {
-            if rate, spec.key == "interp" { continue }  // the frame-rate pick's "Off"
+            if rate, spec.key == "interp" { continue }  // the frame-rate pick's Off
             quick.append(row(spec, off: rate && spec.key == "hz" ? interp : nil))
         }
         var groups: [String] = []
@@ -302,8 +302,8 @@ public struct SettingsModel: Sendable {
                         isOn: v.bool == true, isRate: off != nil)
     }
 
-    /// What picking a choice changes, in order: (key, value) pairs. The frame-rate pick's Off turns frame
-    /// generation off; a rate sets the rate first, then turns frame generation back on.
+    /// What picking a choice changes, in order, as (key, value) pairs. The frame-rate pick's Off turns frame
+    /// generation off. A rate sets the rate first, then turns frame generation back on.
     public func pick(_ key: String, tag: String) -> [(String, JSON)] {
         guard let spec = specs[key] else { return [] }
         let rate = key == "hz" && specs["interp"]?.quick == true && specs["interp"]?.onOff == true

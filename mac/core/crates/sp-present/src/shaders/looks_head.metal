@@ -1,13 +1,14 @@
 // The looks' node functions (framegen/looks_gl.py _HEAD), in Metal Shading Language. crate::looks_gpu adds a
 // fragment function per pass that calls these in its nodes' order, with their settings from a float buffer.
-// Held to framegen/looks.py's render() (the NumPy reference) by tests/looks.rs.
+// tests/shaders.rs holds them to framegen/looks.py's render(), the NumPy reference.
 
 #include <metal_stdlib>
 using namespace metal;
 
 struct VOut { float4 pos [[position]]; };
 
-// Every pass: where this pixel is in the output image (Q: pixel centre, row 0 at the top; UV: 0..1).
+// Every pass gets where this pixel is in the output image. Q is the pixel centre with row 0 at the top, and UV runs
+// from 0 to 1.
 struct LookK { float2 out_size; float2 origin; uint frame_no; uint pad0; uint pad1; uint pad2; };
 struct Ctx { float2 Q; float2 UV; float2 out_size; uint frame_no; };
 
@@ -80,7 +81,7 @@ static float3 n_vignette(thread const Ctx& X, float3 c, float a, float r0, float
     return c * (1.0 - a * smoothstep(r0 - soft, r0 + soft, d));
 }
 static float3 n_scanlines(thread const Ctx& X, float3 c, float a, float size) {
-    float period = max(2.0, size * X.out_size.y / 1080.0);  // (lines need 2 pixels or more)
+    float period = max(2.0, size * X.out_size.y / 1080.0);  // lines need 2 pixels or more
     return c * (1.0 - a * (0.5 + 0.5 * cos(6.2831853 * fract(X.Q.y / period))));
 }
 static float3 n_letterbox(thread const Ctx& X, float3 c, float aspect) {

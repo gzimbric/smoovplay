@@ -4,7 +4,7 @@
     .venv/bin/python mac/core/tools/media_ticks.py 'Local\\NAME' OUT.jsonl [--test-mode] [--decoder videotoolbox]
         [--wait 30] [--hdr sdr8|pq16]
 
-Reads until the stream ends (or --ticks N). Each line: index, seq, size, size_new, size_ref, big, keyframe,
+Reads until the stream ends (or --ticks N). Each line holds index, seq, size, size_new, size_ref, big, keyframe,
 frames_lost, recovered, damaged, content, truth_new, new_hint, game_new, t_arrival, t_ready, decode_ms, and the
 frame's mean level (a cheap check that a picture came out). The last line is {"done": ..., counts}.
 """

@@ -2,21 +2,22 @@
 
     .venv/bin/python mac/core/tools/replay_fixtures.py [--seconds 10] [--length 5]
 
-Feeds framegen/replay.py's Recorder (the Python reference, on this Mac: h264_videotoolbox) a decoded clip as
-SmoovPlay would, at 60 and 90 Hz, with its sound, and saves what R saves. sp-replay's tests (tests/clip.rs) feed the
-Rust recorder the same plan and compare.
+Feeds framegen/replay.py's Recorder a decoded clip as SmoovPlay would, at 60 and 90 Hz, with its sound, and saves
+what R saves. That Recorder is the Python reference, using h264_videotoolbox on this Mac. sp-replay's tests
+(tests/clip.rs) feed the Rust recorder the same plan and compare.
 
-The plan (both sides build it from manifest.json the same way):
-  - frames: testdata/clip_1080p60.mp4 as FFmpeg's bgr24 (the same bytes on both sides), the first `seconds`;
+Both sides build the plan from manifest.json the same way:
+  - frames: testdata/clip_1080p60.mp4 as FFmpeg's bgr24 (the same bytes on both sides), the first `seconds` of it.
   - shown frame i at t = T0 + DELAY + i/hz shows content frame floor(i*60/hz), with i stamped in its top-left corner
-    (16 blocks of 16x16, bit b of i white at x = 16b, rows 0..16), so a saved clip tells which frame is which;
+    so a saved clip tells which frame is which. The stamp is 16 blocks of 16x16, with bit b of i white at x = 16b in
+    rows 0..16.
   - the game's own frames: the even content frames (a 30 fps game), each the first time it's shown, arriving at
-    T0 + c/60;
-  - sound: the clip's own (mono, 48 kHz, s16; a steady 440 Hz tone) with seeded white noise added, so a saved clip's
-    sound can be lined up with the original to the sample; in 10 ms chunks, chunk k arriving at T0 + k/100, given
-    before the frame shown at or after its time plus the delay.
+    T0 + c/60.
+  - sound: the clip's own (mono, 48 kHz, s16, a steady 440 Hz tone) with seeded white noise added, so a saved clip's
+    sound can be lined up with the original to the sample. It comes in 10 ms chunks. Chunk k arrives at T0 + k/100
+    and is given before the frame shown at or after its time plus the delay.
 
-Writes: manifest.json, clip_audio.s16 (the clip's sound), python_<hz>.mp4 and python_<hz>_compare.mp4 (the Python
+Writes manifest.json, clip_audio.s16 (the clip's sound), python_<hz>.mp4 and python_<hz>_compare.mp4 (the Python
 recorder's saved clip and before & after video), and python_<hz>.json (its log and how long each part took).
 """
 from __future__ import annotations

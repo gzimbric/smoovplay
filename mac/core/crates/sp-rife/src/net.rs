@@ -1,12 +1,12 @@
-//! The flow network and encoder for one stream size and motion detail: weights laid out as framegen/metalrife.py
-//! lays them out (fp16, beta folded into the residual convolutions, inputs padded to 16 or 32 channels, the last
-//! block's unused feature outputs dropped), the convolutions as MPSGraph executables (graph.rs) and everything
+//! The flow network and encoder for one stream size and motion detail. Weights are laid out as framegen/metalrife.py
+//! lays them out: fp16, beta folded into the residual convolutions, inputs padded to 16 or 32 channels, and the last
+//! block's unused feature outputs dropped. The convolutions run as MPSGraph executables (graph.rs) and everything
 //! between them as Metal kernels (kernels.rs).
 //!
-//! One change from metalrife.py: each block's last layer, a 4x4 stride-2 transposed convolution, runs as a 3x3
-//! convolution at a quarter of the block's resolution that makes all four output parities at once (the same sums
-//! plus zeros; MPSGraph's transposed convolution runs at a third of the speed), with its output channels ordered so
-//! the kernels load flow, mask and features as half4s (subpixel_layout). At 1080p that saves about 0.6 ms.
+//! There is one change from metalrife.py. Each block's last layer, a 4x4 stride-2 transposed convolution, runs as a
+//! 3x3 convolution at a quarter of the block's resolution that makes all four output parities at once. That's the
+//! same sums plus zeros, and MPSGraph's transposed convolution runs at a third of the speed. Its output channels are
+//! ordered so the kernels load flow, mask and features as half4s (subpixel_layout). At 1080p that saves about 0.6 ms.
 
 use objc2::rc::Retained;
 use objc2_metal::{MTLCommandBuffer, MTLCommandEncoder, MTLComputeCommandEncoder};
@@ -20,7 +20,7 @@ use crate::kernels::{self, BlockOut, Buffer, Kernels, MAX_BLOCKS, Params};
 use crate::weights::{Tensor, Weights};
 use crate::{Error, Result};
 
-/// A RIFE version this engine runs: its padding modulo (vs-rife's) and its blocks' scales at motion detail 1.0.
+/// A RIFE version this engine runs, with its padding modulo (vs-rife's) and its blocks' scales at motion detail 1.0.
 #[derive(Clone, Copy, Debug)]
 pub struct Model {
     pub version: &'static str,
@@ -42,8 +42,8 @@ pub fn model(version: &str) -> Result<Model> {
     })
 }
 
-/// The blocks' scales at a motion detail (framegen: `scale_list = [8 / scale, ...]`), if all are whole numbers
-/// (what the kernels take: motion detail 1.0, 0.5, 0.25; 2.0 would need half-pixel scales).
+/// The blocks' scales at a motion detail (framegen's `scale_list = [8 / scale, ...]`), if all are whole numbers.
+/// The kernels take only whole numbers, so motion detail 1.0, 0.5 or 0.25. Detail 2.0 would need half-pixel scales.
 pub fn block_scales(m: &Model, detail: f32) -> Result<Vec<usize>> {
     if ![0.25f32, 0.5, 1.0, 2.0].contains(&detail) {
         return Err(Error::Other(format!("motion detail must be 0.25, 0.5, 1.0 or 2.0, not {detail}")));
@@ -79,8 +79,8 @@ fn h16(v: &[f32]) -> Vec<f16> {
     v.iter().map(|&x| f16::from_f32(x)).collect()
 }
 
-/// A Conv2d's weights in fp16, input channels zero-padded to `cin` and/or `beta` folded in (metalrife.py _conv:
-/// in fp16, as there: w * beta rounded once).
+/// A Conv2d's weights in fp16, with input channels zero-padded to `cin`, `beta` folded in, or both. As in
+/// metalrife.py _conv, beta is folded in fp16, so w * beta is rounded once.
 fn conv(wts: &Weights, name: &str, stride: usize, cin: Option<usize>, beta: Option<&str>) -> Result<Conv> {
     let w = get(wts, &format!("{name}.weight"))?;
     let b = get(wts, &format!("{name}.bias"))?;
@@ -140,8 +140,8 @@ fn deconv(wts: &Weights, name: &str, cout: usize) -> Result<Conv> {
     Ok(Conv { cout, cin, k: 4, stride: 2, pad: 1, w: out, b: h16(&b.data[..cout]) })
 }
 
-/// One IFBlock's layers (metalrife.py _Block): input padded to `cin` channels; the last block makes only flow and
-/// mask (20 channels before the PixelShuffle).
+/// One IFBlock's layers (metalrife.py _Block), with the input padded to `cin` channels. The last block makes only
+/// flow and mask (20 channels before the PixelShuffle).
 pub fn block_layers(wts: &Weights, i: usize, cin: usize, last: bool) -> Result<Vec<Layer>> {
     let p = format!("block{i}");
     let c0a = conv(wts, &format!("{p}.conv0.0.0"), 2, Some(cin), None)?;
@@ -159,10 +159,11 @@ pub fn block_layers(wts: &Weights, i: usize, cin: usize, last: bool) -> Result<V
     Ok(layers)
 }
 
-/// The block output layout the kernels read (kernels.rs BlockOut): deconv_as_conv3's output channel P * k4 + o
-/// (P the transposed convolution's output parity, o = c * 4 + q its channel before the PixelShuffle, c the
-/// channel after it and q the parity there) moves to: flow (c < 4) sub * 4 + c, mask (c = 4) 64 + sub, features
-/// (c > 4) 80 + sub * 8 + c - 5, with sub = P * 4 + q, so flow and features load as half4s.
+/// The block output layout the kernels read (kernels.rs BlockOut). It moves deconv_as_conv3's output channel
+/// P * k4 + o, where P is the transposed convolution's output parity and o = c * 4 + q its channel before the
+/// PixelShuffle, with c the channel after it and q the parity there. With sub = P * 4 + q, flow (c < 4) goes to
+/// sub * 4 + c, mask (c = 4) to 64 + sub and features (c > 4) to 80 + sub * 8 + c - 5, so flow and features load as
+/// half4s.
 fn subpixel_layout(conv3: Conv, k4: usize) -> Conv {
     let kk = conv3.cin * conv3.k * conv3.k;
     let mut w = vec![f16::ZERO; conv3.w.len()];
@@ -214,7 +215,7 @@ impl Net {
             return Err(Error::Other(format!("{n} blocks; the kernels take up to {MAX_BLOCKS}")));
         }
 
-        // The encoder (framegen/rife Head): three convolutions here, the transposed one a kernel.
+        // The encoder (framegen/rife Head). Its three convolutions run here and the transposed one as a kernel.
         let enc_layers = vec![
             Layer::ConvLrelu(conv(wts, "encode.cnn0", 2, Some(4), None)?),
             Layer::ConvLrelu(conv(wts, "encode.cnn1", 1, None, None)?),
@@ -229,7 +230,8 @@ impl Net {
         if w3.shape != [16, 4, 4, 4] || b3.numel() != 4 {
             return Err(Error::Other("expected RIFE 4.2x's encoder (a 16 -> 4 transposed convolution)".into()));
         }
-        // (in, out, ky, kx) -> float4 of the outputs per (ky, kx, in), from the fp16 weights as metalrife.py does
+        // Lay (in, out, ky, kx) out as a float4 of the outputs per (ky, kx, in), from the fp16 weights as
+        // metalrife.py does.
         let r = |v: f32| f16::from_f32(v).to_f32();
         let mut ew = vec![0f32; 16 * 16 * 4];
         for ky in 0..4 {
@@ -258,7 +260,7 @@ impl Net {
             }
             let mut layers = block_layers(wts, i, cin, i == n - 1)?;
             // The transposed convolution as one 3x3 convolution making its four output parities (graph.rs
-            // deconv_as_conv3): faster in MPSGraph than its transposed convolution, the same sums.
+            // deconv_as_conv3). It does the same sums and is faster in MPSGraph than the transposed convolution.
             let Some(Layer::Deconv(dc)) = layers.pop() else { unreachable!() };
             let cout = dc.cout;
             layers.push(Layer::Conv(subpixel_layout(crate::graph::deconv_as_conv3(&dc), cout)));
@@ -371,7 +373,7 @@ impl Net {
         enc.endEncoding();
     }
 
-    /// Steady HUD: `edges` <- where slot `s` has brightness edges.
+    /// For Steady HUD, marks in `edges` where slot `s` has brightness edges.
     pub fn encode_edges(&self, cb: &MPSCommandBuffer, s: &Buffer, edges: &Buffer) {
         let enc = unsafe { cb.commandBuffer() }.computeCommandEncoder().expect("encoder");
         kernels::set_buffer(&enc, edges, 0);
@@ -381,7 +383,7 @@ impl Net {
         enc.endEncoding();
     }
 
-    /// Steady HUD: `mask` <- where it acts between slots a -> b (b the newest), from their edge maps.
+    /// For Steady HUD, writes to `mask` where it acts between slots a and b (b the newest), from their edge maps.
     #[allow(clippy::too_many_arguments)]
     pub fn encode_mask(&self, cb: &MPSCommandBuffer, a: &Buffer, b: &Buffer, ea: &Buffer, eb: &Buffer,
                        mask: &Buffer, threshold: f32) {
@@ -403,9 +405,9 @@ pub mod profile {
     use super::*;
     use std::time::Instant;
 
-    /// Milliseconds per run of `stage`, run `reps` times back to back in one command buffer after a warm-up, so
-    /// the GPU's own time shows (not the submission and wake-up around one call). MPSGraph commits command buffers
-    /// as it goes, so GPU timestamps of one buffer would miss part of its work.
+    /// Milliseconds per run of `stage`, run `reps` times back to back in one command buffer after a warm-up. That
+    /// shows the GPU's own time rather than the submission and wake-up around one call. MPSGraph commits command
+    /// buffers as it goes, so GPU timestamps of one buffer would miss part of its work.
     fn per_run(reps: usize, stage: &dyn Fn(&MPSCommandBuffer)) -> f64 {
         let run = |n: usize| {
             let cb = unsafe { MPSCommandBuffer::commandBufferFromCommandQueue(&Gpu::shared().queue) };

@@ -1,18 +1,19 @@
-//! The frame tap: the shared memory chiaki-ng (PS5 Remote Play) and other apps write their video frames and sound
-//! into, for SmoovPlay to read. Byte-compatible with the C writer inside chiaki-ng (chiaki_tap/frametap.c) and the
-//! Python reader and writers (framegen/chiaki_tap.py); docs/frame-tap.md and chiaki_tap/frametap.h describe the
-//! layout.
+//! The frame tap is the shared memory that chiaki-ng (PS5 Remote Play) and other apps write their video frames and
+//! sound into, for SmoovPlay to read. It's byte-compatible with the C writer inside chiaki-ng (chiaki_tap/frametap.c)
+//! and the Python reader and writers (framegen/chiaki_tap.py). docs/frame-tap.md and chiaki_tap/frametap.h describe
+//! the layout.
 //!
-//! - [`FrameTap`]: the header and the frame slots, both sides (the reader's requests the other way too: a keyframe,
-//!   a button press for the delay test, holding the sound back, the heartbeat).
+//! - [`FrameTap`]: the header and the frame slots, both sides. It also carries the reader's requests to the writer:
+//!   a keyframe, a button press for the delay test, holding the sound back, and the heartbeat.
 //! - [`AudioTap`]: the sound ring, both sides.
-//! - [`nal`]: Annex-B access units: NAL units, keyframes, the codec header (parameter sets).
-//! - [`SizeRepeatDetector`]: new frame or repeat from compressed size alone (for the log, the stream check, test mode).
+//! - [`nal`]: Annex-B access units, with their NAL units, keyframes and codec header (parameter sets).
+//! - [`SizeRepeatDetector`]: new frame or repeat from compressed size alone, for the log, the stream check and test
+//!   mode.
 //! - [`saved`]: the codec header saved for a later run that joins the same stream (the same file Python uses).
 //!
-//! macOS: POSIX shared memory, named "/" + what follows the name's last backslash ([`posix_name`]); a reader polls
-//! the header (every [`POLL_S`]) instead of waiting on an event; times are nanoseconds of `CLOCK_UPTIME_RAW`.
-//! Nothing here touches the GPU.
+//! On macOS the tap is POSIX shared memory, named "/" followed by whatever comes after the name's last backslash
+//! ([`posix_name`]). A reader polls the header every [`POLL_S`] instead of waiting on an event. Times are
+//! nanoseconds of `CLOCK_UPTIME_RAW`. Nothing here touches the GPU.
 
 pub mod audio;
 pub mod clock;

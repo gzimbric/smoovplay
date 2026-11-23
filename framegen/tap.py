@@ -31,7 +31,7 @@ from .chiaki_tap import (AUDIO_SUFFIX, CODEC_NAMES, CODECS, COLOURS, FEATURE_VAR
 from .io import Tick
 from .sync import CAPTURE_LOCK
 
-DEFAULT_NAME = "Local\\smoovplay-tap"  # chiaki-ng's is Local\chiaki-frametap (on a Mac: /smoovplay-tap, /chiaki-frametap)
+DEFAULT_NAME = "Local\\smoovplay-tap"  # chiaki-ng's is Local\chiaki-frametap (/smoovplay-tap, /chiaki-frametap on a Mac)
 # Compressed frames' decoder: NVDEC on Windows, Apple's VideoToolbox on a Mac (ChiakiSource._new_decoder)
 DEFAULT_DECODER = "videotoolbox" if sys.platform == "darwin" else "cuda"
 

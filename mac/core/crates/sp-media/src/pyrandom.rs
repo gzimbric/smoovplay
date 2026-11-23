@@ -1,4 +1,4 @@
-//! Python's `random.Random(seed)` (MT19937, seeded by `init_by_array`), for the draws Ps5SimSource makes: the same
+//! Python's `random.Random(seed)` (MT19937, seeded by `init_by_array`), for the draws Ps5SimSource makes. The same
 //! seed gives the same hitches as framegen/io.py.
 
 pub struct PyRandom {
@@ -10,7 +10,7 @@ impl PyRandom {
     pub fn new(seed: u64) -> PyRandom {
         let mut r = PyRandom { mt: [0; 624], i: 624 };
         r.init_genrand(19650218);
-        // Python's seed(int): the absolute value as 32-bit words, least significant first (at least one)
+        // As Python's seed(int), the absolute value as 32-bit words, least significant first, at least one
         let mut key = vec![(seed & 0xffff_ffff) as u32];
         if seed >> 32 != 0 {
             key.push((seed >> 32) as u32);

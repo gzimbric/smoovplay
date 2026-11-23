@@ -1,5 +1,5 @@
-//! tests/test_delaytest.py's delay test on its own and small(), ported: same names, same assertions (the pipeline's
-//! part is in tests/pipeline.rs).
+//! tests/test_delaytest.py's delay test on its own and small(), ported with the same names and assertions. The
+//! pipeline's part is in tests/pipeline.rs.
 
 mod common;
 

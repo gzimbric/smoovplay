@@ -12,18 +12,16 @@ use crate::json::{self, Map, Value};
 use crate::py;
 use crate::settings::{LookChoices, Settings, WatchId};
 
-/// The user's looks folder: $SMOOVPLAY_LOOKS_DIR, else $APPDATA/framegen/looks, else ~/framegen/looks. (The Python
-/// doesn't use data_dir() here, so on a Mac the looks are in ~/framegen/looks, not next to the settings file.)
+/// The user's looks folder: $SMOOVPLAY_LOOKS_DIR, else beside the settings, as framegen/looks.py looks_dir() has it.
 pub fn looks_dir() -> PathBuf {
     if let Some(env) = std::env::var_os("SMOOVPLAY_LOOKS_DIR").filter(|e| !e.is_empty()) {
         return clean_path(PathBuf::from(env));
     }
-    // Beside the settings, as framegen/looks.py looks_dir: %APPDATA%\framegen\looks on Windows,
-    // ~/Library/Application Support/framegen/looks on a Mac.
+    // %APPDATA%\framegen\looks on Windows, ~/Library/Application Support/framegen/looks on a Mac.
     clean_path(crate::paths::data_dir().join("looks"))
 }
 
-/// A path as pathlib writes it: no "." parts, no doubled or trailing slashes.
+/// A path as pathlib writes it, with no "." parts and no doubled or trailing slashes.
 pub(crate) fn clean_path(p: PathBuf) -> PathBuf {
     use std::path::Component;
     let parts: Vec<Component> = p.components().filter(|c| !matches!(c, Component::CurDir)).collect();
@@ -33,7 +31,7 @@ pub(crate) fn clean_path(p: PathBuf) -> PathBuf {
     parts.iter().collect()
 }
 
-/// PurePath.suffix / stem, as Python 3.12 splits a name.
+/// PurePath.suffix and stem, as Python 3.12 splits a name.
 fn suffix_at(name: &str) -> Option<usize> {
     let i = name.rfind('.')?;
     (i > 0 && i < name.len() - 1).then_some(i)
@@ -52,7 +50,7 @@ fn file_name(p: &Path) -> String {
 }
 
 /// The names in `dir` that end in `ext` (case-sensitive, as pathlib's glob is on a Mac), hidden ones and folders
-/// included; sorted.
+/// included, sorted.
 fn glob_names(dir: &Path, ext: &str) -> std::io::Result<Vec<String>> {
     let mut out: Vec<String> = std::fs::read_dir(dir)?
         .filter_map(|e| e.ok())
@@ -63,7 +61,7 @@ fn glob_names(dir: &Path, ext: &str) -> std::io::Result<Vec<String>> {
     Ok(out)
 }
 
-/// A 3D LUT: table is size^3 RGB triples, indexed [b][g][r] (r fastest), as the .cube file lists them.
+/// A 3D LUT. Its table is size^3 RGB triples, indexed [b][g][r] (r fastest), as the .cube file lists them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Lut {
     pub size: usize,
@@ -91,7 +89,7 @@ fn split_lines(s: &str) -> Vec<&str> {
     out
 }
 
-/// A 3D .cube LUT (Adobe/Resolve format). Err: a message for the user (the Python's ValueError text).
+/// A 3D .cube LUT (the Adobe and Resolve format). Err holds a message for the user (the Python's ValueError text).
 pub fn load_cube(path: &Path) -> Result<Lut, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("couldn't read it ({})", py::strerror(&e)))?;
     let text = py::universal_newlines(&String::from_utf8_lossy(&bytes));
@@ -163,17 +161,17 @@ pub fn load_cube(path: &Path) -> Result<Lut, String> {
 pub enum LibraryError {
     #[error("{0}")]
     Look(#[from] LookError),
-    /// A message for the user (ValueError text): a LUT SmoovPlay can't use.
+    /// A message for the user (ValueError text) about a LUT SmoovPlay can't use.
     #[error("{0}")]
     Value(String),
-    /// An OSError, and the path(s) it was about, as Python's message shows them ("'/a'" or "'/a' -> '/b'").
+    /// An OSError and the path or paths it was about, as Python's message shows them ("'/a'" or "'/a' -> '/b'").
     #[error("{}", py::strerror(.0))]
     Io(std::io::Error, String),
 }
 
 impl LibraryError {
-    /// str(e), as the Python's exception says it: "[Errno 1] Operation not permitted: '/x'" for an OSError. (The
-    /// command line, like the Python's, says only the strerror part: Display.)
+    /// str(e), as the Python's exception says it, like "[Errno 1] Operation not permitted: '/x'" for an OSError. The
+    /// command line, like the Python's, says only the strerror part, which is what Display gives.
     pub fn py_message(&self) -> String {
         match self {
             LibraryError::Io(e, at) => match e.raw_os_error() {
@@ -197,7 +195,7 @@ fn io_between<'a>(a: &'a Path, b: &'a Path) -> impl FnOnce(std::io::Error) -> Li
 
 type LutCache = HashMap<String, (Option<SystemTime>, Option<Arc<Lut>>)>;
 
-/// The built-in looks and the user's (a folder of .json files). Ids: the built-in keys, and "my:<file name without
+/// The built-in looks and the user's (a folder of .json files). Ids are the built-in keys, and "my:<file name without
 /// .json>" for the user's.
 pub struct Library {
     pub folder: PathBuf,
@@ -274,7 +272,7 @@ impl Library {
         self.choices = choices;
     }
 
-    /// The "Which look" setting's choices and names: built-in looks, then the user's by name.
+    /// The "Which look" setting's choices and names, the built-in looks and then the user's by name.
     pub fn choices(&self) -> LookChoices {
         self.choices.clone()
     }
@@ -296,7 +294,7 @@ impl Library {
         builtin_look(look_id).or_else(|| self.user_look(look_id))
     }
 
-    /// A user look's file; None for a built-in id or one with folders in it.
+    /// A user look's file, or None for a built-in id or one with folders in it.
     pub fn path(&self, look_id: &str) -> Option<PathBuf> {
         let rest = look_id.strip_prefix("my:")?;
         if look_id.contains('/') || look_id.contains('\\') {
@@ -305,7 +303,7 @@ impl Library {
         Some(self.folder.join(format!("{rest}.json")))
     }
 
-    /// Writes a user look (a new file unless look_id is one of the user's); returns its id.
+    /// Writes a user look (a new file unless look_id is one of the user's) and returns its id.
     pub fn save(&mut self, look: &Value, look_id: Option<&str>) -> Result<String, LibraryError> {
         let look = normalize(look)?;
         let mut path = look_id.filter(|i| !i.is_empty()).and_then(|i| self.path(i));
@@ -337,7 +335,7 @@ impl Library {
         Ok(format!("my:{}", py_stem(&name)))
     }
 
-    /// Deletes a user look's file; false if there's none.
+    /// Deletes a user look's file. False if there's none.
     pub fn delete(&mut self, look_id: &str) -> Result<bool, LibraryError> {
         let Some(path) = self.path(look_id) else { return Ok(false) };
         if !path.exists() {
@@ -353,7 +351,7 @@ impl Library {
         glob_names(&self.lut_folder(), ".cube").unwrap_or_default()
     }
 
-    /// A LUT from the luts folder, read once (and again if the file changes); None if it's missing or broken.
+    /// A LUT from the luts folder, read once and again if the file changes. None if it's missing or broken.
     pub fn lut(&self, name: &str) -> Option<Arc<Lut>> {
         let clean = lut_name(&Value::Str(name.to_string()));
         if clean.is_empty() {
@@ -379,7 +377,7 @@ impl Library {
         lut
     }
 
-    /// Copies a .cube file into the luts folder (after checking it); returns its name.
+    /// Copies a .cube file into the luts folder after checking it, and returns its name.
     pub fn add_lut(&mut self, src: &Path) -> Result<String, LibraryError> {
         let src_name = file_name(src);
         if py_suffix(&src_name).to_lowercase() != ".cube" {
@@ -450,8 +448,8 @@ pub fn samples(folder: &Path) -> Vec<Value> {
     out
 }
 
-/// Which look the video shows: the "Look" settings (look_on, look), or, while the launcher's Looks page edits one,
-/// that one (the preview). rev() changes whenever the answer may have.
+/// Which look the video shows. It's the "Look" settings' look (look_on, look), or the one the launcher's Looks page
+/// is editing (the preview). rev() changes whenever the answer may have.
 pub struct LookState {
     pub preview: Option<Look>,
     rev: Arc<AtomicU64>,
@@ -493,7 +491,7 @@ impl LookState {
         self.current(settings, library).map(|l| l.name.clone()).unwrap_or_default()
     }
 
-    /// The launcher's live preview (None: back to the settings' look).
+    /// The launcher's live preview. None goes back to the settings' look.
     pub fn show(&mut self, look: Option<&Value>) -> Result<(), LookError> {
         self.preview = match look {
             None => None,
@@ -503,7 +501,7 @@ impl LookState {
         Ok(())
     }
 
-    /// The user's looks changed on disk: read them again, and back to the default look if the one in use is gone.
+    /// The user's looks changed on disk. Reads them again, and goes back to the default look if the one in use is gone.
     pub fn reload(&mut self, settings: &mut Settings, library: &mut Library) {
         library.reload();
         settings.set_look_choices(library.choices());
@@ -515,14 +513,14 @@ impl LookState {
         self.bump();
     }
 
-    /// K: the look on or off.
+    /// K turns the look on or off.
     pub fn toggle(&mut self, settings: &mut Settings) {
         self.preview = None;
         let on = settings.get_bool("look_on");
         let _ = settings.set("look_on", !on);
     }
 
-    /// J: the next look (and on).
+    /// J moves to the next look, or turns the look on if it's off.
     pub fn next(&mut self, settings: &mut Settings, delta: i64) {
         self.preview = None;
         if !settings.get_bool("look_on") {

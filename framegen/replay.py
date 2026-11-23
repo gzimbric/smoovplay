@@ -67,8 +67,8 @@ ENCODERS = {
                    "spatial-aq": "1"},
     "h264_amf": {"usage": "lowlatency", "quality": "balanced", "rc": "vbr_peak", "bf": "0"},
     "h264_qsv": {"preset": "veryfast", "forced_idr": "1", "bf": "0", "async_depth": "1"},
-    # A Mac's media engine. It hands back its first packets a few frames late, which the ring doesn't mind (each
-    # packet keeps its own time).
+    # A Mac's media engine. It hands back its first packets a few frames late, which the ring doesn't mind, since
+    # each packet keeps its own time.
     "h264_videotoolbox": {"realtime": "1", "prio_speed": "1", "allow_sw": "0", "bf": "0"},
     "libx264": {"preset": "superfast", "tune": "zerolatency", "forced-idr": "1", "crf": "21"},
 }
@@ -905,7 +905,7 @@ class Recorder:
             flags, lower = 0, None
             if sys.platform == "win32":
                 flags = subprocess.BELOW_NORMAL_PRIORITY_CLASS | subprocess.CREATE_NO_WINDOW
-            else:  # the same below-normal priority: nice 10
+            else:  # the same below-normal priority, as nice 10
                 lower = lambda: os.nice(10)  # noqa: E731
             t0 = time.perf_counter()
             # A process of its own, which carries on if play stops or SmoovPlay closes: only its result waits here.

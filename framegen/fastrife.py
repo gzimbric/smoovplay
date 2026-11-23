@@ -13,8 +13,8 @@ memory traffic (which, not convolution FLOPs, dominates at 1080p+):
 4. Resizes by a factor of 1 are skipped.
 
 Results match the reference forward to fp16 rounding (checked by scripts/check_fast.py).
-On Apple's GPU the same math runs as framegen/metalrife.py's MetalIFNet, whose Metal kernels go further: only the
-pixels each downsample reads are warped, and no full-resolution flow, mask or features are stored.
+On Apple's GPU the same math runs as framegen/metalrife.py's MetalIFNet, whose Metal kernels go further. They warp
+only the pixels each downsample reads, and store no full-resolution flow, mask or features.
 """
 
 from __future__ import annotations

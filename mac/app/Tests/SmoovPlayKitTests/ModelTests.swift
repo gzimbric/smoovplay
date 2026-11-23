@@ -15,7 +15,7 @@ import Testing
         let contrast = lib.entries[i].nodes[0]["contrast"]!
         lib.setValue(i, node: 0, key: "contrast", .num(0.5))
         #expect(lib.changed("cinematic"))
-        lib.setValue(i, node: 0, key: "contrast", contrast)  // every change put back: SmoovPlay's look again
+        lib.setValue(i, node: 0, key: "contrast", contrast)  // every change put back, so it's SmoovPlay's look again
         #expect(!lib.changed("cinematic"))
         #expect(lib.entries[i].look == was)
         lib.removeNode(i, node: 0)

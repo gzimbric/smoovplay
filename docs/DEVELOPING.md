@@ -33,45 +33,46 @@ RIFE weights download automatically into `models/` on first run. To build the in
 
 ### On a Mac (Experimental)
 
-There are two ways to run SmoovPlay on an Apple silicon Mac. The native one is a SwiftUI app with a Rust core on
-Metal, faster than the Python pipeline (90 and 120 fps at full motion detail on an M5 Max): see
-[mac/README.md](../mac/README.md). This section is the other: the Python pipeline itself, from the command line,
-which the app can also use as its core. It needs macOS with Python 3.12, and [Homebrew](https://brew.sh) for
-chiaki-ng's build.
+There are two ways to run SmoovPlay on an Apple silicon Mac. The native one is a SwiftUI app with a Rust core that
+runs on Metal, described in [mac/README.md](../mac/README.md). It's the faster of the two, and holds 90 fps at full
+motion detail on an M5 Max with a real PS5. This section covers the other way, the Python pipeline itself from the
+command line, which the app can also use as its core. It needs Python 3.12, and [Homebrew](https://brew.sh) to build
+chiaki-ng.
 
 ```sh
-python3.12 -m venv .venv      # or: uv venv --python 3.12 .venv
-.venv/bin/python -m pip install torch -r requirements.txt   # PyPI's torch includes Apple's GPU (Metal)
-.venv/bin/python -m framegen.prepare                        # RIFE's weights, then Auto-detect picks settings
+python3.12 -m venv .venv
+.venv/bin/python -m pip install torch -r requirements.txt   # PyPI's torch already runs on Apple's GPU
+.venv/bin/python -m framegen.prepare                        # downloads RIFE's weights and picks settings
 .venv/bin/python run.py testdata/clip_1080p60.mp4 --realtime --display
 ```
 
-For PS5 Remote Play, build the patched chiaki-ng once (`chiaki_tap/build_macos.sh`, see
-[chiaki_tap/README.md](../chiaki_tap/README.md#build-on-macos)), start it with `run_chiaki_frametap.command`, then
-`.venv/bin/python run.py --chiaki --display`. What's different on a Mac:
+For PS5 Remote Play, build the patched chiaki-ng once as [chiaki_tap/README.md](../chiaki_tap/README.md#build-on-macos)
+describes, start it with `run_chiaki_frametap.command`, then run `.venv/bin/python run.py --chiaki --display`.
 
-- **RIFE runs on Apple's GPU** through PyTorch's Metal backend (`framegen/gpu.py`), with Metal kernels of SmoovPlay's
-  own for everything but the convolutions (`framegen/metalrife.py`, used by `RifeInterpolator` on `mps`;
-  `SMOOVPLAY_METAL=0` turns them off). On an M5 Max one 1080p in-between frame takes 6.9 ms at full motion detail
-  and 4.4 ms at half, about 2.6 and 3.1 times faster than plain PyTorch on Metal, with the same output to 0.01 dB.
-  TensorRT, NVIDIA VFG and RTX VSR are NVIDIA's and aren't there.
-- **The frame tap is POSIX shared memory** (`/chiaki-frametap`), polled every half millisecond, with the same layout
-  as on Windows ([frame-tap.md](frame-tap.md)). Remote Play is decoded with VideoToolbox (`--chiaki-decoder
-  videotoolbox`, the default on a Mac): about 1.3 ms a 1080p HEVC frame.
-- **The window is OpenGL 4.1** (`framegen/glsl.py` rewrites the shaders for it), so FSR 1, Looks and Fill the screen
-  all work. Frames reach it through the CPU (the memory is shared with the GPU, so that costs about 3 ms a frame,
-  copy, upload and swap). Fullscreen (F) covers the menu bar and the Dock.
-- **Instant replay** encodes with VideoToolbox's H.264 and saves to `~/Movies/SmoovPlay`. Settings, looks and Auto-detect's
-  times live in `~/Library/Application Support/framegen`.
-- **Not on a Mac yet:** window capture (it uses Windows' Desktop Duplication; a Mac version would use
-  ScreenCaptureKit), HDR output (HDR streams are shown in SDR), shortcuts that work from any window (Ctrl+Alt+R),
-  minimising chiaki-ng, and the launcher. Capture cards go through OpenCV's AVFoundation input, by number
-  (`--capture 0`), untested with a real card.
+RIFE runs on Apple's GPU through PyTorch's Metal backend (`framegen/gpu.py`). SmoovPlay's own Metal kernels
+(`framegen/metalrife.py`) do everything except the convolutions, which makes it 2.6 times faster at full motion
+detail and 3.1 times at half, with the same output. One 1080p in-between frame takes 6.9 ms at full detail on an
+M5 Max and 4.4 ms at half. `SMOOVPLAY_METAL=0` turns the kernels off. TensorRT, NVIDIA VFG and RTX VSR are NVIDIA's
+and aren't available.
 
-Measured on an M5 Max with the fake PS5 (`scripts/frametap_fake.py --native`, HEVC, test mode), not yet with a real
-PS5: at 60 fps and full motion detail an interpolation tick took 10.1 ms (p50) and a frame 27 ms from the tap to the
-screen; at 90 fps and half detail 92% of the extra in-between frames were shown on time (40 ms tap to screen), and
-at 90 fps and full detail only 69%, so Auto-detect picks 90 fps at half detail there. 120 fps showed half of them.
+The frame tap is POSIX shared memory with the same layout as on Windows ([frame-tap.md](frame-tap.md)), and Remote
+Play is decoded with VideoToolbox, about 1.3 ms for a 1080p HEVC frame.
+
+The window uses OpenGL 4.1, and `framegen/glsl.py` rewrites the shaders for it, so FSR 1, looks and Fill the screen
+all work. Frames reach the window through the CPU, which costs about 3 ms each for the copy, upload and swap.
+Fullscreen covers the menu bar and the Dock.
+
+Instant replay encodes with VideoToolbox and saves to `~/Movies/SmoovPlay`. Settings, looks and Auto-detect's times
+are kept in `~/Library/Application Support/framegen`.
+
+The Python pipeline doesn't do window capture, keys that work from other apps, or hiding chiaki-ng's window on a
+Mac. The Mac app does those. HDR streams are shown in SDR. Capture cards are read by number through OpenCV
+(`--capture 0`) and haven't been tried with a real card.
+
+With a real PS5 playing a 30 fps game at 90 fps and full detail, the Python pipeline showed 67% of the extra frames
+on time, with 42.5 ms from stream to screen. The fake PS5 gave the same picture: 90 fps at full detail showed 69% of
+them and 90 at half 92%, so Auto-detect picks half detail for 90 fps here. At 60 fps and full detail an interpolation
+tick took 10.1 ms, with 27 ms from the tap to the screen.
 
 ### Usage
 

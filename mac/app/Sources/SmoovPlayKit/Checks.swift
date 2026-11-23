@@ -75,31 +75,31 @@ public enum MacChecks {
         return kind
     }
 
-    /// Every card (blocking: it asks the network). source: the Play page's pick.
+    /// Every card. It blocks while it asks the network. source is the Play page's pick.
     public static func run(paths: AppPaths, source: String, chiakiInstalled: Bool) -> [Check] {
         var out: [Check] = []
         let os = ProcessInfo.processInfo.operatingSystemVersion
         let gb = MacInfo.memoryGB
         if !MacInfo.appleSilicon {
             out.append(Check(id: "mac", title: "This Mac", level: .fail, value: MacInfo.chip,
-                             detail: "SmoovPlay needs an Apple silicon Mac (M1 or newer): RIFE runs on its GPU through Metal."))
+                             detail: "SmoovPlay needs an Apple silicon Mac (M1 or newer), because RIFE runs on its GPU through Metal."))
         } else {
             out.append(Check(id: "mac", title: "This Mac", level: gb < 8 ? .warn : .ok,
                              value: "\(MacInfo.chip), \(gb) GB, macOS \(os.majorVersion).\(os.minorVersion)",
-                             detail: gb < 8 ? "Under 8 GB of memory: other apps may slow the video down." : "Fast enough for 60 fps; Auto-detect tells how far it goes."))
+                             detail: gb < 8 ? "With under 8 GB of memory, other apps may slow the video down." : "Fast enough for 60 fps. Auto-detect tells how far it goes."))
         }
         let r = MacInfo.refresh()
         if r.best > r.now + 1 {
             out.append(Check(id: "display", title: "Display", level: .warn, value: "\(r.size) at \(Int(r.now)) Hz",
-                             detail: "It can run at \(Int(r.best)) Hz: set it there in System Settings > Displays, for 90 or 120 fps.",
+                             detail: "It can run at \(Int(r.best)) Hz. Set it there in System Settings > Displays for 90 or 120 fps.",
                              fix: "Open Displays", fixID: "displays"))
         } else {
             out.append(Check(id: "display", title: "Display", level: r.now >= 89 ? .ok : .info, value: "\(r.size) at \(Int(r.now)) Hz",
-                             detail: r.now >= 119 ? "Fast enough for 120 fps." : r.now >= 89 ? "Fast enough for 90 fps." : "60 fps is the most it shows. That's fine: frame generation still doubles a 30 fps game."))
+                             detail: r.now >= 119 ? "Fast enough for 120 fps." : r.now >= 89 ? "Fast enough for 90 fps." : "60 fps is the most it shows. That's fine, because frame generation still doubles a 30 fps game."))
         }
         if let free = MacInfo.freeGB(FileManager.default.homeDirectoryForCurrentUser) {
             out.append(Check(id: "disk", title: "Disk space", level: free < 5 ? .warn : .ok, value: String(format: "%.0f GB free", free),
-                             detail: free < 5 ? "Instant replay clips go to Movies/SmoovPlay: make some room first." : "Room for instant replay clips (Movies/SmoovPlay)."))
+                             detail: free < 5 ? "Instant replay clips go to Movies/SmoovPlay, so make some room first." : "Room for instant replay clips (Movies/SmoovPlay)."))
         }
         if paths.runtimeReady {
             out.append(Check(id: "pipeline", title: "The pipeline", level: paths.coreProblem == nil ? .ok : .fail,
@@ -115,7 +115,7 @@ public enum MacChecks {
                              detail: chiakiInstalled ? paths.chiakiApp.path : "Build it with chiaki_tap/build_macos.sh (chiaki_tap/README.md, Build on macOS)."))
             let net = network() ?? "Unknown"
             out.append(Check(id: "lan", title: "Home network", level: net == "Wi-Fi" ? .info : net == "Offline" ? .warn : .ok, value: net,
-                             detail: net == "Wi-Fi" ? "Remote Play is smoothest over a cable, or Wi-Fi on 5 or 6 GHz." : net == "Offline" ? "Not connected: Remote Play needs the network the PS5 is on." : "A cable: the steadiest stream."))
+                             detail: net == "Wi-Fi" ? "Remote Play is smoothest over a cable, or Wi-Fi on 5 or 6 GHz." : net == "Offline" ? "Not connected. Remote Play needs the network the PS5 is on." : "A cable gives the steadiest stream."))
         case "window":
             let ok = ScreenPermission.granted
             out.append(Check(id: "screen", title: "Screen Recording", level: ok ? .ok : .warn, value: ok ? "Allowed" : "Not allowed yet",

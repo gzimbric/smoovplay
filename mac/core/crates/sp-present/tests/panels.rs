@@ -1,5 +1,5 @@
-//! The panels (stats overlay, messages, menu) draw, at a sensible size for the screen, and grow with it.
-//! SP_PRESENT_DUMP=<folder> also writes them there as raw BGRA (w x h in the name) to look at.
+//! The panels (stats overlay, messages, menu) draw at a sensible size for the screen and grow with it.
+//! SP_PRESENT_DUMP=<folder> also writes them there as raw BGRA to look at, with w x h in the name.
 
 use sp_present::display::FixedSettings;
 use sp_present::menu::{Menu, Nav};

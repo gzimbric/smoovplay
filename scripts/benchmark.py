@@ -1,7 +1,7 @@
 """GPU timing per stage for each RIFE model / resolution (synthetic frames, no decode).
 
-On NVIDIA each setting runs with and without CUDA graphs; on Apple's GPU (Metal) eagerly ("eager", FastIFNet) and
-with the Metal kernels ("metal", framegen/metalrife.py, what the Mac runs).
+On NVIDIA each setting runs with and without CUDA graphs. On Apple's GPU (Metal) it runs eagerly ("eager",
+FastIFNet) and with the Metal kernels ("metal", framegen/metalrife.py), which is what the Mac runs.
 
   python scripts/benchmark.py
   python scripts/benchmark.py --models 4.25 4.22.lite --res 1080p 4k --scales 1.0 0.5
@@ -57,7 +57,7 @@ def main() -> None:
                     it = RifeInterpolator(w, h, model, scale, **kw)
                     if label == "metal" and it.metal is None:
                         del it
-                        continue  # (not at this scale)
+                        continue  # MetalIFNet doesn't apply at this scale
                     it.load(frame)
                     it.prepare(0)
                     for _ in range(5):  # warm-up

@@ -1,5 +1,5 @@
-//! RifeInterpolator's behaviour beyond the pixels (tests/parity.rs has those): options it refuses, Steady HUD
-//! turned on mid-pair, the output ring, non-blocking calls, and fetching missing weights.
+//! RifeInterpolator's behaviour beyond the pixels, which tests/parity.rs checks. It covers options it refuses,
+//! Steady HUD turned on mid-pair, the output ring, non-blocking calls, and fetching missing weights.
 
 use sp_core::{Frame, Interpolator, PixelKind};
 use sp_rife::{Options, RifeInterpolator, weights};

@@ -1,6 +1,6 @@
 //! The pieces of CPython's behaviour the ported code leans on, so it reads and writes exactly what the Python does:
-//! str.split()/strip() whitespace, float() and int() of a string, round(), "%.1f" formatting, repr() of a float and
-//! of a string, float %, sum() (Neumaier, as 3.12 does it) and the text of a UnicodeDecodeError.
+//! the whitespace str.split() and strip() take off, float() and int() of a string, round(), "%.1f" formatting, repr()
+//! of a float and of a string, float %, sum() (Neumaier, as 3.12 does it) and the text of a UnicodeDecodeError.
 
 use crate::pyuni;
 
@@ -28,7 +28,7 @@ pub fn split_ws(s: &str) -> Vec<&str> {
     s.split(is_space).filter(|p| !p.is_empty()).collect()
 }
 
-/// s.split(None, 1): the first word and the rest (its leading whitespace skipped), or None for no words.
+/// s.split(None, 1), as the first word and the rest (its leading whitespace skipped), or None for no words.
 pub fn split_ws_once(s: &str) -> Option<(&str, Option<&str>)> {
     let s = s.trim_start_matches(is_space);
     if s.is_empty() {
@@ -73,13 +73,13 @@ pub fn is_printable(c: char) -> bool {
     !in_table(c as u32, pyuni::NONPRINTABLE)
 }
 
-/// What _PyUnicode_TransformDecimalAndSpaceToASCII does before float() and int() parse: Unicode digits to ASCII,
-/// Unicode whitespace to a space; None if another non-ASCII character is in it.
+/// What _PyUnicode_TransformDecimalAndSpaceToASCII does before float() and int() parse. Unicode digits become ASCII
+/// and Unicode whitespace becomes a space. None if another non-ASCII character is in it.
 fn to_ascii_number(s: &str) -> Option<String> {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         if (c as u32) < 127 {
-            out.push(c); // (ASCII stays as it is: "\x1c" is whitespace to str.split(), not to float())
+            out.push(c); // ASCII stays as it is. "\x1c" is whitespace to str.split() but not to float().
         } else if is_space(c) {
             out.push(' ');
         } else {
@@ -93,7 +93,7 @@ fn ascii_space(c: char) -> bool {
     matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0b' | '\x0c')
 }
 
-/// Underscores only between digits (PEP 515), then taken out; None if they're misplaced.
+/// Underscores only between digits (PEP 515), then taken out. None if they're misplaced.
 fn drop_underscores(s: &str) -> Option<String> {
     if !s.contains('_') {
         return Some(s.to_string());
@@ -119,7 +119,7 @@ fn drop_underscores(s: &str) -> Option<String> {
     Some(out)
 }
 
-/// float(s) for a str: None where Python raises ValueError.
+/// float(s) for a str, or None where Python raises ValueError.
 pub fn float_from_str(s: &str) -> Option<f64> {
     let t = to_ascii_number(s)?;
     let t = t.trim_matches(ascii_space);
@@ -174,7 +174,8 @@ pub fn float_from_str(s: &str) -> Option<f64> {
     Some(sign * v)
 }
 
-/// int(s) for a str (base 10): None where Python raises ValueError. Too big for an i128: i128::MAX or MIN.
+/// int(s) for a str (base 10), or None where Python raises ValueError. A value too big for an i128 gives i128::MAX
+/// or MIN.
 pub fn int_from_str(s: &str) -> Option<i128> {
     let t = to_ascii_number(s)?;
     let t = t.trim_matches(ascii_space);
@@ -190,19 +191,19 @@ pub fn int_from_str(s: &str) -> Option<i128> {
     if body.is_empty() || !body.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
-    // (int("0_0") is 0, and leading zeros are fine in int(), unlike in Python source)
+    // int("0_0") is 0. Leading zeros are fine in int(), unlike in Python source.
     match body.parse::<i128>() {
         Ok(v) => Some(if neg { -v } else { v }),
         Err(_) => Some(if neg { i128::MIN } else { i128::MAX }),
     }
 }
 
-/// round(x) for a float: to the nearest whole number, halves to even.
+/// round(x) for a float, to the nearest whole number with halves to even.
 pub fn round_even(x: f64) -> f64 {
     x.round_ties_even()
 }
 
-/// round(x, ndigits) for a float: correctly rounded to ndigits decimals (halves to even, on the exact binary value).
+/// round(x, ndigits) for a float, correctly rounded to ndigits decimals (halves to even, on the exact binary value).
 pub fn round_to(x: f64, ndigits: usize) -> f64 {
     if !x.is_finite() || x == 0.0 {
         return x;
@@ -252,7 +253,7 @@ pub fn float_repr(x: f64) -> String {
     }
 }
 
-/// x % y for floats: the result has the divisor's sign.
+/// x % y for floats. The result has the divisor's sign.
 pub fn fmod(x: f64, y: f64) -> f64 {
     let m = x % y;
     if m != 0.0 { if (y < 0.0) != (m < 0.0) { m + y } else { m } } else { 0.0f64.copysign(y) }
@@ -350,7 +351,8 @@ pub fn oserror_text(e: &std::io::Error, path: &std::path::Path) -> String {
     }
 }
 
-/// Path.read_text(encoding="utf-8"): strict UTF-8, universal newlines. Err: the OSError or UnicodeDecodeError text.
+/// Path.read_text(encoding="utf-8"), with strict UTF-8 and universal newlines. Err holds the OSError or
+/// UnicodeDecodeError text.
 pub fn read_text(path: &std::path::Path) -> Result<String, ReadError> {
     let bytes = std::fs::read(path).map_err(ReadError::Os)?;
     match std::str::from_utf8(&bytes) {

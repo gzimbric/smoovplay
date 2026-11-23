@@ -1,19 +1,20 @@
-"""Parity traces for sp-sched: drives the Python pipeline (framegen/) with deterministic inputs and records what it
-decided, tick by tick, to JSON in mac/core/fixtures/sched/. tests/parity.rs replays the same inputs through the Rust
-pipeline and must come out the same.
+"""Parity traces for sp-sched. This drives the Python pipeline (framegen/) with deterministic inputs and records
+what it decided, tick by tick, as JSON in mac/core/fixtures/sched/. tests/parity.rs replays the same inputs through
+the Rust pipeline and must come out the same.
 
-Deterministic: the pipeline's clock (time.perf_counter / time.sleep in framegen.pipeline and framegen.delaytest) is
-replaced by a fake one that moves only when something says so: a tick arriving (the source moves it to the tick's
-arrival time, as a live source waiting for a frame), the stand-in interpolator and presenter (each costs a fixed
-time), and the pacer's sleeps. Stand-ins as tests/ uses them: a source yielding Ticks, an interpolator whose frames
-say which two frames and which fraction they are, a presenter recording what it was given, chiaki-ng for the delay
-test and the sound, instant replay.
+The runs are deterministic because the pipeline's clock (time.perf_counter and time.sleep in framegen.pipeline and
+framegen.delaytest) is replaced by a fake one. It moves only when a tick arrives (the source moves it to the tick's
+arrival time, like a live source waiting for a frame), when the stand-in interpolator and presenter run (each costs
+a fixed time) and when the pacer sleeps. The stand-ins are the ones tests/ uses: a source yielding Ticks, an
+interpolator whose frames say which two frames and which fraction they are, a presenter recording what it was
+given, chiaki-ng for the delay test and the sound, and instant replay.
 
 Frames carry a .tag (a number) so the trace can say which frame was shown. Pictures come from a small integer recipe
-(content(), reproduced exactly in crates/sp-sched/tests/common/mod.rs) so both sides see the same pixels; "tag"
-scenarios use 8x8 float frames whose value is the tag, as tests/test_dips.py does.
+(content(), reproduced exactly in crates/sp-sched/tests/common/mod.rs) so both sides see the same pixels. Scenarios
+with probe "tag" use 8x8 float frames whose value is the tag, as tests/test_dips.py does.
 
-Run: .venv/bin/python mac/core/tools/sched_traces.py   (writes fixtures/sched/*.json; about a minute)
+Run: .venv/bin/python mac/core/tools/sched_traces.py
+It writes fixtures/sched/*.json in about a minute.
 """
 from __future__ import annotations
 
@@ -192,14 +193,15 @@ class Sink:
 
 
 class Remote:
-    """chiaki-ng: presses go out send_s after they're asked for; the game toggles its menu answer_s later."""
+    """Stands in for chiaki-ng. Presses go out send_s after they're asked for, and the game toggles its menu answer_s
+    later."""
 
     def __init__(self, clock, ev, answer_s, send_s, answers, sends, press):
         self.clock, self.ev = clock, ev
         self.answer_s, self.send_s, self.answers, self.sends = answer_s, send_s, answers, sends
         self.asked, self.sent = [], []
         if not press:
-            self.press = None  # (hasattr(remote, "press") stays true; can_press says no)
+            self.press = None  # hasattr(remote, "press") stays true, but can_press says no
         self._can = press
 
     def can_press(self):
@@ -268,7 +270,7 @@ class Replay:
 
 
 class LogLines(io.TextIOBase):
-    """stdout while the pipeline runs: each "[pipeline] ..." line goes into the trace where it happened."""
+    """Stands in for stdout while the pipeline runs. Each [pipeline] line goes into the trace where it happened."""
 
     def __init__(self, ev):
         self.ev, self.buf = ev, ""
@@ -399,8 +401,9 @@ def run(name: str, cfg: dict, ticks: list) -> dict:
 # ------------------------------------------------------------------------------------------------ scenarios
 def game(pattern, n, scene=0, hint=False, noise=-1, amp=2, hud=False, cut_every=0, damaged=(), period=TICK,
          start_k=0):
-    """n ticks of a game on a 60 Hz stream; pattern(i) says if tick i shows a new frame. The picture moves on each
-    new frame (k counts them); with noise, each tick has its own noise (a decoded stream's repeats aren't identical)."""
+    """n ticks of a game on a 60 Hz stream, where pattern(i) says if tick i shows a new frame. The picture moves on
+    each new frame (k counts them). With noise, each tick has its own noise, because a decoded stream's repeats aren't
+    identical."""
     out, k = [], start_k - 1
     for i in range(n):
         new = bool(pattern(i))
@@ -417,7 +420,7 @@ def game(pattern, n, scene=0, hint=False, noise=-1, amp=2, hud=False, cut_every=
 
 
 def dipping_game(frames=150, held3=0.3, seed=1, hold=3, steady=0):
-    """tests/test_dips.py _dipping_game: values are the game's time in ticks, with Remote Play's sizes and numbers."""
+    """tests/test_dips.py _dipping_game. Values are the game's time in ticks, with Remote Play's sizes and numbers."""
     rnd = random.Random(seed)
     out, i, t = [], 0, 0
     for f in range(frames):
@@ -599,7 +602,7 @@ def _stale(ticks):
 
 
 def _ready(ticks):
-    """Remote Play: each frame ready (decoded) 5 ms after it arrived."""
+    """Remote Play, with each frame ready (decoded) 5 ms after it arrived."""
     for t in ticks:
         t["ready"] = t["at"] + 0.005
     return ticks
@@ -642,7 +645,8 @@ def results_reports(runs: dict) -> dict:
 
 
 def streamcheck_cases() -> dict:
-    """tests/test_streamcheck.py's streams, through the real size check: the rows StreamCheck got and its report."""
+    """tests/test_streamcheck.py's streams through the real size check, giving the rows StreamCheck got and its
+    report."""
     from framegen.chiaki_tap import SizeRepeatDetector
     from framegen.streamcheck import StreamCheck
 
@@ -693,7 +697,7 @@ def streamcheck_cases() -> dict:
         "too_short": play(lambda i: i % 2 == 0, seconds=30),
         "still": play(lambda i: i % 2 == 0, md_new=0.1, md_rep=0.0),
     }
-    # test_test_mode_frames_are_left_out: add_tick, with test mode's frames
+    # test_test_mode_frames_are_left_out goes through add_tick with test mode's frames
     sc, det = StreamCheck(), SizeRepeatDetector()
     ticks = []
     for i in range(4000):

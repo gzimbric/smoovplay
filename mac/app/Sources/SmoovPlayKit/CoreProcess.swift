@@ -2,8 +2,8 @@
 import Foundation
 
 /// A child process whose stdout and stderr come in as lines, and whose stdin takes lines. Callbacks come on the
-/// queue given (the main queue for the UI). Writing to a child that has gone never raises SIGPIPE: the app ignores
-/// it (SmoovPlayKit.ignoreSigpipe), and a failed write just returns false.
+/// queue given (the main queue for the UI). Writing to a child that has gone never raises SIGPIPE, because the app
+/// ignores it (SmoovPlayKit.ignoreSigpipe). A failed write returns false.
 public final class LineProcess: @unchecked Sendable {
     public let process = Process()
     private let input = Pipe(), output = Pipe(), errors = Pipe()
@@ -92,7 +92,7 @@ public final class LineProcess: @unchecked Sendable {
         }
     }
 
-    /// Closes stdin: a child reading commands ends by itself (looks_preview, the core's command thread).
+    /// Closes stdin, so a child reading commands ends by itself (looks_preview, the core's command thread).
     public func closeInput() {
         lock.lock()
         defer { lock.unlock() }
@@ -128,12 +128,12 @@ public final class CoreSession: @unchecked Sendable {
     public private(set) var logURL: URL
     public private(set) var resultsURL: URL
     public private(set) var lastLine = ""
-    public private(set) var live = false  // a state line came: the video window reads commands
+    public private(set) var live = false  // a state line came, so the video window reads commands
     public private(set) var streamEnded = false
     public private(set) var exitCode: Int32?
     public private(set) var stopping = false
     public private(set) var arguments: [String] = []
-    /// Commands the core answered "unknown command" to, this session (key, overlay...).
+    /// Commands the core answered "unknown command" to this session, such as key and overlay.
     public private(set) var unsupported: Set<String> = []
     private var proc: LineProcess?
     private var log: FileHandle?
@@ -156,7 +156,8 @@ public final class CoreSession: @unchecked Sendable {
         resultsURL = paths.logs.appendingPathComponent("results-\(stamp).txt")
     }
 
-    /// The core's arguments (after the executable's own, e.g. run.py): the Windows launcher's, from Session.Start.
+    /// The core's arguments, after the executable's own (run.py, for example). They're the Windows launcher's, from
+    /// Session.Start.
     public static func arguments(options: Options, paths: AppPaths, results: URL) -> [String] {
         var a = options.sourceArgs
         a += ["--display", "--control"]
@@ -196,7 +197,7 @@ public final class CoreSession: @unchecked Sendable {
         }
     }
 
-    /// One command for the running core, e.g. "set hz 90". False if it has gone.
+    /// One command for the running core, such as "set hz 90". False if it has gone.
     @discardableResult
     public func send(_ command: String) -> Bool {
         let what = command == "quit" ? "[launcher] Stop: asked the video window to close"
@@ -206,11 +207,11 @@ public final class CoreSession: @unchecked Sendable {
         return proc?.send(command) ?? false
     }
 
-    /// True once the core said it doesn't know this command (its first word).
+    /// False once the core has said it doesn't know this command (its first word).
     public func supports(_ command: String) -> Bool { !unsupported.contains(command) }
 
-    /// Stops the session. Once the video is up it's asked to quit, as Esc does (clips being saved are finished
-    /// first); it's ended outright if it hasn't gone 20 s later, if it isn't up yet, or on a second Stop.
+    /// Stops the session. Once the video is up it's asked to quit, as Esc does, and clips being saved are finished
+    /// first. It's ended outright if it hasn't gone 20 s later, if it isn't up yet, or on a second Stop.
     public func stop() {
         let again = stopping
         stopping = true
@@ -230,7 +231,7 @@ public final class CoreSession: @unchecked Sendable {
     private func line(_ line: String) {
         let ev = CoreLine.parse(line)
         if case .state = ev {
-            live = true  // (not for the log)
+            live = true  // not for the log
             onEvent(ev)
             return
         }
@@ -260,7 +261,8 @@ public final class CoreSession: @unchecked Sendable {
         else { onState(.error(lastLine.isEmpty ? "It stopped unexpectedly (exit code \(rc))." : lastLine)) }
     }
 
-    /// A line in the session's log (after the core exited too: the window capture's last word comes then).
+    /// A line in the session's log. It works after the core has exited too, since the window capture's last word
+    /// comes then.
     public func write(_ s: String) {
         logLock.lock()
         defer { logLock.unlock() }
@@ -280,7 +282,8 @@ public final class CoreSession: @unchecked Sendable {
     }
 }
 
-/// Runs a Python module of the pipeline once and collects its lines (python -m framegen.settings, .looks ...).
+/// Runs a Python module of the pipeline once and collects its lines (python -m framegen.settings, framegen.looks
+/// and the rest).
 public enum PyTool {
     public struct Result: Sendable {
         public var code: Int32
@@ -297,8 +300,8 @@ public enum PyTool {
         "framegen.capture": "capture",
     ]
 
-    /// How to run a helper: the Rust core's subcommand when the core is a Rust binary that has it, else Python's
-    /// `-m module`.
+    /// How to run a helper. That's the Rust core's subcommand when the core is a Rust binary that has it, else
+    /// Python's `-m module`.
     public static func command(_ paths: AppPaths, module: String) -> (URL, [String]) {
         if paths.coreKind != .python, let bin = paths.coreBinary, let sub = subcommands[module],
            FileManager.default.isExecutableFile(atPath: bin.path) {
@@ -307,7 +310,7 @@ public enum PyTool {
         return (paths.python, ["-m", module])
     }
 
-    /// Blocking: call it off the main thread. onLine sees each line as it comes (on a background queue).
+    /// Blocks, so call it off the main thread. onLine sees each line as it comes, on a background queue.
     public static func run(_ paths: AppPaths, module: String, _ args: [String], stdin: String? = nil,
                            timeout: TimeInterval = 300, onLine: ((String) -> Void)? = nil) -> Result {
         let q = DispatchQueue(label: "pytool")

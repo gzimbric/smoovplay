@@ -1,21 +1,21 @@
-// The Looks page's model (installer/launcher/LooksPage.cs, LookPreview.cs): SmoovPlay's looks and the user's
-// (framegen/looks.py), and an editor laid out like a color grading app's nodes: a look is a stack of effects,
+// The Looks page's model (installer/launcher/LooksPage.cs, LookPreview.cs). It holds SmoovPlay's looks and the
+// user's (framegen/looks.py), and an editor laid out like a color grading app's nodes. A look is a stack of effects,
 // applied top to bottom, each with a switch, an amount and its own settings.
 //
 // The effect types, their settings and SmoovPlay's looks come from the pipeline (python -m framegen.looks schema).
-// The user's looks are JSON files in the looks folder ("my:<file name>"), which the app writes itself; share codes
+// The user's looks are JSON files in the looks folder ("my:<file name>"), which the app writes itself. Share codes
 // and LUT files go through python -m framegen.looks (encode, import, add-lut).
 //
-// While playing, the video shows the look picked here, live: changes go to the core as "look-show <JSON>", at most
+// While playing, the video shows the look picked here, live. Changes go to the core as "look-show <JSON>", at most
 // 25 times a second, and leaving the page sends "look-hide". SmoovPlay's own looks can be changed freely to try
-// things: the changes stay in memory (presetOriginal) until Save as mine makes a copy of yours ("My Cinematic").
+// things. The changes stay in memory (presetOriginal) until Save as mine makes a copy of yours ("My Cinematic").
 import Foundation
 
 public struct LookParam: Equatable, Sendable {
     public var key, label, unit: String
     public var min, max, step, defaultValue: Double
     public var text: Bool  // a file name (the LUT's)
-    public var names: [String]  // a choice: the names of min, min + 1, ...
+    public var names: [String]  // a choice's names, for min, min + 1 and so on
 
     public func format(_ v: Double) -> String {
         if key == "mix" { return "\(Int((v * 100).rounded()))%" }
@@ -61,7 +61,7 @@ public struct LooksLibrary: Sendable {
     public var lutFolder: URL
     public var maxNodes: Int
     public var samples: [LookSample]
-    /// One of SmoovPlay's looks with changes being tried: its id -> the look as it was.
+    /// SmoovPlay's looks with changes being tried, by id, each with the look as it was.
     public var presetOriginal: [String: JSON] = [:]
 
     public init(json text: String) throws {
@@ -112,7 +112,8 @@ public struct LooksLibrary: Sendable {
         return n
     }
 
-    /// A new file (and so an id) for a look of yours: its name in lower case, letters and digits.
+    /// A new file, and so an id, for a look of yours. The file is named after the look, in lower case letters and
+    /// digits.
     public func newFile(for name: String) -> (String, URL) {
         var stem = name.lowercased().replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
@@ -133,7 +134,8 @@ public struct LooksLibrary: Sendable {
     }
 
     // MARK: editing (index into entries)
-    /// The look at `i`, ready to change: a change to one of SmoovPlay's looks is a try-out, and what it was is kept.
+    /// Gets the look at `i` ready to change. A change to one of SmoovPlay's looks is a try-out, and what it was is
+    /// kept.
     mutating func editable(_ i: Int) {
         let e = entries[i]
         if e.builtin && presetOriginal[e.id] == nil { presetOriginal[e.id] = e.look }
@@ -180,7 +182,7 @@ public struct LooksLibrary: Sendable {
         if let was = presetOriginal.removeValue(forKey: entries[i].id) { entries[i].look = was }
     }
 
-    /// The changes tried on one of SmoovPlay's looks become a look of yours ("My Cinematic"); SmoovPlay's goes
+    /// The changes tried on one of SmoovPlay's looks become a look of yours ("My Cinematic"), and SmoovPlay's goes
     /// back. Returns the new look's id.
     public mutating func saveAsMine(_ i: Int) -> String {
         let e = entries[i]
@@ -233,9 +235,9 @@ public struct LooksLibrary: Sendable {
     }
 }
 
-/// The preview: the pipeline's own drawing (python -m framegen.looks_preview), kept running while the app runs.
-/// One request is out at a time; changes made meanwhile are sent together once it answers, so dragging a slider
-/// redraws as fast as the process keeps up.
+/// The preview, drawn by the pipeline itself (python -m framegen.looks_preview), which keeps running while the app
+/// runs. One request is out at a time. Changes made meanwhile are sent together once it answers, so dragging a
+/// slider redraws as fast as the process keeps up.
 public final class LookPreview: @unchecked Sendable {
     private var proc: LineProcess?
     private let paths: AppPaths

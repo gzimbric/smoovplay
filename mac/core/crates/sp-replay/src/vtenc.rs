@@ -1,10 +1,10 @@
-//! H.264 encoding with a VTCompressionSession on the media engine, set up as replay.py's h264_videotoolbox
-//! (realtime, prio_speed, allow_sw 0, bf 0, the bit rate for the nominal rate with maxrate 1.5x, a keyframe at most
-//! every two nominal seconds and forced every KEY_EVERY_S by the caller), BT.709 limited range.
+//! H.264 encoding with a VTCompressionSession on the media engine, in BT.709 limited range. It's set up like
+//! replay.py's h264_videotoolbox, with realtime, prio_speed, allow_sw 0, bf 0, the bit rate for the nominal rate with
+//! maxrate 1.5x, and a keyframe at most every two nominal seconds. The caller also forces one every KEY_EVERY_S.
 //!
-//! Frames go in as NV12 pixel buffers from the session's own pool (IOSurface-backed and Metal-compatible, so the GPU
-//! writes them in place); packets come out on VideoToolbox's thread, to the callback given, in AVCC form with the
-//! session's avcC.
+//! Frames go in as NV12 pixel buffers from the session's own pool. They're IOSurface-backed and Metal-compatible, so
+//! the GPU writes them in place. Packets come out on VideoToolbox's thread to the callback given, in AVCC form with
+//! the session's avcC.
 
 use std::ffi::c_void;
 use std::ptr::NonNull;
@@ -37,32 +37,33 @@ use sp_media::cf;
 use crate::track::Format;
 use crate::{Error, MAX_BITRATE, Result, TB};
 
-/// NV12, limited range ('420v'): the encoder's own format.
+/// NV12, limited range ('420v'), which is the encoder's own format.
 pub const NV12: u32 = cf::fourcc(b"420v");
 
 #[derive(Clone, Copy, Debug)]
 pub struct VideoConfig {
     pub width: usize,
     pub height: usize,
-    /// The rate the bit rate is given for (replay.py AFTER_NOMINAL / BEFORE_NOMINAL).
+    /// The rate the bit rate is given for (replay.py AFTER_NOMINAL or BEFORE_NOMINAL).
     pub nominal: u32,
-    /// Bits per pixel per frame at that rate (AFTER_BPP / BEFORE_BPP).
+    /// Bits per pixel per frame at that rate (AFTER_BPP or BEFORE_BPP).
     pub bpp: f64,
     /// Real time (instant replay's tracks), or as fast as it likes (the before & after, behind them).
     pub realtime: bool,
-    /// The frame rate it'll really get, as a hint to the rate control (None: no hint, as FFmpeg's h264_videotoolbox,
-    /// whose rate control then gives each frame about the same share at any rate, as replay.py means it to).
+    /// The frame rate it'll really get, as a hint to the rate control. None gives no hint, like FFmpeg's
+    /// h264_videotoolbox, and the rate control then gives each frame about the same share at any rate, as replay.py
+    /// means it to.
     pub expected_fps: Option<f64>,
 }
 
 impl VideoConfig {
-    /// replay.py _configure_video's rate: bits per frame times the nominal rate, at most MAX_BITRATE.
+    /// replay.py _configure_video's rate, which is bits per frame times the nominal rate, at most MAX_BITRATE.
     pub fn bit_rate(&self) -> i64 {
         (self.bpp * (self.width * self.height) as f64 * self.nominal as f64).min(MAX_BITRATE) as i64
     }
 }
 
-/// A packet: an access unit in AVCC form.
+/// A packet, which is an access unit in AVCC form.
 #[derive(Debug)]
 pub struct Encoded {
     /// On the 90 kHz clock, as given.
@@ -95,7 +96,8 @@ pub struct VtEncoder {
     invalidated: Mutex<bool>,
 }
 
-// The session, its pool and the dictionaries are CF objects, safe between threads; encoding is from one at a time.
+// The session, its pool and the dictionaries are CF objects, safe between threads. Encoding happens from one thread
+// at a time.
 unsafe impl Send for VtEncoder {}
 unsafe impl Sync for VtEncoder {}
 
@@ -290,8 +292,8 @@ impl VtEncoder {
         Ok(VtEncoder { session, pool, ctx, force_key, width: w, height: h, hardware, config, invalidated: Mutex::new(false) })
     }
 
-    /// A buffer to draw the next frame into, from the session's pool; None if `limit` are already out (the encoder is
-    /// behind) or the pool can't make one.
+    /// A buffer from the session's pool to draw the next frame into. None if `limit` are already out because the
+    /// encoder is behind, or if the pool can't make one.
     pub fn pixel_buffer(&self, limit: usize) -> Option<CFRetained<CVPixelBuffer>> {
         let n = cf::num(limit as i64);
         let aux = unsafe { cf::dict(&[(kCVPixelBufferPoolAllocationThresholdKey, &n)]) };
@@ -303,7 +305,7 @@ impl VtEncoder {
         Some(unsafe { CFRetained::from_raw(NonNull::new(out).unwrap()) })
     }
 
-    /// Hands a frame to the encoder, shown at `pts` (90 kHz); `key` forces a keyframe.
+    /// Hands a frame to the encoder, shown at `pts` (90 kHz). `key` forces a keyframe.
     pub fn encode(&self, buf: &CVPixelBuffer, pts: i64, key: bool) -> Result<()> {
         let t = CMTime { value: pts, timescale: TB as i32, flags: CMTimeFlags::Valid, epoch: 0 };
         let when = Box::into_raw(Box::new(sp_core::clock::now()));
@@ -318,7 +320,7 @@ impl VtEncoder {
             )
         };
         if st != 0 {
-            drop(unsafe { Box::from_raw(when) }); // (no callback for a frame it refused)
+            drop(unsafe { Box::from_raw(when) }); // no callback comes for a frame it refused
         }
         crate::status("VTCompressionSessionEncodeFrame", st)
     }
@@ -332,7 +334,7 @@ impl VtEncoder {
         }
     }
 
-    /// Tears the session down now (frames still in it are finished first); no more callbacks after this.
+    /// Tears the session down now, finishing the frames still in it first. No callbacks come after this.
     pub fn invalidate(&self) {
         let mut done = self.invalidated.lock().unwrap();
         if !*done {

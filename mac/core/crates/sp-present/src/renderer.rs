@@ -1,7 +1,7 @@
-//! Drawing a frame into a target texture (the window's drawable, or an offscreen texture for checks and for
-//! instant replay's "Looks in clips"): the upscaler (FSR 1 or bilinear), the look, Fill the screen (Panorama's extra
-//! pass), then the panels (menu, messages, stats) on top. framegen/io.py GLWindowSink.write's drawing, in Metal.
-//! Everything reads the frame's texture as it is: no CPU copies.
+//! Draws a frame into a target texture, which is the window's drawable or an offscreen texture for checks and for
+//! instant replay's "Looks in clips". It runs the upscaler (FSR 1 or bilinear), the look and Fill the screen
+//! (Panorama's extra pass), then draws the panels (menu, messages, stats) on top. This is framegen/io.py
+//! GLWindowSink.write's drawing, in Metal. Everything reads the frame's texture as it is, with no CPU copies.
 
 use std::sync::Arc;
 
@@ -58,9 +58,9 @@ pub struct Picture<'a> {
     pub fill: Fill,
     pub look: Option<&'a LookPlan>,
     pub frame_no: u64,
-    /// HDR10 (PQ) values: intermediates stay half floats.
+    /// HDR10 (PQ) values, so intermediates stay half floats.
     pub hdr: bool,
-    /// Plain: bilinear only, no look (the "no picture" screen's last frame, as io.py's wait()).
+    /// Bilinear only and no look, for the last frame on the no-picture screen (as io.py's wait()).
     pub plain: bool,
 }
 
@@ -69,7 +69,7 @@ pub struct Picture<'a> {
 pub struct Drawn {
     pub ui: Rect,
     pub picture: Rect,
-    /// "FSR 1 + look", "no upscale", ... (the detailed overlay's)
+    /// The detailed overlay's name for it, such as "FSR 1 + look" or "no upscale".
     pub name: String,
     /// The name and the picture's size, for GPU timings ("FSR 1 3200x1800").
     pub label: String,
@@ -146,13 +146,13 @@ impl Renderer {
         }
     }
 
-    /// FSR 1 from `src` (sw x sh) into `target`'s rectangle `rect` (EASU into an image of the rectangle's size, then
-    /// RCAS into the target).
+    /// FSR 1 from `src` (sw x sh) into the rectangle `rect` of `target`. EASU draws into an image of the rectangle's
+    /// size, then RCAS draws that into the target.
     #[allow(clippy::too_many_arguments)]
     pub fn fsr(&mut self, cmd: &Cmd, src: &Tex, sw: usize, sh: usize, target: &Tex, rect: Rect, load: Load,
                sharpness: f32, hdr: bool) -> Result<()> {
         let (dw, dh) = (rect.w as usize, rect.h as usize);
-        // The EASU result: 8-bit for SDR as in fsr.py, half floats for HDR10 values.
+        // The EASU result is 8-bit for SDR as in fsr.py, and half floats for HDR10 values.
         let mf = if hdr { MTLPixelFormat::RGBA16Float } else { MTLPixelFormat::RGBA8Unorm };
         let mid = Self::sized(&mut self.mid, dw, dh, mf);
         let p = FsrP { in_size: [sw as f32, sh as f32], out_size: [dw as f32, dh as f32], origin: [0.0, 0.0], sharpness, pad: 0.0 };
@@ -172,7 +172,7 @@ impl Renderer {
         Ok(())
     }
 
-    /// The whole picture: upscaler, look, fill. Clears the target (black bars).
+    /// Draws the whole picture with the upscaler, look and fill. Clears the target first, for the black bars.
     pub fn draw(&mut self, cmd: &Cmd, pic: &Picture, target: &Tex) -> Result<Drawn> {
         let (fw, fh) = (target.width() as i64, target.height() as i64);
         let (sw, sh) = (pic.src_size.0 as i64, pic.src_size.1 as i64);
@@ -187,7 +187,7 @@ impl Renderer {
             label = "bilinear".into();
         }
 
-        // Panorama: drawn as for Fit into its own texture, then bent across the screen.
+        // Panorama draws as Fit does into its own texture, then bends that across the screen.
         let pano_tex = pano.then(|| Self::sized(&mut self.pano, dw as usize, dh as usize, MTLPixelFormat::RGBA16Float));
         let (dst, rect): (&Tex, Rect) = match &pano_tex {
             Some(t) => (t, Rect::new(0, 0, dw, dh)),
@@ -227,7 +227,7 @@ impl Renderer {
         self.looks.draw(&mut self.pipes, cmd, plan, src, target, gpu::whole(target), Load::DontCare, frame_no, "bake")
     }
 
-    /// A panel at (x, y) (its top-left corner, in target pixels), blended over what's there.
+    /// A panel with its top-left corner at (x, y) in target pixels, blended over what's there.
     pub fn panel(&mut self, cmd: &Cmd, target: &Tex, panel: &Panel, x: i64, y: i64, hdr: bool, white_nits: f32) -> Result<()> {
         let Some(tex) = panel.texture() else { return Ok(()) };
         let p = PanelP { origin: [x as f32, y as f32], hdr: hdr as u32, white: white_nits };

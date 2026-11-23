@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "SmoovPlay's scheduling heart: repeat and cut detection, the cadence scheduler, the 60/90/120 Hz loop, even timing, dip smoothing, scoring and the reports (framegen/cadence.py, pipeline.py)"
+description = "SmoovPlay's scheduling heart: repeat and cut detection, the cadence scheduler, the tick loop (60, 90 or 120 Hz), even timing, dip smoothing, scoring and the reports (framegen/cadence.py, pipeline.py)"
 
 [dependencies]
 sp-core.workspace = true

@@ -1,7 +1,7 @@
 //! Where SmoovPlay keeps its own files (framegen/paths.py): settings, card timing, clips being saved.
 //!
 //! macOS: ~/Library/Application Support/framegen. Windows: %APPDATA%\framegen, as the launcher expects. Elsewhere:
-//! $APPDATA/framegen if it's set, else ~/framegen. (The user's looks are elsewhere: looks::looks_dir().)
+//! $APPDATA/framegen if it's set, else ~/framegen. (The user's looks are elsewhere, in looks::looks_dir().)
 
 use std::path::PathBuf;
 

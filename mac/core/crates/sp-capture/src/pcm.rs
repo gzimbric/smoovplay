@@ -1,7 +1,7 @@
-//! Sound from AVFoundation's sample buffers as interleaved 16-bit PCM, at most two channels (capture.py `_sound`:
-//! PyAV's resampler to s16, stereo or mono, at the source's rate). The outputs are asked for 16-bit interleaved PCM
-//! already; other linear PCM layouts (float, 32-bit, planar) are converted here, and more than two channels keep
-//! the first two.
+//! Sound from AVFoundation's sample buffers as interleaved 16-bit PCM, at most two channels. capture.py `_sound`
+//! does the same with PyAV's resampler to s16, stereo or mono, at the source's rate. The outputs are asked for
+//! 16-bit interleaved PCM already. Other linear PCM layouts (float, 32-bit, planar) are converted here, and more
+//! than two channels keep the first two.
 
 use std::ptr::NonNull;
 
@@ -17,7 +17,7 @@ pub(crate) fn asbd(desc: &CMFormatDescription) -> Option<AudioStreamBasicDescrip
     if p.is_null() { None } else { Some(unsafe { *p }) }
 }
 
-/// (pcm, rate, channels) of a sample buffer of linear PCM; None for anything else (or nothing in it).
+/// (pcm, rate, channels) of a sample buffer of linear PCM. None for anything else, or for an empty buffer.
 pub(crate) fn pcm_of(sb: &CMSampleBuffer) -> Option<(Vec<i16>, u32, u32)> {
     unsafe {
         let desc = sb.format_description()?;
@@ -49,7 +49,7 @@ pub(crate) fn pcm_of(sb: &CMSampleBuffer) -> Option<(Vec<i16>, u32, u32)> {
         let sample = |i: usize| -> i16 {
             let b = &bytes[i * bps..i * bps + bps];
             match float {
-                // integers: the top 16 bits
+                // integers keep their top 16 bits
                 false if big => i16::from_be_bytes([b[0], b[1]]),
                 false => i16::from_le_bytes([b[bps - 2], b[bps - 1]]),
                 true => {

@@ -1,9 +1,9 @@
 //! `python -m framegen.looks schema|encode|decode|import|save|delete|add-lut|preview`, the launcher's way in, as
 //! functions the binary exposes with the same arguments and the same one line of JSON (ASCII, \u escapes). Errors are
-//! {"error": "..."} with exit code 1.
+//! `{"error": "<why>"}` with exit code 1.
 //!
-//! `preview` draws a look, which needs the renderer: [`parse`] returns it as [`Command::Preview`] for the binary to
-//! run; [`run`] answers it with an error.
+//! `preview` draws a look, which needs the renderer. [`parse`] returns it as [`Command::Preview`] for the binary to
+//! run, and [`run`] answers it with an error.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -21,11 +21,11 @@ pub enum Command {
     Decode(String),
     /// Saves a pasted code as one of the user's looks.
     Import(String),
-    /// Look JSON on stdin; an id to overwrite one of the user's.
+    /// Look JSON on stdin, with an id to overwrite one of the user's.
     Save(Option<String>),
     Delete(String),
     AddLut(PathBuf),
-    /// LOOK: an id or a code.
+    /// LOOK is an id or a code.
     Preview {
         look: String,
         src: PathBuf,
@@ -37,7 +37,8 @@ pub enum Command {
 const USAGE: &str =
     "usage: python -m framegen.looks [-h] {schema,encode,decode,import,save,delete,add-lut,preview} ...";
 
-/// The arguments after `-m framegen.looks`, as argparse reads them. Err: argparse's message (it exits with code 2).
+/// The arguments after `-m framegen.looks`, as argparse reads them. Err holds argparse's message, and argparse exits
+/// with code 2.
 pub fn parse(args: &[String]) -> Result<Command, String> {
     let Some(cmd) = args.first() else {
         return Err(format!("{USAGE}\npython -m framegen.looks: error: the following arguments are required: cmd"));
@@ -134,7 +135,7 @@ pub fn parse(args: &[String]) -> Result<Command, String> {
 }
 
 /// What `schema` says: the node types and their settings, the looks (built-in, then the user's) with their codes,
-/// the LUTs, the folders and the preview's sample pictures (`samples_dir`: framegen/samples, as shipped).
+/// the LUTs, the folders and the preview's sample pictures (`samples_dir` is framegen/samples, as shipped).
 pub fn schema(lib: &Library, samples_dir: &Path) -> Value {
     let entry = |id: &str, look: &Look, builtin: bool| -> Value {
         let mut m = Map::new();
@@ -235,8 +236,8 @@ fn read_stdin(stdin: &mut dyn Read) -> Result<String, String> {
     }
 }
 
-/// Runs one command: (the JSON to print, the exit code). `library`: where the user's looks are (looks_dir());
-/// `samples_dir`: the preview's pictures, for schema.
+/// Runs one command and returns the JSON to print and the exit code. `library` is where the user's looks are
+/// (looks_dir()), and `samples_dir` holds the preview's pictures, for schema.
 pub fn run(cmd: &Command, library: &Path, samples_dir: &Path, stdin: &mut dyn Read) -> (Value, i32) {
     let ok = |v: Value| (v, 0);
     match cmd {
@@ -296,7 +297,7 @@ pub fn run(cmd: &Command, library: &Path, samples_dir: &Path, stdin: &mut dyn Re
     }
 }
 
-/// parse() and run() together: the line to print (JSON, or argparse's message) and the exit code.
+/// parse() and run() together. Returns the line to print (JSON, or argparse's message) and the exit code.
 pub fn main(args: &[String], library: &Path, samples_dir: &Path, stdin: &mut dyn Read) -> (String, i32) {
     match parse(args) {
         Err(usage) => (usage, 2),

@@ -88,7 +88,7 @@ struct PlayPage: View {
             switch kind {
             case "chiaki": return "Press Play. chiaki-ng opens: connect to your PS5 there, and the smooth video appears in its own window."
             case "capture": return "Press Play. The smooth video from your capture card appears in its own window."
-            case "window": return "Press Play. SmoovPlay copies the app's window and plays it smoothly; the app keeps the keyboard and the controller. SmoovPlay's own keys are below."
+            case "window": return "Press Play. SmoovPlay copies the app's window and plays it smoothly, and the app keeps the keyboard and the controller. SmoovPlay's own keys are below."
             case "tap": return "Press Play, then start the app. Its smooth video appears in its own window."
             default: return "Press Play to play the test video."
             }
@@ -174,7 +174,7 @@ struct SourcePills: View {
     }
 }
 
-/// Under the source pills: which capture card, or which app window (and Screen Recording).
+/// What goes under the source pills: which capture card, or which app window and Screen Recording.
 struct SourceExtras: View {
     @EnvironmentObject var m: AppModel
     var body: some View {
@@ -200,7 +200,7 @@ struct SourceExtras: View {
                 Card(border: Color(hex: 0xFFC24B, alpha: 0.4)) {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Screen Recording", systemImage: "rectangle.dashed.badge.record").font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Color.text)
-                        Small("SmoovPlay copies the app's window with macOS's screen capture, so it needs Screen Recording. macOS asks once; if you said Don't Allow, turn on SmoovPlay in System Settings > Privacy & Security > Screen & System Audio Recording, then quit and open SmoovPlay again.")
+                        Small("SmoovPlay copies the app's window with macOS's screen capture, so it needs Screen Recording. macOS asks once. If you said Don't Allow, turn on SmoovPlay in System Settings > Privacy & Security > Screen & System Audio Recording, then quit and open SmoovPlay again.")
                         HStack {
                             Button("Allow") { m.askScreenPermission() }.buttonStyle(SPButton(kind: .primary))
                             Button("Open System Settings") { ScreenPermission.openSettings() }.buttonStyle(SPButton(kind: .secondary))
@@ -241,8 +241,8 @@ struct SourceExtras: View {
     }
 }
 
-/// App window mode's keys: what each action gets on this Mac (another app can have one), changed by clicking one
-/// and pressing new keys.
+/// App window mode's keys, with what each action gets on this Mac (another app can have one). Clicking one and
+/// pressing new keys changes it.
 struct KeysCard: View {
     @EnvironmentObject var m: AppModel
     var body: some View {

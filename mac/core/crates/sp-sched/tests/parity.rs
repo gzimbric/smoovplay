@@ -1,11 +1,11 @@
-//! Parity with the Python pipeline: every trace tools/sched_traces.py recorded (fixtures/sched/trace_*.json) is
-//! replayed through the Rust pipeline with the same inputs, stand-ins and fake clock, and must come out the same:
-//! every event (frames shown and when, overlay texts, toasts, log lines, presses, the sound delay, replay calls,
-//! per-tick decisions), Stats' lists and counts, summary(), results(), and the results report built from them.
+//! Parity with the Python pipeline. Every trace tools/sched_traces.py recorded (fixtures/sched/trace_*.json) is
+//! replayed through the Rust pipeline with the same inputs, stand-ins and fake clock, and must come out the same.
+//! That covers every event (frames shown and when, overlay texts, toasts, log lines, presses, the sound delay, replay
+//! calls, per-tick decisions), Stats' lists and counts, summary(), results(), and the results report built from them.
 //!
-//! Every number is compared exactly (bit for bit), the detector's block differences and the PSNRs included, but for
-//! two that cross an f32 boundary on the Rust side: the AI frame's fraction t (sp_core's Interpolator takes f32) and
-//! the Steady HUD threshold (f32); those to 1e-6.
+//! Every number is compared exactly, bit for bit, the detector's block differences and the PSNRs included. Two
+//! numbers cross an f32 boundary on the Rust side and are compared to 1e-6 instead: the AI frame's fraction t
+//! (sp_core's Interpolator takes f32) and the Steady HUD threshold (f32).
 //!
 //! Without fixtures (they're generated and git-ignored) the test says so and passes.
 
@@ -196,7 +196,7 @@ fn count(st: &Stats, k: &str) -> u64 {
     }
 }
 
-/// What differs between the Python's trace and the Rust run (empty: they match).
+/// What differs between the Python's trace and the Rust run. Empty when they match.
 fn compare(fx: &Value, ran: &Ran) -> Vec<String> {
     let mut bad = Vec::new();
     let (py, rs) = (fx["events"].as_array().unwrap(), &ran.events);

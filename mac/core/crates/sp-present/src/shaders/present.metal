@@ -1,9 +1,10 @@
 // The video window's passes (framegen/io.py, fsr.py, fill.py, looks_gl.py's pyramid), in Metal Shading Language.
 //
-// Every pass draws one triangle over the viewport; fragment shaders work in render-target pixels ([[position]],
-// pixel centres at +0.5, row 0 at the top, as Metal's textures). So unlike the GL versions nothing is flipped: a
-// texture's row 0 is the picture's top everywhere. A pass that places a picture gets its rectangle's top-left corner
-// (origin) and size, and the viewport is only the part of it on the target (Zoom's picture goes past the edges).
+// Every pass draws one triangle over the viewport. Fragment shaders work in render-target pixels ([[position]]),
+// with pixel centres at +0.5 and row 0 at the top, as in Metal's textures. So unlike the GL versions nothing is
+// flipped, and a texture's row 0 is the picture's top everywhere. A pass that places a picture gets its rectangle's
+// top-left corner (origin) and size. The viewport is only the part of it on the target, since Zoom's picture goes
+// past the edges.
 
 #include <metal_stdlib>
 using namespace metal;
@@ -19,7 +20,7 @@ vertex VOut fullscreen(uint vid [[vertex_id]]) {
 
 constexpr sampler LIN(filter::linear, address::clamp_to_edge);
 
-// ---- bilinear: the picture resized into its rectangle (GL's glBlitFramebuffer with GL_LINEAR)
+// ---- bilinear resizes the picture into its rectangle (GL's glBlitFramebuffer with GL_LINEAR)
 struct Place { float2 origin; float2 size; };
 
 fragment float4 bilinear(VOut in [[stage_in]], texture2d<float> src [[texture(0)]], constant Place& P [[buffer(0)]]) {
@@ -27,7 +28,8 @@ fragment float4 bilinear(VOut in [[stage_in]], texture2d<float> src [[texture(0)
     return float4(src.sample(LIN, uv).rgb, 1.0);
 }
 
-// ---- Panorama (fill.py): the picture, drawn fit to the screen's height into its own texture, bent across the screen
+// ---- Panorama (fill.py) bends the picture across the screen, once it's drawn fit to the screen's height into its
+// own texture
 struct Pano { float2 screen; float t; float pad; };
 
 fragment float4 panorama(VOut in [[stage_in]], texture2d<float> src [[texture(0)]], constant Pano& P [[buffer(0)]]) {
@@ -37,9 +39,9 @@ fragment float4 panorama(VOut in [[stage_in]], texture2d<float> src [[texture(0)
     return float4(src.sample(LIN, float2(u * 0.5 + 0.5, p.y)).rgb, 1.0);
 }
 
-// ---- panels: the menu, messages and the stats overlay, premultiplied BGRA images drawn 1:1 and blended. Over an
+// ---- panels. The menu, messages and the stats overlay are premultiplied BGRA images, drawn 1:1 and blended. Over an
 // HDR10 picture they're converted to PQ BT.2020 with white at `white` nits (hdr.py sdr_to_pq16_image), so they look
-// as on an SDR picture.
+// the same as on an SDR picture.
 struct PanelP { float2 origin; uint hdr; float white; };
 
 constant float PQ_M1 = 2610.0 / 16384.0;
@@ -69,8 +71,8 @@ fragment float4 panel(VOut in [[stage_in]], texture2d<float> img [[texture(0)]],
     return c;
 }
 
-// ---- the looks' blurred copy (looks_gl.py _DOWN / _UP): six halvings, a 4x4 box each (the first with bloom's bright
-// pass), then back up, mixing each level with the one below
+// ---- the looks' blurred copy (looks_gl.py _DOWN and _UP). It halves the picture six times with a 4x4 box, the first
+// time with bloom's bright pass, then goes back up, mixing each level with the one below.
 static float3 bright(float3 c, float thr) {
     float br = max(max(c.r, c.g), c.b);
     float knee = 0.1;
@@ -97,8 +99,9 @@ fragment float4 pyr_up(VOut in [[stage_in]], texture2d<float> level [[texture(0)
     return float4(mix(level.read(p).rgb, below.sample(LIN, uv).rgb, r), 1.0);
 }
 
-// ---- AMD FSR 1 (framegen/shaders/fsr1/ffx_fsr1.h, MIT licence, Copyright (c) 2021 Advanced Micro Devices, Inc.):
-// the 32-bit float paths of EASU and RCAS (with FSR_RCAS_DENOISE, as framegen/fsr.py builds it), written out in MSL.
+// ---- AMD FSR 1 (framegen/shaders/fsr1/ffx_fsr1.h, MIT licence, Copyright (c) 2021 Advanced Micro Devices, Inc.).
+// These are the 32-bit float paths of EASU and RCAS written out in MSL, with FSR_RCAS_DENOISE as framegen/fsr.py
+// builds it.
 struct FsrP { float2 in_size; float2 out_size; float2 origin; float sharpness; float pad; };
 
 static float APrxLoRcpF1(float a) { return as_type<float>(0x7ef07ebbu - as_type<uint>(a)); }

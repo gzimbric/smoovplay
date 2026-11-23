@@ -67,11 +67,11 @@ def gl():
     if not glfw.init():
         pytest.skip("no OpenGL")
     glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
-    context_hints(glfw)  # (a Mac: OpenGL 4.1 core)
+    context_hints(glfw)  # OpenGL 4.1 core on a Mac
     win = glfw.create_window(64, 64, "test", None, None)
     if not win:
         glfw.terminate()
-        pytest.skip("no OpenGL 4.5 (Mac: 4.1) context")
+        pytest.skip("no OpenGL 4.5 context (4.1 on a Mac)")
     glfw.make_context_current(win)
     GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
     GL.glPixelStorei(GL.GL_PACK_ALIGNMENT, 1)

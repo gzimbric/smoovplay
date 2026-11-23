@@ -12,9 +12,9 @@ enum Fixture {
 
     static var specs: SettingSpecs { try! SettingSpecs(json: text("specs.json")) }
 
-    /// The captured "[settings-state]" lines, in order: 0 a session's first; 1 after set hz 90, scaler bilinear,
-    /// look_on true and a restart; 2 to 5 another session after set motion "half" (restart-only), then scaler
-    /// bilinear, hz 90, interp false.
+    /// The captured "[settings-state]" lines, in order. 0 is a session's first. 1 comes after set hz 90, scaler
+    /// bilinear, look_on true and a restart. 2 to 5 are another session, after set motion "half" (restart-only),
+    /// then scaler bilinear, hz 90 and interp false.
     static var states: [SettingsState] {
         text("states.txt").split(separator: "\n").map { line in
             guard case let .state(json) = CoreLine.parse(String(line)) else { fatalError("not a state line") }
@@ -22,7 +22,7 @@ enum Fixture {
         }
     }
 
-    /// The repo (five folders up from this file: mac/app/Tests/SmoovPlayKitTests/).
+    /// The repo, five folders up from this file (mac/app/Tests/SmoovPlayKitTests/).
     static var repo: URL {
         var u = URL(fileURLWithPath: #filePath)
         for _ in 0..<5 { u.deleteLastPathComponent() }

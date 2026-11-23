@@ -21,7 +21,7 @@ public final class Prefs: @unchecked Sendable {
         save()
     }
 
-    /// The value after "prefix" ("capture-video:" -> "0"), or nil.
+    /// The value of the flag that starts with `prefix` ("0" for "capture-video:0"), or nil.
     public func value(_ prefix: String) -> String? {
         flags.first(where: { $0.hasPrefix(prefix) }).map { String($0.dropFirst(prefix.count)) }
     }

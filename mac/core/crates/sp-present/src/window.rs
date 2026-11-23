@@ -1,11 +1,12 @@
-//! The AppKit side of the video window: an NSWindow whose content view hosts a CAMetalLayer, its keys and mouse,
-//! fullscreen as a borderless window over the monitor (menu bar and Dock hidden while SmoovPlay is in front, as
-//! io.py's _mac_hide_bars), Retina sizing and the screen's refresh and EDR facts.
+//! The AppKit side of the video window. That's an NSWindow whose content view hosts a CAMetalLayer, plus its keys and
+//! mouse, Retina sizing and the screen's refresh and EDR facts. Fullscreen is a borderless window over the monitor,
+//! with the menu bar and Dock hidden while SmoovPlay is in front, as in io.py's _mac_hide_bars.
 //!
-//! All of this lives on the main thread (AppKit's rule), in a thread-local; the presenter (any thread) reaches it
-//! through [`Shared`] (what the window saw: keys, a close, the screen) and [`on_main`] (what it should do: fullscreen,
-//! the layer's format and sync, closing). On the main thread [`on_main`] runs at once; elsewhere it's queued on the
-//! main dispatch queue, which the main thread's run loop serves (NSApp.run, the Swift app's, or [`pump`]).
+//! AppKit wants all of this on the main thread, so it lives there in a thread-local. The presenter, on any thread,
+//! reaches it through [`Shared`] and [`on_main`]. [`Shared`] holds what the window saw, such as keys, a close and the
+//! screen. [`on_main`] sends what it should do, such as fullscreen, the layer's format and sync, or closing. On the
+//! main thread [`on_main`] runs at once. Elsewhere it's queued on the main dispatch queue, which the main thread's
+//! run loop serves (NSApp.run, the Swift app's, or [`pump`]).
 
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -59,11 +60,12 @@ pub struct ScreenInfo {
     /// The screen in points, and its usable part (no menu bar or Dock).
     pub size: (f64, f64),
     pub visible: (f64, f64),
-    /// EDR headroom now (1.0: none, an SDR display or HDR off), and the most it can give (maximumPotential...).
+    /// EDR headroom now, and the most it can give (maximumPotentialExtendedDynamicRangeColorComponentValue). 1.0 means
+    /// none, on an SDR display or with HDR off.
     pub edr_now: f64,
     pub edr_potential: f64,
-    /// Refresh intervals in seconds: equal on a fixed-rate display; min < max when it runs a variable rate
-    /// (Adaptive-Sync set to Variable, or ProMotion).
+    /// Refresh intervals in seconds. They're equal on a fixed-rate display. min is below max when it runs a variable
+    /// rate (Adaptive-Sync set to Variable, or ProMotion).
     pub refresh_min: f64,
     pub refresh_max: f64,
     pub max_fps: i64,
@@ -99,19 +101,19 @@ pub struct Shared {
 #[derive(Clone, Debug)]
 pub enum WindowCmd {
     Fullscreen(bool),
-    /// The layer's format for the frames coming: HDR10 (RGBA16Float, PQ BT.2100, EDR) or SDR (BGRA8, sRGB).
+    /// The layer's format for the frames coming, either HDR10 (RGBA16Float, PQ BT.2100, EDR) or SDR (BGRA8, sRGB).
     Layer { hdr: bool, vsync: bool, drawables: usize, white_nits: f32, peak_nits: f32 },
     RefreshScreen,
     HideCursor,
     Hide,
     Close,
-    /// Sit over another app's window (window capture, io.py's overlay_of): (x, y, w, h) in points from the main
-    /// display's top left, as ScreenCaptureKit gives it. Borderless, floating above the app, click-through and never
-    /// taking the keys (they stay with the app). None: a normal window again.
+    /// Sit over another app's window, for window capture (io.py's overlay_of). The rectangle is (x, y, w, h) in points
+    /// from the main display's top left, as ScreenCaptureKit gives it. The window is borderless, floats above the app,
+    /// lets clicks through and never takes the keys, which stay with the app. None makes it a normal window again.
     Overlay(Option<(f64, f64, f64, f64)>),
 }
 
-/// The window is an overlay (WindowCmd::Overlay): it mustn't take the keys from the app under it.
+/// The window is an overlay (WindowCmd::Overlay), so it mustn't take the keys from the app under it.
 static OVERLAY: AtomicBool = AtomicBool::new(false);
 
 pub(crate) struct Ivars {
@@ -120,7 +122,7 @@ pub(crate) struct Ivars {
 }
 
 define_class!(
-    // SAFETY: NSView has no subclassing requirements; VideoView doesn't implement Drop.
+    // SAFETY: NSView has no subclassing requirements, and VideoView doesn't implement Drop.
     #[unsafe(super(NSView, NSResponder, NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "SmoovPlayVideoView"]
@@ -172,7 +174,7 @@ impl VideoView {
         unsafe { msg_send![super(this), initWithFrame: frame] }
     }
 
-    /// The drawable follows the view's size in pixels (Retina: points times the backing scale).
+    /// The drawable follows the view's size in pixels. On Retina that's points times the backing scale.
     fn update_drawable(&self) {
         let px = self.convertSizeToBacking(self.bounds().size);
         let scale = self.window().map_or(1.0, |w| w.backingScaleFactor());
@@ -185,14 +187,14 @@ impl VideoView {
 }
 
 define_class!(
-    // SAFETY: NSWindow's subclassing rules are met (init through its designated initialiser); no Drop.
+    // SAFETY: NSWindow's subclassing rules are met (init goes through its designated initialiser), and there's no Drop.
     #[unsafe(super(NSWindow, NSResponder, NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "SmoovPlayVideoWindow"]
     pub(crate) struct VideoWindow;
 
     impl VideoWindow {
-        // A borderless window (fullscreen) takes the keys too; an overlay over another app never does.
+        // A borderless window (fullscreen) takes the keys too. An overlay over another app never does.
         #[unsafe(method(canBecomeKeyWindow))]
         fn can_become_key(&self) -> bool {
             !OVERLAY.load(Ordering::Relaxed)
@@ -220,16 +222,16 @@ define_class!(
     unsafe impl NSObjectProtocol for Delegate {}
 
     unsafe impl NSWindowDelegate for Delegate {
-        // The close button: the presenter returns Quit, and the pipeline closes the window (as io.py's
-        // window_should_close).
+        // The close button. The presenter returns Quit and the pipeline closes the window, as in io.py's
+        // window_should_close.
         #[unsafe(method(windowShouldClose:))]
         fn window_should_close(&self, _sender: &NSWindow) -> bool {
             self.ivars().shared.inbox.lock().unwrap().close = true;
             false
         }
 
-        // (These can come while the main thread's MainWindow is in use, from inside a call that changes the window,
-        // so they work from the notification's window and their own `shared` only.)
+        // These can come while the main thread's MainWindow is in use, from inside a call that changes the window,
+        // so they work only from the notification's window and their own `shared`.
         #[unsafe(method(windowDidChangeScreen:))]
         fn did_change_screen(&self, n: &NSNotification) {
             if let Some(w) = n.object().and_then(|o| o.downcast::<NSWindow>().ok()) {
@@ -288,7 +290,7 @@ pub(crate) struct MainWindow {
     windowed: Option<NSRect>,
     borderless: bool,
     hdr: Option<bool>,
-    /// WindowCmd::Overlay: the app window's rectangle (AppKit's coordinates), and the frame from before it.
+    /// For WindowCmd::Overlay, the app window's rectangle (AppKit's coordinates) and the frame from before it.
     overlay: Option<NSRect>,
     before_overlay: Option<NSRect>,
 }
@@ -304,7 +306,7 @@ fn with_main(f: impl FnOnce(&mut MainWindow)) {
                 f(w)
             }
         }
-        // (a command from inside another one's AppKit call: run it once that's done)
+        // a command from inside another one's AppKit call, which should run once that's done
         Err(_) => eprintln!("[display] window busy: a window change was skipped"),
     });
 }
@@ -316,15 +318,15 @@ const WINDOWED: NSWindowStyleMask = NSWindowStyleMask(
     NSWindowStyleMask::Titled.0 | NSWindowStyleMask::Closable.0 | NSWindowStyleMask::Miniaturizable.0 | NSWindowStyleMask::Resizable.0,
 );
 
-/// The window's first size in points: the frame's, at most 1600x900, and at most 90% of the screen's usable area,
-/// keeping the frame's shape (io.py _first_size).
+/// The window's first size in points (io.py _first_size). It's the frame's size, at most 1600x900 and at most 90% of
+/// the screen's usable area, keeping the frame's shape.
 pub fn first_size(w: usize, h: usize, visible: (f64, f64)) -> (f64, f64) {
     let (ww, wh) = ((w as f64).min(1600.0), (h as f64).min(900.0));
     let k = 1f64.min(0.9 * visible.0 / ww).min(0.9 * visible.1 / wh);
     ((ww * k).floor(), (wh * k).floor())
 }
 
-/// Opens the window (main thread). Returns the layer, for the presenter.
+/// Opens the window, on the main thread. Returns the layer, for the presenter.
 pub(crate) fn open(mtm: MainThreadMarker, w: usize, h: usize, title: &str, drawables: usize, vsync: bool,
                    shared: Arc<Shared>) -> Retained<CAMetalLayer> {
     let app = NSApplication::sharedApplication(mtm);
@@ -390,7 +392,8 @@ pub(crate) fn open(mtm: MainThreadMarker, w: usize, h: usize, title: &str, drawa
     layer
 }
 
-/// Runs `cmd` on the main thread: now if this is it, else queued on the main dispatch queue.
+/// Runs `cmd` on the main thread. It runs now if this is the main thread, or else it's queued on the main dispatch
+/// queue.
 pub(crate) fn on_main(cmd: WindowCmd) {
     if let Some(mtm) = MainThreadMarker::new() {
         apply(mtm, cmd);
@@ -415,13 +418,14 @@ fn apply(mtm: MainThreadMarker, cmd: WindowCmd) {
             m.hdr = Some(hdr);
             unsafe {
                 if hdr {
-                    // HDR10: the frames' PQ values as they are; macOS maps them to the display's EDR headroom. The
-                    // metadata says SDR white is `white_nits` (BT.2408's 203) and the content peaks at `peak_nits`,
-                    // so on a display with less headroom (or none) the highlights are rolled off, not clipped.
+                    // HDR10 passes the frames' PQ values as they are, and macOS maps them to the display's EDR
+                    // headroom. The metadata says SDR white is `white_nits` (BT.2408's 203) and the content peaks at
+                    // `peak_nits`, so on a display with less headroom (or none) the highlights are rolled off, not
+                    // clipped.
                     m.layer.setPixelFormat(MTLPixelFormat::RGBA16Float);
                     m.layer.setColorspace(CGColorSpace::with_name(Some(kCGColorSpaceITUR_2100_PQ)).as_deref());
                     m.layer.setWantsExtendedDynamicRangeContent(true);
-                    // SP_PRESENT_EDR=none leaves the metadata out, a number sets the peak (for measuring)
+                    // SP_PRESENT_EDR=none leaves the metadata out, and a number sets the peak (for measuring)
                     match std::env::var("SP_PRESENT_EDR").ok().as_deref() {
                         Some("none") => m.layer.setEDRMetadata(None),
                         other => {
@@ -454,7 +458,7 @@ fn apply(mtm: MainThreadMarker, cmd: WindowCmd) {
             }
             let app = NSApplication::sharedApplication(mtm);
             if app.isRunning() && LAUNCHED.load(Ordering::Relaxed) {
-                // run() was ours (sp_present::run): it returns once the window has gone
+                // run() was ours (sp_present::run), and it returns once the window has gone
                 app.stop(None);
                 wake(mtm);
             }
@@ -462,15 +466,16 @@ fn apply(mtm: MainThreadMarker, cmd: WindowCmd) {
     }
 }
 
-/// Fullscreen as a borderless window over the monitor the window is mostly on (io.py _set_borderless): the menu bar
-/// and the Dock are hidden while SmoovPlay is in front (they slide in at the edges, and come back by themselves when
-/// another app is in front). No fullscreen Space, so it's instant and Cmd+Tab works as usual.
+/// Fullscreen as a borderless window over the monitor the window is mostly on (io.py _set_borderless). The menu bar
+/// and the Dock are hidden while SmoovPlay is in front. They slide in at the edges and come back by themselves when
+/// another app is in front. There's no fullscreen Space, so it's instant and Cmd+Tab works as usual.
 fn set_fullscreen(mtm: MainThreadMarker, m: &mut MainWindow, on: bool) {
     if m.borderless == on {
         return;
     }
     if let Some(r) = m.overlay {
-        // over another app: its monitor, or back over its window; still floating, click-through and without the keys
+        // Over another app, go to its monitor or back over its window. It stays floating, click-through and without
+        // the keys.
         let screen = m.window.screen().or_else(|| NSScreen::mainScreen(mtm));
         let frame = if on { screen.map_or(r, |s| s.frame()) } else { r };
         m.window.setFrame_display(frame, true);
@@ -483,7 +488,7 @@ fn set_fullscreen(mtm: MainThreadMarker, m: &mut MainWindow, on: bool) {
     if on {
         m.windowed = Some(m.window.frame());
         let screen = m.window.screen().or_else(|| NSScreen::mainScreen(mtm));
-        // first, or macOS keeps the window under the menu bar
+        // this first, or macOS keeps the window under the menu bar
         app.setPresentationOptions(NSApplicationPresentationOptions::AutoHideDock | NSApplicationPresentationOptions::AutoHideMenuBar);
         m.window.setStyleMask(NSWindowStyleMask::Borderless);
         if let Some(s) = screen {
@@ -509,14 +514,15 @@ fn set_fullscreen(mtm: MainThreadMarker, m: &mut MainWindow, on: bool) {
 fn set_overlay(mtm: MainThreadMarker, m: &mut MainWindow, rect: Option<(f64, f64, f64, f64)>) {
     match rect {
         Some((x, y, w, h)) => {
-            // ScreenCaptureKit's points run down from the main display's top left; AppKit's up from its bottom left
+            // ScreenCaptureKit's points run down from the main display's top left. AppKit's run up from its bottom
+            // left.
             let screens = NSScreen::screens(mtm);
             let main_h = screens.firstObject().map_or(0.0, |s| s.frame().size.height);
             let r = NSRect::new(NSPoint::new(x, main_h - y - h), NSSize::new(w.max(1.0), h.max(1.0)));
             if m.overlay.is_none() {
                 let fullscreen = m.borderless;
                 if fullscreen {
-                    set_fullscreen(mtm, m, false); // (its frame comes back below, over the app's monitor)
+                    set_fullscreen(mtm, m, false); // its frame comes back below, over the app's monitor
                 }
                 m.before_overlay = Some(m.window.frame());
                 OVERLAY.store(true, Ordering::Relaxed);
@@ -593,7 +599,7 @@ fn screen_info(mtm: MainThreadMarker, window: &NSWindow, shared: &Shared) {
     }
 }
 
-/// Finishes launching NSApplication, once, when nothing else (a Swift app, [`crate::run`]) runs it.
+/// Finishes launching NSApplication, once, when nothing else runs it (a Swift app or [`crate::run`]).
 pub(crate) fn launch_if_needed(mtm: MainThreadMarker) {
     let app = NSApplication::sharedApplication(mtm);
     if !app.isRunning() && !LAUNCHED.swap(true, Ordering::Relaxed) {
@@ -603,7 +609,8 @@ pub(crate) fn launch_if_needed(mtm: MainThreadMarker) {
     }
 }
 
-/// Handles the window's waiting events, without blocking (as glfw.poll_events): for a pipeline on the main thread.
+/// Handles the window's waiting events without blocking, like glfw.poll_events. It's for a pipeline on the main
+/// thread.
 pub fn pump(mtm: MainThreadMarker) {
     launch_if_needed(mtm);
     let app = NSApplication::sharedApplication(mtm);
@@ -620,7 +627,8 @@ pub fn pump(mtm: MainThreadMarker) {
     app.updateWindows();
 }
 
-/// Runs the main thread's event loop until the video window closes (pipeline on another thread, no Swift app).
+/// Runs the main thread's event loop until the video window closes. It's for a pipeline on another thread with no
+/// Swift app.
 pub fn run(mtm: MainThreadMarker) {
     let app = NSApplication::sharedApplication(mtm);
     if MAIN.with(|m| m.borrow().is_none()) {
@@ -630,7 +638,7 @@ pub fn run(mtm: MainThreadMarker) {
     app.run();
 }
 
-/// An empty event, so a run loop waiting for one returns (after stop:).
+/// Posts an empty event, so a run loop waiting for one returns after stop:.
 fn wake(mtm: MainThreadMarker) {
     let app = NSApplication::sharedApplication(mtm);
     if let Some(e) = NSEvent::otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2(
@@ -641,8 +649,8 @@ fn wake(mtm: MainThreadMarker) {
     }
 }
 
-/// Posts a key press to the window as a keyDown event in this app's own event queue, so it goes the way a real
-/// one does (AppKit's dispatch, the view's keyDown:, the key map): for checks. Main thread.
+/// Posts a key press to the window as a keyDown event in this app's own event queue, for checks. It goes the way a
+/// real one does, through AppKit's dispatch, the view's keyDown: and the key map. Call it on the main thread.
 pub fn post_key(mtm: MainThreadMarker, key: Key, shift: bool) {
     let (code, ch): (u16, String) = match key {
         Key::Up => (126, "\u{F700}".into()),
@@ -654,7 +662,7 @@ pub fn post_key(mtm: MainThreadMarker, key: Key, shift: bool) {
         Key::Tab => (48, "\t".into()),
         Key::Backspace => (51, "\u{7f}".into()),
         Key::Char(c) => {
-            // ANSI positions of the letters the window uses (the event's characters decide, as for a real key)
+            // ANSI positions of the letters the window uses. The event's characters decide, as for a real key.
             let code = match c {
                 'a' => 0, 's' => 1, 'd' => 2, 'f' => 3, 'h' => 4, 'g' => 5, 'z' => 6, 'x' => 7, 'c' => 8, 'v' => 9,
                 'b' => 11, 'q' => 12, 'w' => 13, 'e' => 14, 'r' => 15, 'y' => 16, 't' => 17, 'o' => 31, 'u' => 32,

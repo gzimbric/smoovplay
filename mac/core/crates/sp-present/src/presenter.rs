@@ -1,6 +1,6 @@
-//! The video window as the pipeline sees it: [`VideoPresenter`] implements sp_core::Presenter (framegen/io.py
-//! GLWindowSink's write / wait / toast / close, plus busy() and baked()). It draws on whatever thread calls it; the
-//! window itself stays on the main thread (crate::window).
+//! The video window as the pipeline sees it. [`VideoPresenter`] implements sp_core::Presenter, which is
+//! framegen/io.py GLWindowSink's write, wait, toast and close, plus busy() and baked(). It draws on whatever thread
+//! calls it, while the window itself stays on the main thread (crate::window).
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -33,16 +33,17 @@ pub const KEYS_HINT: &str = "M: menu    F: fullscreen    Esc: quit";
 #[derive(Clone, Debug)]
 pub struct WindowConfig {
     pub title: String,
-    /// CAMetalLayer maximumDrawableCount: 3 (Apple's default, smoothest) or 2 (a refresh less delay when the GPU
-    /// keeps up).
+    /// CAMetalLayer maximumDrawableCount. 3 is Apple's default and the smoothest. 2 gives a refresh less delay when
+    /// the GPU keeps up.
     pub drawables: usize,
-    /// HDR10 output: the PQ level that is SDR white (BT.2408: 203 nits; hdr.py SDR_WHITE_NITS), which macOS shows at
-    /// the desktop's white, and the brightest the content goes (hdr.py SOURCE_PEAK_NITS), for EDR's roll-off.
+    /// For HDR10 output. `hdr_white_nits` is the PQ level that is SDR white, which macOS shows at the desktop's white
+    /// (203 nits in BT.2408, hdr.py SDR_WHITE_NITS). `hdr_peak_nits` is the brightest the content goes (hdr.py
+    /// SOURCE_PEAK_NITS), for EDR's roll-off.
     pub hdr_white_nits: f32,
     pub hdr_peak_nits: f32,
-    /// The user's looks folder; LUTs are read from its "luts" folder.
+    /// The user's looks folder. LUTs are read from its "luts" folder.
     pub looks_folder: Option<PathBuf>,
-    /// "[display] ..." lines on stdout, as the Python window's.
+    /// Print "[display]" lines on stdout, like the Python window.
     pub log: bool,
 }
 
@@ -57,9 +58,10 @@ impl Default for WindowConfig {
 #[derive(Default)]
 pub struct Timing {
     gpu: Mutex<BTreeMap<String, Vec<f64>>>,
-    /// The GPU's last 64 frame times, ms.
+    /// The GPU's last 64 frame times in ms.
     gpu_recent: Mutex<std::collections::VecDeque<f64>>,
-    /// (written at, presented at; 0 if it never was), on sp_core::clock (CACurrentMediaTime's clock).
+    /// (written at, presented at) on sp_core::clock, which is CACurrentMediaTime's clock. Presented at is 0 if it
+    /// never was.
     presents: Mutex<Vec<(f64, f64)>>,
 }
 
@@ -98,13 +100,13 @@ pub struct PresentStats {
     pub frames: usize,
     /// Frames the display never showed (a newer one replaced them first).
     pub dropped: usize,
-    /// Between consecutive frames shown (presentedTime), ms.
+    /// Time between consecutive frames shown (presentedTime), in ms.
     pub shown: Spread,
-    /// Between consecutive write() calls, ms.
+    /// Time between consecutive write() calls, in ms.
     pub written: Spread,
-    /// From write() to the frame on screen, ms.
+    /// Time from write() to the frame being on screen, in ms.
     pub latency: Spread,
-    /// The intervals themselves, ms, in order.
+    /// The shown intervals themselves in ms, in order.
     pub intervals: Vec<f64>,
 }
 
@@ -137,12 +139,12 @@ impl Timing {
 }
 
 struct LayerRef(Retained<CAMetalLayer>);
-// CAMetalLayer's nextDrawable may be called from any thread (Apple's own samples render on a display-link thread);
-// every property change goes through the main thread (crate::window::WindowCmd).
+// CAMetalLayer's nextDrawable may be called from any thread, and Apple's own samples render on a display-link thread.
+// Every property change goes through the main thread (crate::window::WindowCmd).
 unsafe impl Send for LayerRef {}
 
-/// The video window, for the pipeline (implements [`Presenter`]). Made on the main thread by [`open`]; then usable
-/// from any one thread at a time (it's Send).
+/// The video window, for the pipeline. It implements [`Presenter`]. [`open`] makes it on the main thread, and after
+/// that any one thread at a time can use it (it's Send).
 pub struct VideoPresenter {
     shared: Arc<Shared>,
     layer: LayerRef,
@@ -185,9 +187,9 @@ pub struct VideoPresenter {
     closed: bool,
 }
 
-/// Opens the video window for a stream of `w` x `h` frames (main thread). `model`: the settings (menu, hotkeys and
-/// the live display settings). The presenter then draws from whichever thread the pipeline runs on; see the crate's
-/// docs for driving the event loop.
+/// Opens the video window for a stream of `w` x `h` frames. Call it on the main thread. `model` is the settings, for
+/// the menu, hotkeys and the live display settings. The presenter then draws from whichever thread the pipeline runs
+/// on. The crate's docs cover driving the event loop.
 pub fn open(mtm: MainThreadMarker, w: usize, h: usize, cfg: WindowConfig, model: Box<dyn MenuModel>) -> Result<VideoPresenter> {
     let shared = Arc::new(Shared::default());
     let display = model.display();
@@ -249,9 +251,9 @@ pub fn open(mtm: MainThreadMarker, w: usize, h: usize, cfg: WindowConfig, model:
     Ok(p)
 }
 
-/// Runs the main thread's event loop until the video window closes: for a pipeline on another thread when nothing
-/// else (a Swift app) runs one. Call on the main thread after [`open`], having moved the presenter to the pipeline's
-/// thread; it returns once the presenter has been closed.
+/// Runs the main thread's event loop until the video window closes. It's for a pipeline on another thread when
+/// nothing else, such as a Swift app, runs one. Call it on the main thread after [`open`], once the presenter has moved
+/// to the pipeline's thread. It returns once the presenter has been closed.
 pub fn run(mtm: MainThreadMarker) {
     window::run(mtm);
 }
@@ -263,7 +265,7 @@ fn nav_of(k: Key) -> Option<Nav> {
         Key::Left => Nav::Left,
         Key::Right => Nav::Right,
         Key::Enter => Nav::Enter,
-        Key::Esc | Key::Backspace => Nav::Back, // Esc: back a page, and on the main page it closes the menu
+        Key::Esc | Key::Backspace => Nav::Back, // Esc goes back a page, and on the main page it closes the menu
         _ => return None,
     })
 }
@@ -288,24 +290,24 @@ impl VideoPresenter {
         &self.last_label
     }
 
-    /// The menu is open (for tests and the example).
+    /// Whether the menu is open, for tests and the example.
     pub fn menu_open(&self) -> bool {
         self.menu.open
     }
 
-    /// Presses a key as if on the keyboard (the launcher's or a test's way in).
+    /// Presses a key as if on the keyboard. The launcher and tests use it.
     pub fn press(&mut self, key: Key, shift: bool) {
         self.on_key(KeyPress { key, shift, command: false, repeat: false });
     }
 
-    /// The pacing in effect. Auto, with vsync on: Steady while a frame's lead (a refresh plus the GPU's time) fits in
-    /// one output frame, else Immediate (holding frames for their slots would run the layer out of drawables);
-    /// with vsync off: Immediate.
+    /// The pacing in effect. Auto with vsync on means Steady while a frame's lead (a refresh plus the GPU's time) fits
+    /// in one output frame, and Immediate otherwise, because holding frames for their slots would run the layer out of
+    /// drawables. Auto with vsync off means Immediate.
     pub fn pacing(&self) -> Pacing {
         match self.display.pacing {
             Pacing::Auto if self.display.vsync => {
                 let period = 1.0 / self.display.hz.max(1.0);
-                let margin = if self.steady { 0.0005 } else { -0.0005 }; // (a little hysteresis)
+                let margin = if self.steady { 0.0005 } else { -0.0005 }; // a little hysteresis
                 if self.lead() <= period + margin { Pacing::Steady } else { Pacing::Immediate }
             }
             Pacing::Auto => Pacing::Immediate,
@@ -313,8 +315,8 @@ impl VideoPresenter {
         }
     }
 
-    /// How far ahead of now Steady presents: a refresh plus the GPU's recent time (90th percentile of the last 64
-    /// frames, at least 2 ms). SP_PRESENT_LEAD_MS overrides it.
+    /// How far ahead of now Steady presents. It's a refresh plus the GPU's recent time (90th percentile of the last
+    /// 64 frames, at least 2 ms). SP_PRESENT_LEAD_MS overrides it.
     fn lead(&self) -> f64 {
         let period = 1.0 / self.display.hz.max(1.0);
         let refresh = if self.screen.refresh_min > 0.0 { self.screen.refresh_min } else { 1.0 / 60.0 };
@@ -335,7 +337,7 @@ impl VideoPresenter {
         let lead = self.lead();
         let next = self.slot_at + period;
         self.slot_at = if next < now + lead * 0.5 || next > now + lead + period {
-            now + lead // late (or a pause): start the grid again from here
+            now + lead // late, or after a pause, so start the grid again from here
         } else {
             next
         };
@@ -418,11 +420,11 @@ impl VideoPresenter {
             Key::Char('q') | Key::Esc => self.cmd = Some(SinkReply::Quit),
             Key::Char('i') => {
                 let on = self.get_bool("interp");
-                self.model.set("interp", (!on).into(), false); // a quick A/B, not saved
+                self.model.set("interp", (!on).into(), false); // a quick comparison, not saved
                 self.say("interp");
             }
             Key::Char('s') => {
-                // Off, Minimal, Detailed, Off...
+                // Off, then Minimal, then Detailed, then Off again
                 let style = m.get("overlay_style").and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default();
                 if !self.get_bool("overlay") {
                     self.model.set("overlay_style", "minimal".into(), true);
@@ -479,7 +481,8 @@ impl VideoPresenter {
         self.toast(&format!("Look: {name}"), 2.0);
     }
 
-    /// The window's events: pumped here when this is the main thread, then the keys, mouse and close it saw.
+    /// Handles the window's events. It pumps them here when this is the main thread, then acts on the keys, mouse and
+    /// close it saw.
     fn events(&mut self) {
         if let Some(mtm) = MainThreadMarker::new() {
             window::pump(mtm);
@@ -517,10 +520,10 @@ impl VideoPresenter {
         0.6f64.max(0.5f64.max(dh as f64 / 1080.0) * self.display.overlay_size.factor())
     }
 
-    /// One frame to the screen: the picture (or black), the stats, the menu or a message.
+    /// Draws one frame to the screen: the picture (or black), the stats, and the menu or a message.
     fn render(&mut self, frame: Option<&Frame>, overlay: Option<&Overlay>, plain: bool) {
         if !self.visible {
-            return; // minimised or hidden: nothing to show, and the layer may not hand out drawables
+            return; // minimised or hidden, so there's nothing to show and the layer may not hand out drawables
         }
         let hdr = frame.is_some_and(|f| f.kind == PixelKind::Rgba16f);
         self.ensure_layer(hdr);
@@ -616,8 +619,8 @@ impl VideoPresenter {
         });
     }
 
-    /// The stats overlay (Minimal: the frame's parts; Detailed: its text, the upscaler on the first line) in the
-    /// corner picked, tucked into its edges (io.py _draw_stats). Drawn again only when it changes.
+    /// The stats overlay in the corner picked, tucked into its edges (io.py _draw_stats). Minimal draws the frame's
+    /// parts. Detailed draws its text, with the upscaler on the first line. It's drawn again only when it changes.
     fn draw_stats(&mut self, cmd: &gpu::Cmd, target: &Tex, o: &Overlay, drawn: &Drawn, hdr: bool) {
         let ui_rect = drawn.ui;
         let ui = self.stats_ui(ui_rect.h);
@@ -630,7 +633,7 @@ impl VideoPresenter {
                 self.stats_state = Some(state);
             }
         } else {
-            // the upscaler goes on the first line; a second is the advice or the test line
+            // The upscaler goes on the first line. A second line is the advice or the test line.
             let (first, rest) = o.text.split_once('\n').map_or((o.text.as_str(), None), |(a, b)| (a, Some(b)));
             let text = match rest {
                 Some(r) => format!("{first}  {}\n{r}", drawn.name),
@@ -674,7 +677,8 @@ impl VideoPresenter {
                 self.menu_state = Some(state);
             }
             let ph = self.menu_panel.h as i64;
-            // Centred when it opens, then its top stays put (a row appearing grows it downwards), inside the picture.
+            // Centred when it opens. Then its top stays put so a new row grows it downwards, and it stays inside the
+            // picture.
             if self.menu_top.map(|t| t.1) != Some(r) {
                 self.menu_top = Some((r.y + (r.h - ph) / 2, r));
             }
@@ -688,7 +692,7 @@ impl VideoPresenter {
                 self.toast_state = Some(state);
             }
             let m = (16.0 * ui) as i64;
-            let mut below = 0; // the stats overlay in the top right: messages go under it
+            let mut below = 0; // with the stats overlay in the top right, messages go under it
             if self.stats_shown && self.display.overlay_corner == crate::display::Corner::TopRight {
                 below = self.stats_panel.h as i64 + (4.0 * self.stats_ui(r.h)).floor().max(2.0) as i64;
             }
@@ -698,7 +702,7 @@ impl VideoPresenter {
     }
 
     /// Runs `f` on a worker thread while the window stays responsive, showing the last frame and `text` with moving
-    /// dots (io.py busy()). Keys pressed meanwhile take effect after (Q quits at the next write()).
+    /// dots (io.py busy()). Keys pressed meanwhile take effect afterwards, so Q quits at the next write().
     pub fn busy<T: Send>(&mut self, text: &str, f: impl FnOnce() -> T + Send) -> T {
         self.menu.open = false;
         let last = self.last.clone();
@@ -721,9 +725,9 @@ impl VideoPresenter {
         }
     }
 
-    /// The frame just shown, with the look drawn on at the stream's size: for instant replay with "Looks in clips"
-    /// (io.py baked()). The frame itself when no look is on (or for HDR frames). The new frame's GPU work is queued
-    /// on the shared queue, so anything reading it there comes after; a CPU reader waits for the queue first.
+    /// The frame just shown, with the look drawn on at the stream's size, for instant replay with "Looks in clips"
+    /// (io.py baked()). Returns the frame itself when no look is on, and for HDR frames. The new frame's GPU work is
+    /// queued on the shared queue, so anything reading it there comes after. A CPU reader waits for the queue first.
     pub fn baked(&mut self, frame: &Frame) -> Frame {
         let Some(look) = self.display.look.clone() else { return frame.clone() };
         if frame.kind != PixelKind::Bgra8 {
@@ -741,9 +745,9 @@ impl VideoPresenter {
         out
     }
 
-    /// Window capture: sit over the app's window, (x, y, w, h) in points from the main display's top left (as
-    /// ScreenCaptureKit gives it), borderless, floating, click-through and never taking the keys; None: a normal
-    /// window again (crate::window::WindowCmd::Overlay).
+    /// For window capture. Puts the window over the app's window at (x, y, w, h), in points from the main display's
+    /// top left as ScreenCaptureKit gives it. The window is then borderless, floating and click-through, and never
+    /// takes the keys. None makes it a normal window again (crate::window::WindowCmd::Overlay).
     pub fn set_overlay(&mut self, rect: Option<(f64, f64, f64, f64)>) {
         window::on_main(WindowCmd::Overlay(rect));
         if let Some(mtm) = MainThreadMarker::new() {
@@ -751,7 +755,7 @@ impl VideoPresenter {
         }
     }
 
-    /// Takes the window off the screen now, before what's left of stopping (close() follows).
+    /// Takes the window off the screen now, before the rest of stopping. close() follows.
     pub fn hide(&mut self) {
         window::on_main(WindowCmd::Hide);
         if let Some(mtm) = MainThreadMarker::new() {
@@ -796,7 +800,7 @@ impl Presenter for VideoPresenter {
             return SinkReply::Quit;
         }
         if self.waited >= 0 {
-            // a picture again after a wait: its note goes
+            // a picture again after a wait, so its note goes
             self.waited = -1;
             self.toast_until = 0.0;
         }
@@ -850,9 +854,9 @@ impl Presenter for VideoPresenter {
     }
 }
 
-// Everything the presenter holds is Metal state (devices, queues, pipelines and textures are thread-safe; command
-// buffers live for one call), the layer (see LayerRef), plain data and the Send MenuModel. It's used from one thread
-// at a time (&mut self), so it can move to the pipeline's thread.
+// Everything the presenter holds is Metal state, the layer (see LayerRef), plain data and the Send MenuModel. Metal
+// devices, queues, pipelines and textures are thread-safe, and command buffers live for one call. It's used from one
+// thread at a time (&mut self), so it can move to the pipeline's thread.
 unsafe impl Send for VideoPresenter {}
 
 impl Drop for VideoPresenter {

@@ -77,10 +77,11 @@ class RifeInterpolator:
         build_engine=False a missing engine raises FileNotFoundError instead).
         hdr: frames are float16 PQ (framegen/hdr.py pq16) instead of uint8; `in_u8` is then their 8-bit stand-in
         for the pipeline's checks, worked out in load().
-        device: None for the best one here (framegen/gpu.py: CUDA, Apple's GPU, else the CPU). CUDA graphs are only
-        made on CUDA; elsewhere every call runs eagerly.
+        device: None picks the best one here with framegen/gpu.py: CUDA, then Apple's GPU, else the CPU. CUDA graphs
+        are only made on CUDA, and elsewhere every call runs eagerly.
         On Apple's GPU (device "mps", fp16, backend "torch") the flow network runs as framegen/metalrife.py's
-        MetalIFNet (PyTorch's convolutions with hand-written Metal kernels for everything else, about 2.5x faster).
+        MetalIFNet, which uses PyTorch's convolutions with hand-written Metal kernels for everything else and is about
+        2.5x faster.
         metal=False or SMOOVPLAY_METAL=0 runs eager FastIFNet instead, as does a Metal that can't build the kernels."""
         if version not in MODELS:
             raise ValueError(f"unknown model {version!r}; choose from {list(MODELS)}")
@@ -171,7 +172,7 @@ class RifeInterpolator:
                         lambda s=slot, st=steady: self._interp_eager(1 - s, s, st))
 
     def _metal_engine(self):
-        """framegen/metalrife.py's MetalIFNet when it applies here (Apple's GPU, fp16), else None (eager FastIFNet)."""
+        """framegen/metalrife.py's MetalIFNet where it applies (Apple's GPU, fp16), else None for eager FastIFNet."""
         import os
         if self.device.type != "mps" or self.dtype != torch.half or os.environ.get("SMOOVPLAY_METAL", "1") == "0":
             return None
@@ -186,8 +187,8 @@ class RifeInterpolator:
             m.interpolate(slots[0], slots[1], 0.5, self.out_u8)
             torch.mps.synchronize()
             return m
-        except Exception as e:  # noqa: BLE001 - e.g. a Metal compiler that rejects the kernels: eager still works
-            print(f"[rife] Metal kernels unavailable ({str(e)[:200]}); running eagerly")
+        except Exception as e:  # noqa: BLE001 - if a Metal compiler rejects the kernels, say, eager still works
+            print(f"[rife] Metal kernels unavailable ({str(e)[:200]}), so running eagerly")
             return None
 
     # ---- eager kernels (also what gets captured into graphs) -----------------
@@ -293,7 +294,7 @@ class RifeInterpolator:
             if self.trt is not None:
                 self.trt.set_timestep(t)
             if self.metal is not None:
-                pass  # (takes t as an argument)
+                pass  # MetalIFNet takes t as an argument
             elif self.fast is not None:
                 self.fast.set_timestep(t)
             else:

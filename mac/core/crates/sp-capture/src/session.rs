@@ -1,21 +1,21 @@
-//! A real card through AVFoundation (capture.py CardSource.open): one AVCaptureSession with the card's video and its
-//! sound, so both are timed by the session's clock (as DirectShow's one graph times both on Windows).
+//! A real card through AVFoundation (capture.py CardSource.open). One AVCaptureSession has the card's video and its
+//! sound, so both are timed by the session's clock, as DirectShow's one graph times both on Windows.
 //!
 //! - The card's mode is picked from its formats ([`crate::pick_mode`]), set as the device's active format and frame
-//!   duration, and held across startRunning (AVFoundation keeps it then).
-//! - The video data output hands over IOSurface-backed CVPixelBuffers: NV12 in the card's own format when it sends
-//!   NV12 (no conversion), otherwise NV12 converted by macOS (4:2:2 and MJPEG, which macOS decodes). Each one is
-//!   copied tightly into the converter's buffer and converted on the GPU with capture.py raw_to_bgr's maths, on the
-//!   output's own queue, so the sample buffer goes straight back to the card's pool.
+//!   duration, and held across startRunning so AVFoundation keeps it.
+//! - The video data output hands over IOSurface-backed CVPixelBuffers. They're NV12 in the card's own format when it
+//!   sends NV12, with no conversion. Otherwise macOS converts them to NV12, for 4:2:2 and for MJPEG, which macOS
+//!   decodes. Each one is copied tightly into the converter's buffer and converted on the GPU with capture.py
+//!   raw_to_bgr's maths, on the output's own queue, so the sample buffer goes straight back to the card's pool.
 //! - Timestamps are the session's synchronisation clock converted to host time (sp_core::clock), so `t_source` and
 //!   `t_arrival` compare directly, and a sound packet's lateness against the picture's is measured on one clock.
-//! - Frames macOS drops before handing them over are numbered all the same; a drop for a break in the card's stream
+//! - Frames macOS drops before handing them over are numbered all the same. A drop for a break in the card's stream
 //!   counts as a damaged frame.
-//! - Sound: the card's own audio port when it has one (a muxed device), else the sound device given, as a second
-//!   input in the same session, asked for 16-bit PCM (two channels at most) at the device's rate, on a queue of its
-//!   own so the picture's work never holds it up.
+//! - The sound comes from the card's own audio port when it has one (a muxed device), else from the sound device
+//!   given, as a second input in the same session. It's asked for 16-bit PCM (two channels at most) at the device's
+//!   rate, on a queue of its own so the picture's work never holds it up.
 //!
-//! Untested with a real card (see the crate docs for what to try).
+//! Untested with a real card. The crate docs say what to try.
 
 use std::sync::{Arc, OnceLock};
 
@@ -66,7 +66,7 @@ define_class!(
 
     unsafe impl NSObjectProtocol for OutputDelegate {}
 
-    // (the audio output's delegate protocol has the same two methods: `audio` says which output this one serves)
+    // The audio output's delegate protocol has the same two methods. `audio` says which output this one serves.
     unsafe impl AVCaptureVideoDataOutputSampleBufferDelegate for OutputDelegate {
         #[unsafe(method(captureOutput:didOutputSampleBuffer:fromConnection:))]
         fn did_output(&self, _output: &AVCaptureOutput, sample: &CMSampleBuffer, _connection: Option<&AVCaptureConnection>) {
@@ -105,7 +105,7 @@ impl OutputDelegate {
         }
     }
 
-    /// What AVFoundation calls for a frame it dropped (tests).
+    /// What AVFoundation calls for a frame it dropped, for tests to call.
     #[cfg(test)]
     fn deliver_drop(&self, output: &AVCaptureOutput, sample: &CMSampleBuffer) {
         unsafe {
@@ -222,7 +222,7 @@ pub fn open_failure(device: &str, error: &str, in_use: bool) -> String {
     String::new()
 }
 
-/// Waits for macOS's answer on using cameras or microphones (asking the person the first time); Err in plain words
+/// Waits for macOS's answer on using cameras or microphones, asking the person the first time. Err in plain words
 /// when it's no.
 fn authorize(media: &AVMediaType, what: &str, device: &str) -> Result<(), String> {
     let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media) };
@@ -249,17 +249,17 @@ fn authorize(media: &AVMediaType, what: &str, device: &str) -> Result<(), String
     }
 }
 
-/// The video output's settings: just the pixel format (the only key AVFoundation promises to take everywhere; its
-/// buffers are IOSurface-backed anyway, and they're copied into the converter's buffer).
+/// The video output's settings, which hold only the pixel format. That's the only key AVFoundation promises to take
+/// everywhere. Its buffers are IOSurface-backed anyway, and they're copied into the converter's buffer.
 fn video_settings(code: u32) -> Retained<NSDictionary<NSString, AnyObject>> {
     let pf = cf::num(code as i64);
     let d = unsafe { cf::dict(&[(kCVPixelBufferPixelFormatTypeKey, &pf)]) };
-    // (CFDictionary and NSDictionary are toll-free bridged)
+    // CFDictionary and NSDictionary are toll-free bridged
     unsafe { Retained::retain(CFRetained::as_ptr(&d).as_ptr() as *mut NSDictionary<NSString, AnyObject>).unwrap() }
 }
 
-/// What to ask the video output for: the card's own NV12 as it is, anything else as NV12 converted by macOS, in
-/// the range the mode says (limited unless it says full).
+/// What to ask the video output for. That's the card's own NV12 as it is, or anything else as NV12 converted by
+/// macOS, in the range the mode says (limited unless it says full).
 pub fn output_format(mode: &Mode, code: u32) -> u32 {
     if code == NV12_VIDEO || code == NV12_FULL {
         code
@@ -270,14 +270,15 @@ pub fn output_format(mode: &Mode, code: u32) -> u32 {
     }
 }
 
-/// The rate to ask a format's frame rate range for: open_rate's, within what the range allows (a 120-only mode
-/// picked for 60 runs at 120).
+/// The rate to ask a format's frame rate range for. It's open_rate's, within what the range allows, so a 120-only
+/// mode picked for 60 runs at 120.
 fn range_rate(dm: &DeviceMode, rate: f64) -> f64 {
     let (lo, hi) = unsafe { (dm.rates.minFrameRate(), dm.rates.maxFrameRate()) };
     if rate > hi - 0.01 { hi } else if rate < lo + 0.01 { lo } else { rate }
 }
 
-/// The frame duration for that rate: the range's own at either end (exact: 1001/60000 for 59.94), else 1/rate.
+/// The frame duration for that rate. It's the range's own at either end (exactly 1001/60000 for 59.94), else
+/// 1/rate.
 fn frame_duration(dm: &DeviceMode, rate: f64) -> CMTime {
     unsafe {
         if rate >= dm.rates.maxFrameRate() {
@@ -295,9 +296,9 @@ fn queue(label: &str) -> DispatchRetained<DispatchQueue> {
 }
 
 impl CardSource {
-    /// A capture card by unique ID, name or number (capture.py CardSource.open). `mode`: the one to use (None: the
-    /// best for `w` x `h` at `fps`, pick_mode). `audio_device`: the card's sound device (pick_audio), its own sound
-    /// when it names the card itself; opened with the video, played by `opts.audio`.
+    /// A capture card by unique ID, name or number (capture.py CardSource.open). `mode` is the one to use, or None
+    /// for pick_mode's best for `w` x `h` at `fps`. `audio_device` is the card's sound device (pick_audio), or its
+    /// own sound when it names the card itself. It's opened with the video and played by `opts.audio`.
     pub fn open(
         device: &str,
         w: u32,
@@ -331,7 +332,7 @@ impl CardSource {
 
         let video_media = unsafe { AVMediaTypeVideo.unwrap() };
         authorize(video_media, "Camera", &name)?;
-        // the sound: the card's own port, another device, or none
+        // the sound comes from the card's own port, another device, or nowhere
         let wants_sound = opts.audio.is_some() && audio_device.is_some();
         let own_sound = audio_device.is_some_and(|a| a == name || a == uid);
         let mut audio_dev: Option<Retained<AVCaptureDevice>> = None;
@@ -425,8 +426,8 @@ fn start_session(
             return Err(fail("the capture session can't take it".into()));
         }
         session.addInput(input_ref);
-        // the format, once the input is in the session (adding it sets the session's preset), held across
-        // startRunning so the session keeps it
+        // Set the format once the input is in the session, because adding the input sets the session's preset. It's
+        // held across startRunning so the session keeps it.
         dev.lockForConfiguration().map_err(|e| fail(format!("format: {}", e.localizedDescription())))?;
         dev.setActiveFormat(&dm.format);
         let d = frame_duration(dm, rate);
@@ -462,7 +463,7 @@ fn start_session(
             let added = if same {
                 true
             } else {
-                // the card's own audio port, if it has one, is turned off: the sound comes from the device given
+                // the card's own audio port, if it has one, is turned off, as the sound comes from the device given
                 for p in input.ports().iter() {
                     if AVMediaTypeAudio.is_some_and(|a| p.mediaType().to_string() == a.to_string()) {
                         p.setEnabled(false);
@@ -555,9 +556,9 @@ mod tests {
     use sp_core::Tick;
     use sp_media::queue::Got;
 
-    /// A file's sample buffers handed to the outputs' delegates the way AVFoundation hands a card's (through the
-    /// Objective-C method), as a live card's: numbering (a dropped frame included), the session clock's timestamps,
-    /// the conversion, and the sound with how late it comes.
+    /// A file's sample buffers handed to the outputs' delegates through the Objective-C method, the way AVFoundation
+    /// hands a card's. They get what a live card's get: numbering with a dropped frame included, the session clock's
+    /// timestamps, the conversion, and the sound with how late it comes.
     #[test]
     fn a_files_samples_go_through_the_delegates_as_a_cards() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/capture/onset.mov");
@@ -591,12 +592,12 @@ mod tests {
         let mut n = 0;
         while let Some(sb) = unsafe { vo.copyNextSampleBuffer() } {
             if n == 10 {
-                vdel.deliver_drop(&vout, &sb); // macOS dropped this one: numbered all the same
+                vdel.deliver_drop(&vout, &sb); // macOS dropped this one, and it's numbered all the same
             } else {
                 vdel.deliver(&vout, &sb);
             }
             if n == 5 {
-                // from here on, timestamps go through the session's clock (host time here: the same seconds)
+                // from here on, timestamps go through the session's clock, which is host time here, so the same seconds
                 let host = unsafe { CMClock::host_time_clock() };
                 let _ = clock.set(SyncClock(unsafe { Retained::retain(CFRetained::as_ptr(&host).as_ptr()).unwrap() }));
             }

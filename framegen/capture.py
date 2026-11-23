@@ -223,7 +223,7 @@ def dshow_names() -> list[Device]:
 def list_devices() -> list[Device]:
     """The capture devices Windows has, by name (dshow_names), or from FFmpeg's own listing if DirectShow's list
     can't be read that way. An empty video list is looked at once more after half a second: a card can be missing
-    for a moment while its driver starts, or while another app lets it go. On a Mac: AVFoundation's devices
+    for a moment while its driver starts, or while another app lets it go. On a Mac, AVFoundation's devices
     (avfoundation_devices)."""
     if sys.platform == "darwin":
         return avfoundation_devices()
@@ -241,8 +241,8 @@ def list_devices() -> list[Device]:
 
 
 def avfoundation_devices() -> list[Device]:
-    """A Mac's cameras, capture cards and microphones, from FFmpeg's AVFoundation listing (alt: its index there, which
-    is what a Mac opens a card by). Screens ("Capture screen N") are left out."""
+    """A Mac's cameras, capture cards and microphones, from FFmpeg's AVFoundation listing. Each one's alt is its index
+    there, which is what a Mac opens a card by. Screens ("Capture screen N") are left out."""
     import av
     import av.logging
     old = av.logging.get_level()
@@ -251,7 +251,7 @@ def avfoundation_devices() -> list[Device]:
         with av.logging.Capture() as logs:
             try:
                 av.open("", format="avfoundation", options={"list_devices": "true"}).close()
-            except Exception:  # noqa: BLE001 - a listing always "fails"
+            except Exception:  # noqa: BLE001 - a listing always raises once FFmpeg has printed it
                 pass
     finally:
         av.logging.set_level(old)

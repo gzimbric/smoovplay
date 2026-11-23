@@ -1,4 +1,4 @@
-//! The header and the frame slots (framegen/chiaki_tap.py FrameTap; chiaki_tap/frametap.c writes the same).
+//! The header and the frame slots (framegen/chiaki_tap.py FrameTap). chiaki_tap/frametap.c writes the same.
 
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -8,8 +8,8 @@ use crate::layout::*;
 use crate::shm::{check_name, fence, Shm};
 use crate::Result;
 
-/// The header as a reader sees it. `slots` and `slot_size` are the writer's layout (a version 1 writer always uses
-/// SLOTS and SLOT_SIZE; a version 2 writer's own, if they fit).
+/// The header as a reader sees it. `slots` and `slot_size` are the writer's layout. A version 1 writer always uses
+/// SLOTS and SLOT_SIZE, and a version 2 writer uses its own if they fit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Header {
     pub magic: u32,
@@ -33,13 +33,13 @@ impl Header {
     pub fn live(&self) -> bool {
         self.magic == MAGIC
     }
-    /// What changes when a frame comes or a stream starts or ends: what [`FrameTap::wait`] watches.
+    /// What changes when a frame comes or a stream starts or ends, which [`FrameTap::wait`] watches.
     pub fn watch(&self) -> Watch {
         Watch { magic: self.magic, write_seq: self.write_seq, session: self.session }
     }
 }
 
-/// (magic, write_seq, session): see [`Header::watch`].
+/// The (magic, write_seq, session) that [`Header::watch`] returns.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Watch {
     pub magic: u32,
@@ -64,8 +64,8 @@ pub struct Packet {
     pub size: usize,
 }
 
-/// The shared ring. Either side may create it first; both see the same memory. A reader and a writer may share one
-/// FrameTap between threads (every access is volatile or atomic).
+/// The shared ring. Either side may create it first, and both see the same memory. A reader and a writer may share
+/// one FrameTap between threads, since every access is volatile or atomic.
 pub struct FrameTap {
     shm: Shm,
 }
@@ -101,7 +101,7 @@ impl FrameTap {
         if version < VERSION_RAW
             || !((4..=SLOTS).contains(&slots) && SLOT_HEADER < slot_size && slots * slot_size <= CAPACITY)
         {
-            (slots, slot_size, colour) = (SLOTS, SLOT_SIZE, 0); // version 1 (chiaki-ng): the fixed layout
+            (slots, slot_size, colour) = (SLOTS, SLOT_SIZE, 0); // version 1 (chiaki-ng) has the fixed layout
         }
         Header {
             magic,
@@ -140,7 +140,7 @@ impl FrameTap {
         self.shm.atomic_u64(OFF_HEARTBEAT).store(clock::qpc(), Ordering::SeqCst);
     }
 
-    /// The writer's `features` while a stream is on, else 0. (A chiaki-ng from an older patch leaves them 0.)
+    /// The writer's `features` while a stream is on, else 0. A chiaki-ng from an older patch leaves them 0.
     pub fn features(&self) -> u32 {
         if self.header().live() { self.shm.u32(OFF_FEATURES) } else { 0 }
     }
@@ -150,7 +150,7 @@ impl FrameTap {
     pub fn press(&self, buttons: u32, hold_ms: u32) -> u32 {
         let count = self.shm.atomic_u32(OFF_PRESS_COUNT).load(Ordering::SeqCst);
         self.shm.set_u32(OFF_PRESS_HOLD_MS, hold_ms);
-        fence(); // the hold before the buttons: the writer reads them in the other order
+        fence(); // the hold before the buttons, because the writer reads them in the other order
         self.shm.atomic_u32(OFF_PRESS_BUTTONS).store(buttons, Ordering::SeqCst);
         count
     }
@@ -165,13 +165,13 @@ impl FrameTap {
         Some(clock::to_seconds(q, qpc_freq))
     }
 
-    /// Ask the writer to hold its sound back this long (0-500 ms).
+    /// Ask the writer to hold its sound back this long (0 to 500 ms).
     pub fn set_audio_delay(&self, ms: i64) {
         self.shm.atomic_u32(OFF_AUDIO_DELAY_MS).store(ms.clamp(0, 500) as u32, Ordering::SeqCst);
     }
 
-    /// Until the writer sends a frame or starts or ends a stream (anything different from `seen`), or timeout_s.
-    /// There's no event on macOS: this looks at the header every POLL_S (half a millisecond).
+    /// Waits until the writer sends a frame or starts or ends a stream (anything different from `seen`), or for
+    /// timeout_s. There's no event on macOS, so this looks at the header every POLL_S (half a millisecond).
     pub fn wait(&self, seen: Watch, timeout_s: f64) {
         let t_end = clock::now() + timeout_s;
         loop {
@@ -190,14 +190,14 @@ impl FrameTap {
         HEADER + (seq % slots as u64) as usize * slot_size
     }
 
-    /// Frame `seq` copied out of its slot, or None if the writer has already reused the slot (or rewrote it while it
-    /// was being copied). `h`: the header, for the writer's layout and clock.
+    /// Frame `seq` copied out of its slot, or None if the writer has already reused the slot or rewrote it while it
+    /// was being copied. `h` is the header, for the writer's layout and clock.
     pub fn read(&self, seq: u64, h: &Header) -> Option<Packet> {
         self.read_with(seq, h, None)
     }
 
-    /// As [`FrameTap::read`], into `into` (a decoded frame, megabytes) instead of a new Vec: the Packet's data is
-    /// then empty and its size in `size`. None also if the frame doesn't fit `into`.
+    /// As [`FrameTap::read`], but into `into` (a decoded frame, megabytes) instead of a new Vec. The Packet's data is
+    /// then empty and its size is in `size`. Also None if the frame doesn't fit `into`.
     pub fn read_into(&self, seq: u64, h: &Header, into: &mut [u8]) -> Option<Packet> {
         self.read_with(seq, h, Some(into))
     }
@@ -205,7 +205,7 @@ impl FrameTap {
     fn read_with(&self, seq: u64, h: &Header, into: Option<&mut [u8]>) -> Option<Packet> {
         let m = &self.shm;
         let off = Self::slot_off(seq, h.slots, h.slot_size);
-        fence(); // (after the header's write_seq was read)
+        fence(); // after the header's write_seq was read
         let s0 = m.u64(off);
         let q = m.u64(off + 8);
         let size = m.u32(off + 16) as usize;
@@ -247,7 +247,7 @@ impl FrameTap {
     }
 
     // ------------------------------------------------------------------ writer side
-    // For tests, stand-in writers and apps; chiaki-ng uses frametap.c.
+    // For tests, stand-in writers and apps. chiaki-ng uses frametap.c.
 
     /// Start a stream. A decoded format (CODEC_NV12, CODEC_BGRA) gets version 2 and slots of its own
     /// (raw_layout). `features`, if given, replaces the header's features field.
@@ -276,13 +276,13 @@ impl FrameTap {
         }
         m.xchg_u64(OFF_WRITE_SEQ, 0);
         m.atomic_u32(OFF_SESSION).fetch_add(1, Ordering::SeqCst);
-        m.xchg_u32(OFF_MAGIC, MAGIC); // last: the header is complete
+        m.xchg_u32(OFF_MAGIC, MAGIC); // last, once the header is complete
         Ok(())
     }
 
-    /// One frame: compressed bytes, or a decoded frame (rows packed tightly). `new`: the writer's own word on it
-    /// (Some(true) new content, Some(false) a repeat of the frame before, None unknown). Never waits for the reader.
-    /// The slots are the ones the header gives (whichever FrameTap started the stream).
+    /// Writes one frame, as compressed bytes or a decoded frame (rows packed tightly). `new` is the writer's own word
+    /// on it: Some(true) for new content, Some(false) for a repeat of the frame before, None if unknown. Never waits
+    /// for the reader. The slots are the ones the header gives, from whichever FrameTap started the stream.
     pub fn push(&self, data: &[u8], frames_lost: i32, recovered: bool, new: Option<bool>) {
         let m = &self.shm;
         let h = self.header();
@@ -296,7 +296,7 @@ impl FrameTap {
                 Some(false) => FLAG_REPEAT,
                 None => 0,
             };
-        m.set_u64(off, u64::MAX); // being rewritten: a reader copying it sees the change and drops it
+        m.set_u64(off, u64::MAX); // being rewritten, so a reader copying it sees the change and drops it
         fence();
         m.set_u64(off + 8, clock::qpc());
         m.set_u32(off + 16, size as u32);
@@ -318,8 +318,8 @@ impl FrameTap {
         self.shm.atomic_u32(OFF_FEATURES).store(features, Ordering::SeqCst);
     }
 
-    /// The buttons the reader asked to press and how long to hold them (20-2000 ms), once per request; None if
-    /// none.
+    /// The buttons the reader asked to press and how long to hold them (20 to 2000 ms), once per request, or None if
+    /// there's no request.
     pub fn take_press_request(&self) -> Option<(u32, u32)> {
         let buttons = self.shm.xchg_u32(OFF_PRESS_BUTTONS, 0);
         if buttons == 0 {
@@ -397,7 +397,7 @@ mod tests {
         assert!((clock::now() - sent).abs() < 0.5);
         t.set_audio_delay(900);
         assert_eq!(t.audio_delay_ms(), 500);
-        // Decoded frames: version 2 and their own slots
+        // Decoded frames get version 2 and their own slots
         t.begin(CODEC_NV12, 1920, 1080, 60, 1, Some(FEATURE_VARIABLE)).unwrap();
         let h = t.header();
         assert_eq!((h.version, h.slots, h.slot_size, h.colour, h.features), (2, 21, 3 << 20, 1, FEATURE_VARIABLE));
@@ -433,7 +433,7 @@ mod tests {
         assert!(t.header().write_seq == 1 && waited < 0.5, "{waited}");
         writer.push(b"another", 0, false, None);
         let t0 = clock::now();
-        t.wait(seen, 2.0); // changed since `seen`: at once
+        t.wait(seen, 2.0); // changed since `seen`, so it returns at once
         assert!(clock::now() - t0 < 0.05);
         drop((t, writer));
         unlink(&name);

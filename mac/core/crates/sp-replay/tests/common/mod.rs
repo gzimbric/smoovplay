@@ -1,4 +1,4 @@
-//! Shared by sp-replay's tests: temp folders, a recorder that collects its messages, ffprobe and ffmpeg.
+//! Helpers shared by sp-replay's tests: temp folders, a recorder that collects its messages, ffprobe and ffmpeg.
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
@@ -62,8 +62,8 @@ pub fn compose_bin() -> std::ffi::OsString {
     env!("CARGO_BIN_EXE_sp-replay-compose").into()
 }
 
-/// The before & after maker; with SP_REPLAY_COMPOSE_LOG set, its stderr goes to that file (the recorder only shows it
-/// when it fails).
+/// The before & after maker. With SP_REPLAY_COMPOSE_LOG set, its stderr goes to that file, since the recorder only
+/// shows it when it fails.
 pub fn compose_cmd() -> Vec<std::ffi::OsString> {
     match std::env::var("SP_REPLAY_COMPOSE_LOG") {
         Ok(log) => vec!["/bin/sh".into(), "-c".into(), format!("exec \"$0\" \"$@\" 2>>'{log}'").into(), compose_bin()],
@@ -71,7 +71,8 @@ pub fn compose_cmd() -> Vec<std::ffi::OsString> {
     }
 }
 
-/// replay.py's test fixture: 3 s kept, waiting for the encoder rather than dropping frames, clips in `dir`.
+/// replay.py's test fixture. It keeps 3 s, waits for the encoder rather than dropping frames, and puts clips in
+/// `dir`.
 pub fn recorder(dir: &Path, length: u32) -> (Recorder, Said) {
     let said = Said::default();
     let (t, l) = (said.toasts.clone(), said.log.clone());

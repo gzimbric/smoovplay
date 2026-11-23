@@ -1,12 +1,13 @@
-//! The seams between the core's pieces, mirroring the Python pipeline's duck types: a source is an iterator of
-//! ticks (framegen/io.py, chiaki_tap.py), an interpolator has RifeInterpolator's load / prepare / interpolate
-//! (framegen/interpolator.py), and a presenter is GLWindowSink's write / wait / toast (framegen/io.py).
+//! The seams between the core's pieces, which mirror the Python pipeline's duck types. A source is an iterator of
+//! ticks (framegen/io.py, chiaki_tap.py). An interpolator has RifeInterpolator's load, prepare and interpolate
+//! (framegen/interpolator.py), and a presenter has GLWindowSink's write, wait and toast (framegen/io.py).
 
 use crate::frame::Frame;
 use crate::tick::{Event, SourceInfo, Sound, Waiting};
 
-/// The stats overlay for a frame (framegen/io.py MiniText): the plain text (Detailed style, or what a text sink
-/// prints), and for the Minimal style its coloured parts, how well the Mac keeps up, and the test-mode line.
+/// The stats overlay for a frame (framegen/io.py MiniText). It holds the plain text, which the Detailed style shows
+/// and a text sink prints. For the Minimal style it also holds the coloured parts, how well the Mac keeps up, and
+/// the test-mode line.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Overlay {
     pub text: String,
@@ -49,15 +50,15 @@ pub trait Interpolator: Send {
     fn label(&self) -> String;
     /// Stream size this interpolator was built for.
     fn size(&self) -> (usize, usize);
-    /// Copy a real frame into the input (it may be read later by the GPU, so the frame must stay alive: it does,
-    /// frames are immutable and reference-counted).
+    /// Copy a real frame into the input. The GPU may read it later, so the frame must stay alive. It does, because
+    /// frames are immutable and reference-counted.
     fn load(&mut self, frame: &Frame);
     /// Encode the loaded frame into slot 0 or 1.
     fn prepare(&mut self, slot: usize);
     /// The frame at fraction `t` from slot (1 - newest) to slot `newest`. The returned frame is the interpolator's
-    /// output buffer: it's overwritten by the next call, so a caller that keeps it must copy it.
+    /// output buffer. The next call overwrites it, so a caller that keeps it must copy it.
     fn interpolate(&mut self, newest: usize, t: f32) -> Frame;
-    /// Steady HUD: the largest real-frame difference (0..1) that counts as still, or 0 for off.
+    /// For Steady HUD, the largest real-frame difference (0..1) that counts as still, or 0 for off.
     fn set_steady(&mut self, _threshold: f32) {}
 }
 
@@ -72,12 +73,12 @@ pub enum SinkReply {
     DelayTest,
 }
 
-/// Shows frames: the video window (or a file writer, or nothing for headless runs).
+/// Shows frames. That's the video window, a file writer, or nothing for headless runs.
 pub trait Presenter {
-    /// Show `frame` with the stats overlay (None: none this frame). Returns once it's queued for the screen (with
-    /// vsync on, at the next refresh).
+    /// Show `frame` with the stats overlay, or with none this frame if `overlay` is None. Returns once it's queued
+    /// for the screen, which with vsync on is at the next refresh.
     fn write(&mut self, frame: &Frame, overlay: Option<&Overlay>) -> SinkReply;
-    /// No frame is coming for a moment: keep the window answering and say so on screen.
+    /// No frame is coming for a moment. Keep the window answering and say so on screen.
     fn wait(&mut self, waiting: &Waiting) -> SinkReply;
     /// A short message in the corner.
     fn toast(&mut self, _text: &str, _seconds: f64) {}

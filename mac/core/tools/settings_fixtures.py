@@ -1,6 +1,6 @@
 """Writes the parity fixtures for crates/sp-settings (mac/core/fixtures/settings/*.json, git-ignored) from the Python
-reference: what framegen/settings.py, remote.py, looks.py, fill.py and autodetect.py produce for a set of inputs, so
-the Rust tests (crates/sp-settings/tests/parity.rs) can check the port gives exactly the same.
+reference. They hold what framegen/settings.py, remote.py, looks.py, fill.py and autodetect.py produce for a set of
+inputs, so the Rust tests (crates/sp-settings/tests/parity.rs) can check the port gives exactly the same.
 
     .venv/bin/python mac/core/tools/settings_fixtures.py
 
@@ -60,7 +60,7 @@ def err(e: BaseException) -> dict:
     return {"error": type(e).__name__, "message": str(e)}
 
 
-USER_LOOKS = {  # file name -> text, for cases that need looks of the user's
+USER_LOOKS = {  # each file's text by name, for cases that need looks of the user's
     "moody-blues.json": json.dumps({"version": 1, "name": "Moody blues", "nodes": [node("color", temperature=-0.4)]}),
     "alpha.json": json.dumps({"name": "alpha", "nodes": [node("grain", amount=0.5)]}),
     "zeta.json": json.dumps({"name": "Alpha", "nodes": []}),
@@ -372,7 +372,7 @@ def messy_look(rng: random.Random) -> dict:
 def try_normalize(v) -> dict:
     try:
         return {"look": json.dumps(normalize(v))}
-    except Exception as e:  # noqa: BLE001 - TypeError and OverflowError too: the Rust port reports them
+    except Exception as e:  # noqa: BLE001 - TypeError and OverflowError too, which the Rust port reports
         return err(e)
 
 
@@ -477,7 +477,7 @@ def gen_codes() -> None:
         (b"\x00\x01" + bytes([5 << 1]) + bytes([1 << 1]) + b"\x0aMy.cube.x", None, False),
         (b"\x00\x01" + bytes([5 << 1]) + bytes([1 << 1]) + b"\x08..\\a.CUBE", None, False),
         (b"\x00\x01" + bytes([5 << 1 | 1]) + bytes([1]) + b"\x63", None, False),  # off, mix
-        (b"\x03abc\x14" + (vig + b"\x00") * 20, None, False),  # 20 nodes: 16 kept
+        (b"\x03abc\x14" + (vig + b"\x00") * 20, None, False),  # 20 nodes, 16 kept
         (b"\x03abc\x01" + vig + b"\x00", None, True),  # compressed
         (b"\x03abc\x01" + vig + b"\x00", 1, False),  # says compressed, isn't
         (b"\x00\x00", 0, True),  # compressed, says it isn't
@@ -516,7 +516,7 @@ def gen_uniforms() -> None:
                 n["file"] = rng.choice(["Missing.cube", "Here.cube"])
         stage_looks.append(raw)
     stages = []
-    for raw in stage_looks:  # (normalize() once: it isn't idempotent for a LUT name cut at 120 characters)
+    for raw in stage_looks:  # normalize() once, as it isn't idempotent for a LUT name cut at 120 characters
         look = normalize(raw)
         st = looks.stages(look, lambda name: name != "Missing.cube")
         stages.append({"look": json.dumps(raw), "stages": [
@@ -575,7 +575,7 @@ def gen_cube() -> None:
                    "table": [float(x) for x in lut.table.reshape(-1)]}
         except ValueError as e:
             got = err(e)
-        except Exception as e:  # noqa: BLE001 - e.g. IndexError: the Python doesn't catch it
+        except Exception as e:  # noqa: BLE001 - IndexError, for example, which the Python doesn't catch
             got = err(e)
         cases.append({"name": name, "text": text, **got})
     write("cube", cases)
@@ -961,7 +961,7 @@ def gen_detect() -> None:
         for gpu in ("NVIDIA GeForce RTX 2080 Ti", "X"):
             try:
                 row.append(autodetect.saved_full_ms(sp, gpu))
-            except Exception as e:  # noqa: BLE001 - AttributeError on a list: not caught in the Python
+            except Exception as e:  # noqa: BLE001 - AttributeError on a list, which the Python doesn't catch
                 row.append(type(e).__name__)
         reads.append(row)
     write("detect", {"detect": cases, "auto_scale": scale, "offers": offers, "timing_file": saved_text,

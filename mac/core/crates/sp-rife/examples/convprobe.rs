@@ -1,5 +1,5 @@
-//! How long each block's convolutions take as MPSGraph executables at 1080p (each run 50 times back to back, so
-//! dispatch gaps are amortised), layer by layer and as whole stacks. For choosing how to run the convolutions.
+//! How long each block's convolutions take as MPSGraph executables at 1080p, layer by layer and as whole stacks.
+//! Each runs 50 times back to back, so dispatch gaps are amortised. For choosing how to run the convolutions.
 
 use std::time::Instant;
 

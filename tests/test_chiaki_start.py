@@ -66,7 +66,7 @@ def _take(it, n: int, out: list) -> None:
 
 
 def test_a_pipeline_ready_quickly_starts_at_the_streams_first_picture(clip, made):
-    tap = f"Local\\sp-quick-{os.getpid()}"  # (short: on macOS the name and "-audio" fit in 31 characters)
+    tap = f"Local\\sp-quick-{os.getpid()}"  # short, so on macOS the name with "-audio" fits in 31 characters
     fake = _fake(clip, tap)
     try:
         src = ChiakiSource("sw", wait_s=20, tap_name=tap)
@@ -78,7 +78,7 @@ def test_a_pipeline_ready_quickly_starts_at_the_streams_first_picture(clip, made
         src.close()
     finally:
         out = fake.communicate(timeout=30)[0].decode(errors="replace")
-        unlink(tap)  # (POSIX: shared memory lasts until it's removed)
+        unlink(tap)  # POSIX shared memory lasts until it's removed
     assert len(made) == 1 and made[0] >= t_go, out
     assert len(ticks) >= 340, out  # every frame (360), from the first
     assert src.idr_requests == 0 and src.skipped == 0, out

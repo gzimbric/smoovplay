@@ -1,6 +1,6 @@
 // swift-tools-version: 6.0
-// SmoovPlay for macOS: the SwiftUI launcher (the Windows WPF launcher's pages, installer/launcher), plus what only
-// the Mac app does: window capture with ScreenCaptureKit into the frame tap, keys that work from any app, and
+// SmoovPlay for macOS. The SwiftUI launcher has the Windows WPF launcher's pages (installer/launcher), plus what
+// only the Mac app does: window capture with ScreenCaptureKit into the frame tap, keys that work from any app, and
 // hiding chiaki-ng's window while the video plays. The core (run.py today, the Rust `smoovplay` later) is a child
 // process driven through its --control protocol (framegen/remote.py).
 //

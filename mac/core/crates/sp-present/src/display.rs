@@ -1,5 +1,5 @@
 //! The window's live display settings ([`DisplaySettings`]) and what the window needs from the settings to run its
-//! menu and hotkeys ([`MenuModel`]). Another crate adapts the real settings (sp-settings) to these; keys and values
+//! menu and hotkeys ([`MenuModel`]). Another crate (sp-settings) adapts the real settings to these. Keys and values
 //! follow framegen/settings.py's SPECS, so a setting's key here is its key there.
 
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::fill::Fill;
 use crate::looks::Look;
 
-/// Settings "scaler" (key U). RTX VSR is NVIDIA's: on a Mac the adapter offers FSR 1 and bilinear only.
+/// Settings "scaler" (key U). RTX VSR needs NVIDIA, so on a Mac the adapter offers only FSR 1 and bilinear.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Scaler {
     /// AMD FSR 1 (EASU + RCAS).
@@ -57,7 +57,7 @@ impl Corner {
     }
 }
 
-/// Settings "overlay_size": times the screen's own scale (its height / 1080), io.py OVERLAY_SIZES.
+/// Settings "overlay_size", as a multiple of the screen's own scale (its height / 1080). Same as io.py OVERLAY_SIZES.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum OverlaySize {
     #[default]
@@ -86,46 +86,47 @@ impl OverlaySize {
 /// How frames are handed to the display (new on the Mac).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Pacing {
-    /// Steady with vsync on, Immediate with it off (measured: see the crate's docs).
+    /// Steady with vsync on, Immediate with it off. The crate's docs have the measurements.
     #[default]
     Auto,
     /// Each frame at the first refresh after it's drawn (vsync on), or at once (vsync off).
     Immediate,
-    /// `presentDrawable:afterMinimumDuration:` 1/hz: on a variable-refresh display each frame stays up for one
+    /// `presentDrawable:afterMinimumDuration:` with 1/hz. On a variable-refresh display each frame stays up for one
     /// output frame, so the display runs at the output rate. On a fixed-refresh display it rounds up to whole
-    /// refreshes (120 fps on 160 Hz comes out at 80).
+    /// refreshes, so 120 fps on 160 Hz comes out at 80.
     MinDuration,
-    /// `presentDrawable:atTime:` on a steady grid of 1/hz, a little ahead of now (one refresh plus the GPU's time):
-    /// each frame goes to the first refresh at or after its slot, so on a fixed-rate display the cadence is the
-    /// best it can be (60 fps on 160 Hz: 3, 3, 2 refreshes) instead of moving with the GPU's and the pipeline's
-    /// jitter. Late frames re-anchor the grid. On a variable-refresh display each frame lands on its slot.
+    /// `presentDrawable:atTime:` on a steady grid of 1/hz, set a little ahead of now (one refresh plus the GPU's
+    /// time). Each frame goes to the first refresh at or after its slot. On a fixed-rate display that gives the best
+    /// cadence it can, for example 3, 3, 2 refreshes for 60 fps on 160 Hz, instead of one that moves with the GPU's
+    /// and the pipeline's jitter. Late frames re-anchor the grid. On a variable-refresh display each frame lands on
+    /// its slot.
     Steady,
 }
 
-/// What the window draws with, live (framegen/settings.py's display rows). The adapter builds it from the settings;
-/// the window reads it again whenever [`MenuModel::revision`] changes.
+/// What the window draws with, live (framegen/settings.py's display rows). The adapter builds it from the settings,
+/// and the window reads it again whenever [`MenuModel::revision`] changes.
 #[derive(Clone, Debug)]
 pub struct DisplaySettings {
     /// "scaler"
     pub scaler: Scaler,
-    /// "fsr_sharpness": stops below the maximum (0 = max, each +1 halves it).
+    /// "fsr_sharpness", in stops below the maximum. 0 is the maximum and each +1 halves it.
     pub fsr_sharpness: f32,
     /// "fill"
     pub fill: Fill,
-    /// "overlay": the stats overlay on or off (its style comes with each frame's Overlay).
+    /// "overlay" turns the stats overlay on or off. Its style comes with each frame's Overlay.
     pub overlay: bool,
     /// "overlay_corner"
     pub overlay_corner: Corner,
     /// "overlay_size"
     pub overlay_size: OverlaySize,
-    /// "fullscreen": a borderless window over the monitor, with the menu bar and the Dock hidden while in front.
+    /// "fullscreen" is a borderless window over the monitor, with the menu bar and the Dock hidden while it's in front.
     pub fullscreen: bool,
     /// "vsync"
     pub vsync: bool,
-    /// The look to draw ("look_on" + "look", or the launcher's preview), None: no look. Drawn again only when this
-    /// changes (by pointer or contents).
+    /// The look to draw ("look_on" and "look", or the launcher's preview), or None for no look. It's drawn again
+    /// only when this changes, by pointer or contents.
     pub look: Option<Arc<Look>>,
-    /// "hz": the output frame rate, for pacing.
+    /// "hz", the output frame rate. Pacing uses it.
     pub hz: f64,
     pub pacing: Pacing,
 }
@@ -156,10 +157,10 @@ pub struct MenuRow {
     pub label: String,
     /// The current value's name ("AMD FSR 1").
     pub value: String,
-    /// Applies at once (false: on the next restart, tagged "restart").
+    /// Applies at once. When false it applies on the next restart and is tagged "restart".
     pub live: bool,
     pub experimental: bool,
-    /// Why it can't be changed now (greyed out, and shown as its help), or None.
+    /// Why it can't be changed now, or None. A disabled row is greyed out and shows this as its help.
     pub disabled: Option<String>,
     pub help: String,
     /// A rough line on what it does to the picture, and to speed or delay ("" if none).
@@ -167,14 +168,14 @@ pub struct MenuRow {
     pub impact_speed: String,
 }
 
-/// What the window needs from the settings: the menu's pages and rows, changing a value, and the live display
-/// settings. Keys and values are settings.py's (values as JSON: bools, numbers, strings). Called on the thread that
-/// calls the presenter's write() and wait().
+/// What the window needs from the settings: the menu's pages and rows, a way to change a value, and the live display
+/// settings. Keys and values are settings.py's, with values as JSON bools, numbers or strings. Called on the thread
+/// that calls the presenter's write() and wait().
 pub trait MenuModel: Send {
-    /// The sections that have a setting that applies right now, in order (settings.py's groups: "Smoothness",
-    /// "Picture", "Looks", "Display", ...).
+    /// The sections that have a setting that applies right now, in order. These are settings.py's groups, such as
+    /// "Smoothness", "Picture", "Looks" and "Display".
     fn sections(&self) -> Vec<String>;
-    /// The settings rows of a page: None, the main page (the quick picks); Some(section), that section's.
+    /// The settings rows of a page. None is the main page with the quick picks, and Some(section) is that section.
     fn rows(&self, page: Option<&str>) -> Vec<MenuRow>;
     /// Labels of settings changed since start that need a restart (the menu then offers "Restart now").
     fn restart_reasons(&self) -> Vec<String> {
@@ -184,14 +185,15 @@ pub trait MenuModel: Send {
     fn get(&self, key: &str) -> Option<Value>;
     /// Sets a value, saved (`save`) or for this session only (the I key). False if it's not one of its choices.
     fn set(&mut self, key: &str, value: Value, save: bool) -> bool;
-    /// The next (+1) or previous (-1) choice, wrapping, skipping ones that can't be used now (settings.py step()).
+    /// Moves to the next (+1) or previous (-1) choice, wrapping and skipping ones that can't be used now, like
+    /// settings.py's step().
     fn step(&mut self, key: &str, delta: i32) -> bool;
     /// The window's settings as they are now.
     fn display(&self) -> DisplaySettings;
     /// Goes up whenever any setting changes (menu, hotkeys, the launcher), so the window knows to read display()
     /// and redraw the menu.
     fn revision(&self) -> u64;
-    /// A row by key, from whichever page has it (for the messages hotkeys show).
+    /// A row by key, from whichever page has it. The hotkey messages use it.
     fn row(&self, key: &str) -> Option<MenuRow> {
         std::iter::once(None)
             .chain(self.sections().into_iter().map(Some))

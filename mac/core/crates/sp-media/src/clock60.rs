@@ -1,10 +1,10 @@
-//! Puts a variable-rate source on a steady beat, 60 Hz by default (framegen/sources.py Clock60): on each beat the
+//! Puts a variable-rate source on a steady beat, 60 Hz by default (framegen/sources.py Clock60). On each beat the
 //! newest frame is handed on, or the previous one again if nothing came since. The source's frames are taken from
 //! its queue on a thread of their own, so a late frame never holds up the beat.
 //!
-//! Each beat's tick: a fresh frame keeps the source's repeat hint; a beat with no fresh frame is a repeat for certain
-//! (new_hint false). t_arrival stays when the frame really arrived; t_ready is when the beat handed it on. Frames
-//! overtaken by a newer one before their beat are counted in `overtaken`. Until the first frame, it yields Waitings.
+//! A fresh frame's tick keeps the source's repeat hint. A beat with no fresh frame is a repeat for certain (new_hint
+//! false). t_arrival stays when the frame really arrived, and t_ready is when the beat handed it on. Frames overtaken
+//! by a newer one before their beat are counted in `overtaken`. Until the first frame, it yields Waitings.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -17,10 +17,10 @@ use sp_core::{Event, Frame, Source, SourceInfo, Sound, Tick, Waiting};
 
 use crate::queue::{Got, TickQueue};
 
-/// A source whose reader thread fills a TickQueue: Clock60 takes frames from the queue directly.
+/// A source whose reader thread fills a TickQueue, which Clock60 takes frames from directly.
 pub trait QueuedSource: Source {
     fn queue(&self) -> Arc<TickQueue>;
-    /// The pipeline is ready: start reading.
+    /// The pipeline is ready, so start reading.
     fn start(&mut self);
     /// The source's hint for a Waiting.
     fn hint(&self) -> String;
@@ -121,7 +121,7 @@ impl<S: QueuedSource> Source for Clock60<S> {
         } else {
             let beat = self.beat.unwrap() + self.period;
             let t = now();
-            let beat = if beat < t - self.period { t } else { beat }; // fell a whole beat behind: restart from now
+            let beat = if beat < t - self.period { t } else { beat }; // fell a whole beat behind, so restart from now
             if beat > t {
                 std::thread::sleep(Duration::from_secs_f64(beat - t));
             }

@@ -1,11 +1,12 @@
 //! Repeat and cut detection and output scheduling for a 60 Hz signal carrying 30 fps content (framegen/cadence.py).
 //!
-//! A console's video runs at 60 Hz, so a 30 fps game arrives as A A B B C C ... At 60 Hz output we emit, one tick
-//! behind the input, A A mid(A,B) B mid(B,C) C: on the tick a new frame arrives we show the midpoint between it and
-//! the previous real frame, and on its repeat tick the real frame itself. At 90 and 120 Hz two or three frames are
-//! drawn between each pair (see the pipeline). The scheduler also handles the cadence breaking: a game hitch (the
-//! extra repeat is just shown again), real 60 fps content (passed through a tick late) and scene cuts (held, as
-//! interpolating across a cut ghosts two shots together).
+//! A console's video runs at 60 Hz, so a 30 fps game arrives as A A B B C C. At 60 Hz output we emit
+//! A A mid(A,B) B mid(B,C) C, one tick behind the input. On the tick a new frame arrives we show the midpoint between
+//! it and the previous real frame, and on its repeat tick the real frame itself. At 90 and 120 Hz two or three frames
+//! are drawn between each pair (see the pipeline).
+//!
+//! The scheduler also handles breaks in the cadence. A game hitch's extra repeat is shown again. Real 60 fps content
+//! passes through a tick late. Scene cuts are held, because interpolating across a cut ghosts two shots together.
 //!
 //! Names, constants and arithmetic follow the Python line by line, so its docs and tests describe these too.
 
@@ -15,11 +16,11 @@ use sp_core::stats::BlockMeans;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Action {
-    /// Show the midpoint (prev real, current).
+    /// Show the midpoint of the previous real frame and the current one.
     Interp,
     /// Show the incoming frame as it is.
     Current,
-    /// Show the previous new frame (not yet displayed); the current one becomes pending.
+    /// Show the previous new frame, not yet displayed. The current one becomes pending.
     Pending,
     /// Show the previous real frame again (scene cut).
     Hold,
@@ -36,31 +37,31 @@ impl Action {
     }
 }
 
-/// How differently two frames are built, whatever their brightness: for cuts between dark shots.
+/// How differently two frames are built, whatever their brightness. This catches cuts between dark shots.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CutFeatures {
-    /// 1 - correlation of the two frames' block brightness, 0 (same layout) .. 2 (inverted).
+    /// 1 - correlation of the two frames' block brightness, from 0 (same layout) to 2 (inverted).
     pub corr_dist: f64,
-    /// Half the L1 distance between brightness histograms, 0 (same) .. 1 (no overlap).
+    /// Half the L1 distance between brightness histograms, from 0 (same) to 1 (no overlap).
     pub hist_dist: f64,
-    /// This frame's mean brightness, 0..255.
+    /// This frame's mean brightness, 0 to 255.
     pub luma: f64,
-    /// This frame's brightness standard deviation over blocks, 0..255.
+    /// This frame's brightness standard deviation over blocks, 0 to 255.
     pub contrast: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FrameDiff {
     pub is_new: bool,
-    /// Max 16x16 block-mean difference, 0..255.
+    /// Max 16x16 block-mean difference, 0 to 255.
     pub max_diff: f64,
-    /// Mean absolute difference over blocks, 0..255.
+    /// Mean absolute difference over blocks, 0 to 255.
     pub mean_diff: f64,
     /// None on the first frame.
     pub cut: Option<CutFeatures>,
 }
 
-const LUMA: [f32; 3] = [0.114, 0.587, 0.299]; // BGR -> Y (BT.601)
+const LUMA: [f32; 3] = [0.114, 0.587, 0.299]; // BGR to Y (BT.601)
 pub const HIST_BINS: usize = 32;
 
 fn lumas(m: &BlockMeans) -> Vec<f32> {
@@ -72,7 +73,7 @@ fn mean32(xs: &[f32]) -> f32 {
 }
 
 fn histc(ys: &[f32]) -> [f32; HIST_BINS] {
-    // torch.histc(y, 32, 0, 255): values outside [0, 255] are left out, 255 itself goes in the last bin.
+    // As torch.histc(y, 32, 0, 255). Values outside [0, 255] are left out and 255 itself goes in the last bin.
     let mut h = [0f32; HIST_BINS];
     for &y in ys {
         if !(0.0..=255.0).contains(&y) {
@@ -93,8 +94,8 @@ pub fn cut_features(prev: &BlockMeans, cur: &BlockMeans) -> CutFeatures {
     let dc: Vec<f32> = yc.iter().map(|y| y - mc).collect();
     let sp = mean32(&dp.iter().map(|d| d * d).collect::<Vec<_>>()).sqrt();
     let sc = mean32(&dc.iter().map(|d| d * d).collect::<Vec<_>>()).sqrt();
-    // Correlation is undefined for a flat frame (a black screen); call two flat frames alike, and a flat frame
-    // next to a detailed one fully different.
+    // Correlation is undefined for a flat frame (a black screen). Two flat frames count as alike, and a flat frame
+    // next to a detailed one as fully different.
     let denom = (sp * sc).max(1e-6);
     let mut corr = mean32(&dp.iter().zip(&dc).map(|(a, b)| a * b).collect::<Vec<_>>()) / denom;
     if sp < 1.0 || sc < 1.0 {
@@ -109,12 +110,12 @@ pub fn cut_features(prev: &BlockMeans, cur: &BlockMeans) -> CutFeatures {
 pub enum Reference {
     /// Each frame is compared with the frame before it.
     Previous,
-    /// With the last frame found to be new content (capture cards).
+    /// Each frame is compared with the last frame found to be new content (capture cards).
     New,
 }
 
-/// Classifies each incoming frame as new content or a repeat of the previous one, from its 16x16 block means
-/// (framegen/cadence.py DuplicateDetector: the reference, learn and rhythm are as documented there).
+/// Classifies each incoming frame as new content or a repeat of the previous one, from its 16x16 block means.
+/// This is framegen/cadence.py DuplicateDetector, and the reference, learn and rhythm work as documented there.
 #[derive(Clone, Debug)]
 pub struct DuplicateDetector {
     pub threshold: f64,
@@ -178,7 +179,7 @@ impl DuplicateDetector {
         if let Some((period, phase)) = self.rhythm {
             let expected = phase == 0;
             if sure.is_none() || (expected != is_new && sure.unwrap() >= Self::SURE) {
-                self.rhythm = None; // no bands, or a clear exception: the pictures alone for a while
+                self.rhythm = None; // no bands, or a clear exception, so go by the pictures alone for a while
                 self.calls.clear();
             } else {
                 if expected != is_new {
@@ -246,8 +247,8 @@ impl DuplicateDetector {
     }
 }
 
-/// The repeat detector for a source (framegen/sources.py make_detector): a capture card compares with the last new
-/// frame; PS5 Remote Play, an app's window and the frame tap learn where the line between repeats and new frames is.
+/// The repeat detector for a source (framegen/sources.py make_detector). A capture card compares with the last new
+/// frame. PS5 Remote Play, an app's window and the frame tap learn where the line between repeats and new frames is.
 pub fn make_detector(info: &sp_core::SourceInfo, threshold: f64) -> DuplicateDetector {
     DuplicateDetector::new(
         threshold,
@@ -256,8 +257,8 @@ pub fn make_detector(info: &sp_core::SourceInfo, threshold: f64) -> DuplicateDet
     )
 }
 
-/// Game frame rate set to 30 fps: every other tick is new; the checks only choose which of the two ticks it is, by a
-/// vote (framegen/cadence.py RhythmLock).
+/// For a game frame rate set to 30 fps. Every other tick is new, and the checks only vote on which of the two ticks
+/// it is (framegen/cadence.py RhythmLock).
 #[derive(Clone, Debug, Default)]
 pub struct RhythmLock {
     votes: VecDeque<(i64, bool)>,
@@ -278,7 +279,8 @@ impl RhythmLock {
         Self::default()
     }
 
-    /// call: the checks' new-or-repeat call; size: the compressed size (Remote Play); seq: the stream's frame number.
+    /// `call` is the checks' new-or-repeat call, `size` the compressed size (Remote Play) and `seq` the stream's
+    /// frame number.
     pub fn update(&mut self, call: Option<bool>, size: Option<i64>, keyframe: bool, seq: Option<i64>) -> bool {
         let n = seq.unwrap_or(self.n);
         self.n = n + 1;
@@ -313,7 +315,7 @@ impl RhythmLock {
             }
         }
         match self.phase {
-            None => call.unwrap_or(true), // the first few ticks: as the checks say
+            None => call.unwrap_or(true), // the first few ticks go by the checks
             Some(p) => n.rem_euclid(2) == p,
         }
     }
@@ -335,9 +337,9 @@ impl Default for CutDetector {
 }
 
 impl CutDetector {
-    /// corr_dist jump that marks a cut...
+    /// The corr_dist jump that marks a cut, when the frame also changed by more than MIN_DIFF.
     pub const STRUCTURE: f64 = 0.75;
-    /// ...when the frame also changed at least this much (mean_diff), so noise alone never cuts.
+    /// The mean_diff a frame needs on top of a STRUCTURE jump to count as a cut, so noise alone never cuts.
     pub const MIN_DIFF: f64 = 6.0;
 
     pub fn new(threshold: f64, use_structure: bool) -> Self {
@@ -357,7 +359,7 @@ impl CutDetector {
     }
 }
 
-/// Pure state machine: (is_new, is_cut) per tick -> Action.
+/// A pure state machine that turns each tick's (is_new, is_cut) into an Action.
 #[derive(Clone, Debug, Default)]
 pub struct CadenceScheduler {
     pub started: bool,
@@ -380,28 +382,28 @@ impl CadenceScheduler {
             return Action::Current;
         }
         if self.pending {
-            return Action::Pending; // back-to-back new frames: the source is over 30 fps here
+            return Action::Pending; // back-to-back new frames, so the source is over 30 fps here
         }
         self.pending = true;
         if is_cut { Action::Hold } else { Action::Interp }
     }
 }
 
-/// New frames in the last second at which even timing switches on...
+/// New frames in the last second at which even timing switches on.
 pub const UNEVEN_ON: (i64, i64) = (39, 56);
-/// ...and outside which it switches off again.
+/// New frames in the last second outside which even timing switches off again.
 pub const UNEVEN_OFF: (i64, i64) = (35, 58);
 /// Ticks the rate has to stay there first, so a 30 fps game's 60 fps menu doesn't flip it on and off.
 pub const UNEVEN_DWELL: u32 = 60;
 pub const UNEVEN_MAX_DELAY: f64 = 2.0;
 
-/// Ticks a frame stays up to count as a dip; longer is a pause, a load or a still scene.
+/// Ticks a frame stays up to count as a dip. Longer is a pause, a load or a still scene.
 pub const DIP_HOLD: (i64, i64) = (3, 5);
-/// Dips in the last second that switch Dip smoothing on...
+/// Dips in the last second that switch Dip smoothing on, while the game's rate is in DIP_FPS.
 pub const DIP_ON_HOLDS: usize = 2;
-/// ...while the game's rate is in this range.
+/// The game rates at which Dip smoothing can switch on.
 pub const DIP_FPS: (i64, i64) = (15, 34);
-/// Ticks without a dip, or out of that range, that switch it off again.
+/// Ticks without a dip, or with the rate outside DIP_FPS, that switch it off again.
 pub const DIP_OFF_TICKS: i64 = 180;
 pub const DIP_MAX_DELAY: f64 = 3.0;
 
@@ -421,7 +423,8 @@ pub struct TimedFrame<T> {
     pub reached: bool,
 }
 
-/// What to show at one display time: frame `a` itself, or (`b` Some) the frame at fraction t from a to b.
+/// What to show at one display time, either frame `a` itself or, when `b` is Some, the frame at fraction `t` from
+/// `a` to `b`.
 #[derive(Clone, Debug)]
 pub struct Place<T> {
     pub a: TimedFrame<T>,
@@ -431,7 +434,7 @@ pub struct Place<T> {
     pub c: f64,
     /// Frames on screen for the first time with this one.
     pub reached: Vec<TimedFrame<T>>,
-    /// The game time shown is past the newest frame: the next one is late.
+    /// The game time shown is past the newest frame, so the next one is late.
     pub waiting: bool,
 }
 
@@ -486,7 +489,7 @@ impl DipWatch {
 }
 
 /// Even timing for games at about 40 to 60 fps, and frames timed as they arrived for Dip smoothing
-/// (framegen/cadence.py FrameTimeline). `T` is whatever the caller keeps with each frame (the pipeline: the Frame).
+/// (framegen/cadence.py FrameTimeline). `T` is whatever the caller keeps with each frame. The pipeline keeps the Frame.
 #[derive(Clone, Debug)]
 pub struct FrameTimeline<T> {
     /// Ticks seen.
@@ -505,7 +508,7 @@ pub struct FrameTimeline<T> {
     dwell: u32,
     hz: u32,
     j: i64,
-    /// Dip smoothing: frames timed as they arrived.
+    /// Frames are timed as they arrived, for Dip smoothing.
     pub at_arrival: bool,
 }
 
@@ -578,7 +581,7 @@ impl<T: Clone> FrameTimeline<T> {
         cap.min(need.unwrap_or(1.0) + 0.05)
     }
 
-    /// One tick of the stream; a new frame goes on the timeline (and a copy is returned).
+    /// One tick of the stream. A new frame goes on the timeline and a copy is returned.
     pub fn tick(&mut self, is_new: bool, is_cut: bool, frame: Option<T>, t_arrival: f64) -> Option<TimedFrame<T>> {
         self.n += 1;
         push_max(&mut self.recent, 60, is_new as u8);
@@ -592,9 +595,9 @@ impl<T: Clone> FrameTimeline<T> {
                     push_max(&mut self.need, self.k, (self.n - 1) as f64 - lt);
                     n.max(lt + 0.05) // as it arrived, a held frame's wait included
                 }
-                Some((lt, la)) if self.n - la > 3 => (n - 0.95).max(lt + 0.05), // after a hitch: as it comes
+                Some((lt, la)) if self.n - la > 3 => (n - 0.95).max(lt + 0.05), // after a hitch, as it comes
                 Some((lt, _)) => {
-                    // Finished in the tick before it arrived: (n - 1, n]. (The 0.05 keeps two frames' times apart.)
+                    // It finished in (n - 1, n], the tick before it arrived. The 0.05 keeps two frames' times apart.
                     let t = n.min((n - 0.95).max(lt + self.period()));
                     push_max(&mut self.need, self.k, (self.n - 1) as f64 - lt);
                     t
@@ -646,7 +649,7 @@ impl<T: Clone> FrameTimeline<T> {
         out
     }
 
-    /// What to show at display time phi (ticks); None before the first frame.
+    /// What to show at display time phi, in ticks. None before the first frame.
     pub fn place(&mut self, phi: f64) -> Option<Place<T>> {
         let c = phi - self.delay;
         if self.frames.is_empty() {

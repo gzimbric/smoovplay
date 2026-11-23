@@ -1,7 +1,7 @@
 //! Annex-B access units as the tap carries them (framegen/chiaki_tap.py `nal_units`, `is_keyframe`, `param_sets`).
 //!
-//! A unit runs from just after a 3-byte start code (00 00 01) to the next one, as Python's `data.find` splits them:
-//! a 4-byte start code's leading zero stays at the end of the unit before it. [`param_sets`] joins units with 3-byte
+//! A unit runs from right after a 3-byte start code (00 00 01) to the next one, as Python's `data.find` splits them.
+//! A 4-byte start code's leading zero stays at the end of the unit before it. [`param_sets`] joins units with 3-byte
 //! start codes exactly as Python does, so a saved codec header is the same bytes from either side.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -11,7 +11,7 @@ pub enum Codec {
 }
 
 impl Codec {
-    /// The tap header's codec (0 H.264, 1 H.265, 2 H.265 HDR); None for a decoded format or one nobody knows.
+    /// The tap header's codec (0 H.264, 1 H.265, 2 H.265 HDR), or None for a decoded format or one nobody knows.
     pub fn of_tap(codec: u32) -> Option<Codec> {
         match codec {
             0 => Some(Codec::H264),
@@ -32,21 +32,21 @@ impl Codec {
             Codec::Hevc => (b >> 1) & 0x3F,
         }
     }
-    /// VPS/SPS/PPS (HEVC 32-34), SPS/PPS (H.264 7, 8).
+    /// VPS, SPS and PPS for HEVC (32 to 34), SPS and PPS for H.264 (7, 8).
     pub fn is_param(self, t: u8) -> bool {
         match self {
             Codec::H264 => t == 7 || t == 8,
             Codec::Hevc => (32..=34).contains(&t),
         }
     }
-    /// H.264: an IDR slice (5). HEVC: IRAP pictures, BLA/IDR/CRA (16-21).
+    /// For H.264 an IDR slice (5). For HEVC an IRAP picture, which is BLA, IDR or CRA (16 to 21).
     pub fn is_key(self, t: u8) -> bool {
         match self {
             Codec::H264 => t == 5,
             Codec::Hevc => (16..=21).contains(&t),
         }
     }
-    /// A coded slice (a picture's data): H.264 1-5, HEVC 0-31.
+    /// A coded slice, which holds a picture's data. That's 1 to 5 for H.264 and 0 to 31 for HEVC.
     pub fn is_vcl(self, t: u8) -> bool {
         match self {
             Codec::H264 => (1..=5).contains(&t),
@@ -61,7 +61,7 @@ fn find3(data: &[u8], from: usize) -> Option<usize> {
     }
     let mut i = from;
     while i + 3 <= data.len() {
-        // (memchr for the 01, then look back: start codes are rare in a slice's bytes)
+        // Search for the 01 as memchr would, then look back, since start codes are rare in a slice's bytes
         {
             let k = data[i + 2..].iter().position(|&b| b == 1)?;
             let j = i + 2 + k; // data[j] == 1
@@ -74,7 +74,7 @@ fn find3(data: &[u8], from: usize) -> Option<usize> {
     None
 }
 
-/// (type, unit without its start code) for each NAL unit, as Python's nal_units (whose units are b"\0\0\1" + these).
+/// (type, unit without its start code) for each NAL unit, as Python's nal_units, whose units are b"\0\0\1" + these.
 pub fn nal_units(data: &[u8], codec: Codec) -> Vec<(u8, &[u8])> {
     let mut starts = Vec::new();
     let mut i = 0;
@@ -116,7 +116,7 @@ pub fn only_params(data: &[u8], codec: Codec) -> bool {
 }
 
 /// A unit without the trailing zero bytes Annex-B allows after it (a 4-byte start code's first byte, or
-/// trailing_zero_8bits): a NAL unit itself never ends in a zero byte.
+/// trailing_zero_8bits). A NAL unit itself never ends in a zero byte.
 pub fn trim(unit: &[u8]) -> &[u8] {
     let mut n = unit.len();
     while n > 0 && unit[n - 1] == 0 {

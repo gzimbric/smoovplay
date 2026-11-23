@@ -1,10 +1,10 @@
 //! Decoded frames (NV12 or BGRA, layout version 2) another app hands over through the frame tap
 //! (framegen/tap.py TapSource), and [`open_tap`], which picks the reader for whatever the writer sends.
 //!
-//! Nothing to decode: each frame is copied out of its slot into a GPU buffer and converted (NV12 with the header's
-//! colours, bilinear chroma, as capture.py raw_to_bgr). Repeats are the writer's word when it gives one (FLAG_NEW /
-//! FLAG_REPEAT, in `new_hint`), else the pipeline compares pictures. A writer that sends a frame only when the picture
-//! changes sets FEATURE_VARIABLE, and open_tap puts it on a 60 Hz beat ([`crate::Clock60`]).
+//! There's nothing to decode. Each frame is copied out of its slot into a GPU buffer and converted, NV12 with the
+//! header's colours and bilinear chroma as capture.py raw_to_bgr does. Repeats are as the writer flags them (FLAG_NEW
+//! or FLAG_REPEAT, in `new_hint`) when it does, else the pipeline compares pictures. A writer that sends a frame only
+//! when the picture changes sets FEATURE_VARIABLE, and open_tap puts it on a 60 Hz beat with [`crate::Clock60`].
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -48,7 +48,8 @@ pub struct TapSource {
 }
 
 impl TapSource {
-    /// A reader for the decoded frames the writer on `tap` (named `name`) has started sending (`header`).
+    /// A reader for the decoded frames the writer on `tap` has started sending, as `header` describes them. `name` is
+    /// the tap's name.
     pub fn new(tap: FrameTap, name: &str, header: Header, test: Option<SharedTestMode>) -> Result<TapSource, OpenError> {
         let format = RawFormat::of_codec(header.codec).ok_or_else(|| OpenError::Timeout("not decoded frames".into()))?;
         let variable = header.features & FEATURE_VARIABLE != 0;
@@ -95,7 +96,7 @@ impl TapSource {
         })
     }
 
-    /// Stop reading while the pipeline restarts (on), and start again from the newest frame (off).
+    /// With `on`, stop reading while the pipeline restarts. Without it, start again from the newest frame.
     pub fn hold(&mut self, on: bool) {
         if on {
             self.sh.go.store(false, Ordering::SeqCst);
@@ -113,7 +114,7 @@ impl TapSource {
         self.sound.live()
     }
 
-    /// (frames dropped because the pipeline fell behind, frames the writer overwrote before they were read)
+    /// Frames dropped because the pipeline fell behind, and frames the writer overwrote before they were read.
     pub fn counts(&self) -> (u64, u64) {
         (self.sh.dropped.load(Ordering::Relaxed), self.sh.skipped.load(Ordering::Relaxed))
     }
@@ -200,7 +201,7 @@ fn reader(sh: Arc<Shared>, mut conv: Converter, first: Header, format: RawFormat
     let n = format.frame_bytes(w, hgt);
     let (bt709, full_range) = colour_of(first.colour).unwrap_or((hgt >= 720, false));
     let (codec, mut session) = (first.codec, first.session);
-    let mut seq: Option<u64> = None; // the next frame to read; None: from the writer's newest
+    let mut seq: Option<u64> = None; // the next frame to read, or None for the writer's newest
     while !sh.stop.load(Ordering::SeqCst) {
         *sh.beat.lock().unwrap() = now();
         let h = sh.tap.header();
@@ -223,7 +224,7 @@ fn reader(sh: Arc<Shared>, mut conv: Converter, first: Header, format: RawFormat
         }
         let go = sh.go.load(Ordering::SeqCst);
         let Some(mut s) = seq.filter(|_| go) else {
-            // the pipeline isn't ready: nothing read, no GPU work
+            // the pipeline isn't ready, so read nothing and do no GPU work
             seq = if go { Some(h.write_seq) } else { None };
             sh.tap.heartbeat();
             sh.tap.wait(h.watch(), 0.05);
@@ -235,7 +236,7 @@ fn reader(sh: Arc<Shared>, mut conv: Converter, first: Header, format: RawFormat
             continue;
         }
         if h.write_seq - s >= h.slots as u64 - 1 {
-            // fell behind: the oldest slots are being rewritten
+            // fell behind, and the oldest slots are being rewritten
             sh.skipped.fetch_add(h.write_seq - 1 - s, Ordering::Relaxed);
             s = h.write_seq - 1;
         }
@@ -270,7 +271,7 @@ fn reader(sh: Arc<Shared>, mut conv: Converter, first: Header, format: RawFormat
 
 /// What a writer on the tap sends, read the right way.
 pub enum OpenedTap {
-    /// Compressed frames (H.264/H.265): chiaki-ng's reader.
+    /// Compressed frames (H.264 or H.265), read by chiaki-ng's reader.
     Chiaki(ChiakiSource),
     /// Decoded frames, one every refresh.
     Tap(TapSource),
@@ -294,9 +295,9 @@ impl OpenedTap {
     }
 }
 
-/// framegen/tap.py open_tap: waits (up to wait_s) for a writer on `name`, then reads what it sends. `test`: test
-/// mode, for a writer that sends every refresh (an error for a variable one with test mode on). log_path: the
-/// per-tick CSV for compressed frames.
+/// framegen/tap.py open_tap. Waits up to wait_s for a writer on `name`, then reads what it sends. `test` is test
+/// mode, for a writer that sends every refresh. It's an error for a variable writer with test mode on. log_path is
+/// the per-tick CSV for compressed frames.
 pub fn open_tap(
     name: &str,
     wait_s: f64,

@@ -1,9 +1,9 @@
 //! The Rust ChiakiSource against the Python one (framegen/chiaki_tap.py, VideoToolbox through PyAV), both reading the
-//! same fake PS5 stream (scripts/frametap_fake.py) at the same time; the Python side's ticks are dumped by
-//! mac/core/tools/media_ticks.py. Compared frame by frame (by the tap's sequence number): which frames became ticks,
-//! and what each says (size, the size check's call, keyframe, loss, damaged, test mode's content and truth, hints).
+//! same fake PS5 stream (scripts/frametap_fake.py) at the same time. mac/core/tools/media_ticks.py dumps the Python
+//! side's ticks. They're compared frame by frame, by the tap's sequence number, for which frames became ticks and
+//! what each says (size, the size check's call, keyframe, loss, damaged, test mode's content and truth, hints).
 //!
-//! Slow (a few seconds of real-time stream per case) and needs the repo's .venv, so ignored by default:
+//! It's slow, a few seconds of real-time stream per case, and needs the repo's .venv, so it's ignored by default:
 //!
 //!     cargo test --release -p sp-media --test parity -- --ignored --nocapture
 
@@ -75,7 +75,7 @@ fn case(tag: &str, fake_args: &[&str], test: bool, hdr: bool) {
     let py_reader = Command::new(&py).args(&pyargs).current_dir(&repo).stdout(Stdio::null()).spawn().unwrap();
     let n2 = name.clone();
     let rust = std::thread::spawn(move || rust_ticks(&n2, test, hdr));
-    // Both readers wait for the stream; it starts after they're up (--delay), so both see its codec header.
+    // Both readers wait for the stream. It starts after they're up (--delay), so both see its codec header.
     let mut fargs = vec![
         repo.join("scripts/frametap_fake.py").display().to_string(),
         repo.join("testdata/clip_1080p60.mp4").display().to_string(),
@@ -96,7 +96,7 @@ fn case(tag: &str, fake_args: &[&str], test: bool, hdr: bool) {
     let mut pyt: Vec<Value> = text.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
     let py_done = pyt.pop().unwrap();
     sp_tap::unlink(&name);
-    let _ = std::fs::remove_file(sp_tap::saved::header_path(&name)); // (both readers saved the stream's header)
+    let _ = std::fs::remove_file(sp_tap::saved::header_path(&name)); // both readers saved the stream's header
     let _ = std::fs::remove_file(&out);
 
     let by_seq = |v: &[Value]| -> BTreeMap<u64, Value> { v.iter().map(|t| (t["seq"].as_u64().unwrap(), t.clone())).collect() };
@@ -108,7 +108,7 @@ fn case(tag: &str, fake_args: &[&str], test: bool, hdr: bool) {
     for (seq, a) in &p {
         let Some(b) = r.get(seq) else { continue };
         for f in FIELDS {
-            // (a whole number may come back from JSON as an integer on one side and a float on the other)
+            // a whole number may come back from JSON as an integer on one side and a float on the other
             let same = a[f] == b[f] || (a[f].as_f64().is_some() && a[f].as_f64() == b[f].as_f64());
             if !same {
                 mism.entry(f).or_default().push(*seq);
@@ -187,9 +187,9 @@ fn parity_hdr10_sdr8() {
     case("e", &["--hdr", "--seconds", "6"], false, true);
 }
 
-/// The saved codec header (sp_tap::saved, framegen/chiaki_tap.py _save_header/_load_header): a reader that saw the
-/// stream start saves it; one that joins later loads it and decodes, whichever language each is. And with nobody to
-/// have saved it, a late reader decodes nothing and says why.
+/// The saved codec header (sp_tap::saved, framegen/chiaki_tap.py _save_header and _load_header). A reader that saw
+/// the stream start saves it, and one that joins later loads it and decodes, whichever language each is. With nobody
+/// to have saved it, a late reader decodes nothing and says why.
 #[test]
 #[ignore]
 fn saved_header_shared_between_python_and_rust() {
@@ -228,7 +228,7 @@ fn saved_header_shared_between_python_and_rust() {
                 wait.into(),
             ]
         };
-        // The early reader sees the stream start (and saves its header); the late one comes 4 s in.
+        // The early reader sees the stream start and saves its header. The late one comes 4 s in.
         let early_py = (*first == "python").then(|| Command::new(&py).args(py_args("30")).current_dir(&repo).stdout(Stdio::null()).spawn().unwrap());
         let n2 = name.clone();
         let early_rs = (*first == "rust").then(|| std::thread::spawn(move || rust_ticks(&n2, false, false)));
@@ -283,7 +283,7 @@ fn saved_header_shared_between_python_and_rust() {
         if *first == "none" {
             assert!(saved.is_empty() && late_n == 0 && why.contains("started before SmoovPlay"));
         } else {
-            // u32 session, u32 codec (1), then VPS/SPS/PPS after 3-byte start codes
+            // u32 session, u32 codec (1), then the VPS, SPS and PPS after 3-byte start codes
             assert!(saved.len() > 8 && saved[4..8] == 1u32.to_le_bytes() && saved[8..11] == [0, 0, 1], "{saved:?}");
             assert!(late_n > 100, "the late reader decoded {late_n} ticks");
             assert!(late_damaged >= 55, "the first ~60 ticks after joining are held");

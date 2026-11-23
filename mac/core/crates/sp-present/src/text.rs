@@ -1,6 +1,7 @@
-//! Drawing the panels' text and boxes on the CPU with Core Text and Core Graphics, into a premultiplied BGRA bitmap
-//! at the screen's own pixels (so it's crisp on a Retina display), then uploaded once per change
-//! ([`crate::renderer::Panel`]). Coordinates here are top-left based, in pixels, as the Python drawings' (OpenCV's).
+//! Draws the panels' text and boxes on the CPU with Core Text and Core Graphics. They go into a premultiplied BGRA
+//! bitmap at the screen's own pixels, so they're crisp on a Retina display, and are uploaded once per change
+//! ([`crate::renderer::Panel`]). Coordinates here are top-left based and in pixels, like the Python drawings'
+//! (OpenCV's).
 
 use objc2_core_foundation::{CFAttributedString, CFDictionary, CFNumber, CFRetained, CFString, CFType, CGFloat, CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{
@@ -8,7 +9,7 @@ use objc2_core_graphics::{
 };
 use objc2_core_text::{CTFont, CTFontUIFontType, CTLine, kCTFontAttributeName, kCTForegroundColorAttributeName};
 
-/// An sRGB colour, 0..255 (the Python drawings' BGR tuples, turned around).
+/// An sRGB colour, 0 to 255. It's the Python drawings' BGR tuples turned around.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Rgb(pub u8, pub u8, pub u8);
 
@@ -22,7 +23,7 @@ impl Rgb {
     }
 }
 
-/// A font: the system font (SF) at a size in pixels.
+/// The system font (SF) at a size in pixels.
 #[derive(Clone)]
 pub struct Font {
     ct: CFRetained<CTFont>,
@@ -87,7 +88,7 @@ impl Font {
     }
 }
 
-/// A bitmap being drawn: premultiplied BGRA, rows top first.
+/// A bitmap being drawn, premultiplied BGRA with rows top first.
 pub struct Canvas {
     pub w: usize,
     pub h: usize,
@@ -142,7 +143,7 @@ impl Canvas {
         self.round_rect(cx - radius, cy - radius, 2.0 * radius, 2.0 * radius, radius, c, 1.0);
     }
 
-    /// `text` with its baseline at `base`, starting at x; returns its width.
+    /// Draws `text` with its baseline at `base`, starting at x. Returns its width.
     pub fn text(&mut self, x: f64, base: f64, text: &str, font: &Font, c: Rgb) -> f64 {
         if text.is_empty() {
             return 0.0;
@@ -155,14 +156,14 @@ impl Canvas {
         }
     }
 
-    /// `text` ending at `right`; returns its width.
+    /// Draws `text` ending at `right`. Returns its width.
     pub fn text_right(&mut self, right: f64, base: f64, text: &str, font: &Font, c: Rgb) -> f64 {
         let w = font.width(text);
         self.text(right - w, base, text, font, c);
         w
     }
 
-    /// The pixels: premultiplied BGRA, rows top first.
+    /// The pixels, premultiplied BGRA with rows top first.
     pub fn pixels(&self) -> &[u8] {
         CGContext::flush(Some(&self.ctx));
         &self.data

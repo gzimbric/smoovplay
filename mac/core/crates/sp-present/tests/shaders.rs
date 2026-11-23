@@ -1,9 +1,10 @@
-//! The Metal passes held to the Python window's: FSR 1 and bilinear against what its OpenGL versions draw
-//! (tools/present_fsr.py), every look against framegen/looks.py's NumPy render() (tools/present_looks.py, the cases
-//! and tolerances of tests/test_looks.py), and Panorama against fill.py's curve (tests/test_fill.py's check).
+//! Holds the Metal passes to the Python window's. FSR 1 and bilinear are compared with what its OpenGL versions draw
+//! (tools/present_fsr.py). Every look is compared with framegen/looks.py's NumPy render(), using the cases and
+//! tolerances of tests/test_looks.py (tools/present_looks.py). Panorama has to follow fill.py's curve, the same check
+//! as in tests/test_fill.py.
 //!
-//! The reference data is generated, not checked in: run the two scripts first (from the repository root,
-//! `.venv/bin/python mac/core/tools/present_fsr.py` and `present_looks.py`). Without it these tests say so and pass.
+//! The reference data is generated, not checked in. Run the two scripts first, from the repository root
+//! (`.venv/bin/python mac/core/tools/present_fsr.py` and `present_looks.py`). Without it these tests say so and pass.
 
 use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
@@ -90,7 +91,7 @@ fn fsr_and_bilinear_draw_what_the_opengl_window_does() {
         });
         let (mean, over, max) = diff(&read_bgr(&out), &want, 1);
         eprintln!("{}: mean {mean:.4}, >1 level {:.4}%, max {max}", c["file"].as_str().unwrap(), over * 100.0);
-        // The same maths on the same GPU (Apple's OpenGL runs on Metal): within a level, almost everywhere.
+        // The same maths on the same GPU, since Apple's OpenGL runs on Metal. Within a level almost everywhere.
         assert!(mean < 0.05 && over < 0.001 && max <= 3, "{}", c["file"]);
     }
 }
@@ -122,7 +123,8 @@ fn every_look_draws_what_the_reference_does() {
         };
         let (mean, over, max) = diff(&got, &want, 2);
         worst = (worst.0.max(mean), worst.1.max(over), worst.2.max(max));
-        // tests/test_looks.py's tolerances: half floats between passes, the GPU's filtering and maths.
+        // tests/test_looks.py's tolerances, which allow for half floats between passes and the GPU's filtering and
+        // maths.
         assert!(mean < 0.6 && over < 0.002 && max <= 12, "{name}: mean {mean:.3}, >2 {:.4}%, max {max}", over * 100.0);
     }
     eprintln!("{} looks; worst: mean {:.3}, >2 levels {:.4}%, max {}", cases["cases"].as_array().unwrap().len(),
@@ -132,7 +134,7 @@ fn every_look_draws_what_the_reference_does() {
 
 #[test]
 fn the_panorama_pass_bends_the_picture_as_the_curve_says() {
-    // tests/test_fill.py: a 21:9 screen, a red ramp rising left to right, green on the top half
+    // As in tests/test_fill.py, a 21:9 screen with a red ramp rising left to right and green on the top half
     let (fw, fh) = (860usize, 360usize);
     let (sw, sh) = (1920usize, 1080usize);
     let mut bgr = vec![0u8; sw * sh * 3];

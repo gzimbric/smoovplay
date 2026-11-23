@@ -233,11 +233,11 @@ def test_libx265_main10_round_trip():
 
 
 def test_hdr_stream_converter_goes_on_this_machines_gpu(capsys):
-    """Remote Play's HDR setting (ChiakiSource.set_hdr) tone-maps on CUDA, on Apple's GPU on a Mac, else the CPU:
-    never CUDA only."""
+    """Remote Play's HDR setting (ChiakiSource.set_hdr) tone-maps on CUDA, on Apple's GPU on a Mac, or else on the
+    CPU. It isn't tied to CUDA."""
     from framegen import gpu
     from framegen.chiaki_tap import ChiakiSource
-    src = ChiakiSource.__new__(ChiakiSource)  # just what set_hdr reads
+    src = ChiakiSource.__new__(ChiakiSource)  # only what set_hdr reads
     src.app, src.tag, src.hdr_stream, src.convert = False, "[chiaki]", True, None
     src.set_hdr("sdr8")
     assert src.convert is not None and src.convert.out == "sdr8"
@@ -245,10 +245,10 @@ def test_hdr_stream_converter_goes_on_this_machines_gpu(capsys):
 
 
 @pytest.mark.skipif(not (sys.platform == "darwin" and torch.backends.mps.is_available()),
-                    reason="VideoToolbox and Apple's GPU: a Mac")
+                    reason="needs a Mac, for VideoToolbox and Apple's GPU")
 def test_videotoolbox_p010_tone_mapped_on_apples_gpu():
-    """What a Mac does with a PS5's HDR stream: VideoToolbox decodes the 10-bit HEVC (P010 out), and "sdr" tone-maps it
-    on Apple's GPU (MPS), the same as on the CPU."""
+    """What a Mac does with a PS5's HDR stream. VideoToolbox decodes the 10-bit HEVC to P010, and "sdr" tone-maps it
+    on Apple's GPU (MPS) the same as on the CPU."""
     from av.codec.hwaccel import HWAccel
     w, h = 256, 144
     enc = av.CodecContext.create("libx265", "w")

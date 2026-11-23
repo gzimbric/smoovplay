@@ -1,5 +1,5 @@
 //! The card's sound held back to meet the picture (tests/test_audio.py's DelayLine and Player tests), and the
-//! Python's DelayLine replayed: the same pushes and pulls must give the same bytes (fixtures/capture/delay_*).
+//! Python's DelayLine replayed. The same pushes and pulls must give the same bytes (fixtures/capture/delay_*).
 
 mod common;
 
@@ -15,7 +15,7 @@ fn pcm(seconds: f64, value: i16) -> Vec<i16> {
     vec![value; (seconds * RATE as f64).round() as usize * CH]
 }
 
-/// A 220 Hz tone, continuous across packets (as a card's sound is), loud: 20 ms a packet.
+/// A loud 220 Hz tone, continuous across packets as a card's sound is, 20 ms a packet.
 struct Sine {
     n: usize,
 }
@@ -33,7 +33,7 @@ impl Sine {
     }
 }
 
-/// Packets in, blocks out, at their times; the output as played.
+/// Packets in and blocks out, at their times. Returns the output as played.
 fn play(line: &mut DelayLine, events: &[(f64, bool)], mut packet: impl FnMut() -> Vec<i16>) -> Vec<i16> {
     let mut out = Vec::new();
     for &(t, inn) in events {
@@ -48,9 +48,9 @@ fn play(line: &mut DelayLine, events: &[(f64, bool)], mut packet: impl FnMut() -
 
 #[test]
 fn hold_ups_reading_the_card_leave_no_gaps() {
-    // Issue 17 again: the thread that reads the card is held up now and then, and the packets meanwhile come at once:
-    // with only a packet and 10 ms queued, each hold-up of 20 ms or more was a gap. The cushion grows to the longest
-    // recent wait.
+    // Issue 17 again. The thread that reads the card is held up now and then, and the packets meanwhile come at
+    // once. With only a packet and 10 ms queued, each hold-up of 20 ms or more was a gap. The cushion grows to the
+    // longest recent wait.
     for hold in [20.0, 40.0, 60.0, 100.0] {
         let mut line = DelayLine::new(RATE, CH);
         line.set_delay(0.015);
@@ -80,7 +80,7 @@ fn a_change_in_the_pictures_delay_is_eased_not_jumped() {
     let ev = card(30.0, 0.0, 5.0, 2, None);
     let part = |a: f64, b: f64| ev.iter().copied().filter(|e| a <= e.0 && e.0 < b).collect::<Vec<_>>();
     play(&mut line, &part(0.0, 5.0), || pcm(0.02, 100));
-    line.set_delay(0.12); // 80 ms more, e.g. a 30 fps game starting to dip
+    line.set_delay(0.12); // 80 ms more, as when a 30 fps game starts to dip
     play(&mut line, &part(5.0, 20.0), || pcm(0.02, 100));
     assert!((line.queued_s() - 0.12).abs() < 0.02 && line.jumps() == 0 && line.underruns == 0);
     line.set_delay(0.04); // and back
@@ -90,23 +90,23 @@ fn a_change_in_the_pictures_delay_is_eased_not_jumped() {
 
 #[test]
 fn jumps_and_gaps_are_eased_so_they_dont_click() {
-    let natural = 12000.0 * 2.0 * std::f64::consts::PI * 220.0 / RATE as f64; // the tone's own biggest step (~350)
+    let natural = 12000.0 * 2.0 * std::f64::consts::PI * 220.0 / RATE as f64; // the tone's own biggest step (about 350)
     let mut line = DelayLine::new(RATE, CH);
     line.set_delay(0.3);
     let mut tone = Sine { n: 0 };
     let ev = card(6.0, 0.0, 5.0, 2, None);
     let part = |a: f64, b: f64| ev.iter().copied().filter(|e| a <= e.0 && e.0 < b).collect::<Vec<_>>();
     let mut out = play(&mut line, &part(0.0, 3.0), || tone.next());
-    line.set_delay(0.0); // far less: the oldest sound is skipped
+    line.set_delay(0.0); // far less, so the oldest sound is skipped
     out.extend(play(&mut line, &part(3.0, 4.0), || tone.next()));
     let dry: Vec<(f64, bool)> = part(4.0, 6.0).into_iter().filter(|e| !e.1).collect();
-    out.extend(play(&mut line, &dry, || unreachable!())); // nothing comes: dry
+    out.extend(play(&mut line, &dry, || unreachable!())); // nothing comes, so it runs dry
     let back: Vec<(f64, bool)> = card(2.0, 0.0, 5.0, 2, None).into_iter().map(|(t, i)| (6.0 + t, i)).collect();
     out.extend(play(&mut line, &back, || tone.next()));
     assert!(line.skips >= 1 && line.underruns == 1); // one gap while nothing came, not one per block
     let left: Vec<i32> = out.iter().step_by(CH).map(|&v| v as i32).collect();
     let step = left.windows(2).map(|w| (w[1] - w[0]).abs()).max().unwrap() as f64;
-    assert!(step < natural + 24000.0 / 96.0 + 50.0, "a step of {step}"); // eased: never a step like a click
+    assert!(step < natural + 24000.0 / 96.0 + 50.0, "a step of {step}"); // eased, never a step like a click
 }
 
 #[test]
@@ -121,16 +121,16 @@ fn silence_until_the_delay_then_the_sound_in_order() {
     }
     let left: Vec<i16> = out.iter().step_by(CH).copied().collect();
     let first = left.iter().position(|&v| v != 0).unwrap() as f64 / RATE as f64;
-    assert!((0.06..=0.11).contains(&first), "{first}"); // silence while it fills (to within a jump), then...
+    assert!((0.06..=0.11).contains(&first), "{first}"); // silence while it fills (to within a jump), then
     let sound: Vec<i16> = left.into_iter().filter(|&v| v != 0).collect();
-    assert!(sound.windows(2).all(|w| w[1] >= w[0]) && sound[0] == 1); // ...from the start, in order
+    assert!(sound.windows(2).all(|w| w[1] >= w[0]) && sound[0] == 1); // the sound from the start, in order
     assert!((line.queued_s() - 0.1).abs() < 0.045);
 }
 
 #[test]
 fn the_delay_holds_when_the_card_clock_runs_fast_or_slow() {
     for speed in [1.002, 0.998] {
-        // 0.2%: far more than real clocks differ
+        // 0.2%, far more than real clocks differ
         let mut line = DelayLine::new(RATE, CH);
         line.set_delay(0.05);
         let (mut got, mut queued) = (0.0f64, 0.0);
@@ -138,7 +138,7 @@ fn the_delay_holds_when_the_card_clock_runs_fast_or_slow() {
         for i in 0..3000 {
             got += 0.01 * speed;
             line.push_at(i as f64 * 0.01, &pcm(r4(got) - r4(got - 0.01 * speed), 100));
-            queued = line.queued_s(); // (before the output takes its block)
+            queued = line.queued_s(); // before the output takes its block
             line.pull(BLOCK);
         }
         assert!((queued - 0.05).abs() < 0.006, "{speed}: {queued}");
@@ -148,8 +148,8 @@ fn the_delay_holds_when_the_card_clock_runs_fast_or_slow() {
 
 #[test]
 fn a_short_delay_never_runs_dry_between_packets() {
-    // Issue 17: a card's sound in 20 ms packets, a little late now and then, with less delay asked for than a packet
-    // lasts: the queue ran dry every packet or so, a click each time.
+    // Issue 17. A card's sound came in 20 ms packets, a little late now and then, with less delay asked for than a
+    // packet lasts. The queue ran dry every packet or so, a click each time.
     let mut rnd = PyRng::new(1);
     for asked in [0.0, 0.005, 0.015] {
         let mut line = DelayLine::new(RATE, CH);
@@ -158,8 +158,8 @@ fn a_short_delay_never_runs_dry_between_packets() {
         ev.extend((0..3000).map(|i| (i as f64 * 0.010001, false)));
         ev.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         play(&mut line, &ev, || pcm(0.02, 100));
-        assert!(line.underruns <= 1, "{asked}: {}", line.underruns); // (the first block, before anything came)
-        // the longest wait between packets and the cushion: sound at most ~45 ms behind the picture
+        assert!(line.underruns <= 1, "{asked}: {}", line.underruns); // the first block, before anything came
+        // the longest wait between packets and the cushion, so sound at most about 45 ms behind the picture
         assert!((0.025..=0.045).contains(&line.kept_s()), "{}", line.kept_s());
         assert_eq!(line.jumps(), 0);
     }
@@ -200,13 +200,13 @@ fn the_log_says_what_went_wrong() {
     let full = sound_report(&s, None).unwrap();
     assert!(full.contains("ran dry 3 times") && full.contains("output ran short 1 times") && full.contains("46 ms"));
     assert!(full.contains("output 40 ms") && !full.contains("stopped"));
-    assert_eq!(sound_report(&s, Some(&s)), None); // nothing new: no line
+    assert_eq!(sound_report(&s, Some(&s)), None); // nothing new, so no line
     assert!(sound_report(&SoundStats { ran_dry: 4, ..s.clone() }, Some(&s)).unwrap().contains("ran dry 1 times"));
 }
 
 #[test]
 fn the_player_counts_the_output_running_short() {
-    let p = PlayerCore::new(RATE, CH, 0.04); // (no sound device: the callback alone)
+    let p = PlayerCore::new(RATE, CH, 0.04); // no sound device, only the callback
     let mut buf = vec![0i16; BLOCK * CH];
     p.render(&mut buf, false);
     std::thread::sleep(std::time::Duration::from_millis(20));
@@ -222,7 +222,7 @@ fn the_player_counts_the_output_running_short() {
     assert_eq!(p.line.lock().unwrap().target(), (0.06 * RATE as f64).round() as usize * CH);
 }
 
-/// The Python's DelayLine, replayed: every byte it played, and its counts at the end.
+/// The Python's DelayLine, replayed. Every byte it played must match, and so must its counts at the end.
 #[test]
 fn the_same_bytes_as_the_python() {
     let names = ["holdups", "eased", "change", "fast", "slow", "fill", "odd"];
@@ -276,8 +276,8 @@ fn the_same_bytes_as_the_python() {
     assert_eq!(ran, names.len());
 }
 
-/// The real output, playing nothing but silence for a moment: it opens, calls for sound, knows its latency, and
-/// closes. (No sound device: skipped.)
+/// The real output, playing nothing but silence for a moment. It opens, calls for sound, knows its latency, and
+/// closes. Skipped with no sound device.
 #[test]
 fn the_player_plays_on_the_macs_output() {
     let mut p = match Player::open(RATE, CH as u32) {

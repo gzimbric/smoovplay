@@ -2,13 +2,13 @@
 //! 16:9 only, so on an ultrawide or a 16:10 screen these are ways of laying out the same 16:9 picture, never more of
 //! the game.
 //!
-//! The arithmetic is framegen/fill.py's, GL style (y0 is the bottom edge), so tests can hold it to the same numbers;
+//! The arithmetic is framegen/fill.py's, GL style (y0 is the bottom edge), so tests can hold it to the same numbers.
 //! [`Rect::from_gl`] turns a rectangle into Metal's top-left one. The Panorama pass itself is in the shaders
 //! (`panorama` in shaders/present.metal).
 
 use serde::{Deserialize, Serialize};
 
-/// Settings "fill" (Fill the screen; key Z).
+/// Settings "fill" (Fill the screen, key Z).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Fill {
@@ -19,14 +19,14 @@ pub enum Fill {
     Zoom,
     /// Fills the screen by making everything wider (or taller).
     Stretch,
-    /// Screens wider than the picture: the middle close to true shape, the sides take the stretch.
+    /// For screens wider than the picture. The middle stays close to true shape and the sides take the stretch.
     Panorama,
 }
 
 impl Fill {
     pub const ALL: [Fill; 4] = [Fill::Fit, Fill::Zoom, Fill::Stretch, Fill::Panorama];
 
-    /// The setting's value ("fit", "zoom", ...).
+    /// The setting's value, such as "fit" or "zoom".
     pub fn key(self) -> &'static str {
         match self {
             Fill::Fit => "fit",
@@ -36,7 +36,7 @@ impl Fill {
         }
     }
 
-    /// The name shown ("Fit", ...).
+    /// The name shown, such as "Fit".
     pub fn name(self) -> &'static str {
         match self {
             Fill::Fit => "Fit",
@@ -51,7 +51,7 @@ impl Fill {
     }
 }
 
-/// Panorama: the middle is drawn this share of the extra width wider than true (fill.py PANORAMA_MIDDLE).
+/// Panorama draws the middle wider than true by this share of the extra width (fill.py PANORAMA_MIDDLE).
 pub const PANORAMA_MIDDLE: f64 = 0.15;
 
 /// Whether the screen is wider than the picture (by more than a pixel or so).
@@ -59,13 +59,14 @@ pub fn wider(fw: i64, fh: i64, w: i64, h: i64) -> bool {
     fw * h > (fh + 1) * w
 }
 
-/// Python's round(): halves go to the even neighbour.
+/// Python's round(), where halves go to the even neighbour.
 fn py_round(x: f64) -> i64 {
     x.round_ties_even() as i64
 }
 
-/// The picture's rectangle (dw, dh, x0, y0) on an fw x fh screen, GL style (x0, y0 the bottom left). Zoom's goes past
-/// the screen's edges. Panorama's is Fit's: that's drawn first, then bent across the screen.
+/// The picture's rectangle (dw, dh, x0, y0) on an fw x fh screen, GL style, with x0, y0 at the bottom left. Zoom's
+/// goes past the screen's edges. Panorama's is Fit's, because Panorama draws Fit first and then bends it across the
+/// screen.
 pub fn layout(fill: Fill, fw: i64, fh: i64, w: i64, h: i64) -> (i64, i64, i64, i64) {
     if fill == Fill::Stretch {
         return (fw, fh, 0, 0);
@@ -80,15 +81,15 @@ pub fn layout(fill: Fill, fw: i64, fh: i64, w: i64, h: i64) -> (i64, i64, i64, i
     (dw, dh, (fw - dw).div_euclid(2), (fh - dh).div_euclid(2))
 }
 
-/// The part of the picture's rectangle that's on the screen (x, y, w, h), GL style: where the menu and messages go.
+/// The part of the picture's rectangle that's on the screen (x, y, w, h), GL style. The menu and messages go there.
 pub fn visible(dw: i64, dh: i64, x0: i64, y0: i64, fw: i64, fh: i64) -> (i64, i64, i64, i64) {
     let (x, y) = (x0.max(0), y0.max(0));
     (x, y, fw.min(x0 + dw) - x, fh.min(y0 + dh) - y)
 }
 
-/// Panorama's curve: u = atan(t*x) / atan(t) maps the screen (x from -1 to 1) onto the picture (u from -1 to 1). t is
-/// picked so the middle is 1 + PANORAMA_MIDDLE*(k - 1) times wider than true (k: how many times wider the screen is);
-/// 0 (no bending) when the screen isn't wider.
+/// Panorama's curve. u = atan(t*x) / atan(t) maps the screen (x from -1 to 1) onto the picture (u from -1 to 1). t is
+/// picked so the middle is 1 + PANORAMA_MIDDLE*(k - 1) times wider than true, where k is how many times wider the
+/// screen is. It's 0, no bending, when the screen isn't wider.
 pub fn panorama_t(fw: i64, fh: i64, w: i64, h: i64) -> f64 {
     let k = (fw as f64 / fh as f64) / (w as f64 / h as f64);
     if k <= 1.0 {
@@ -112,7 +113,7 @@ pub fn panorama_u(x: f64, t: f64) -> f64 {
     if t <= 0.0 { x } else { (t * x).atan() / t.atan() }
 }
 
-/// A rectangle in pixels, Metal style: (x, y) is the top-left corner, y grows downwards.
+/// A rectangle in pixels, Metal style, so (x, y) is the top-left corner and y grows downwards.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Rect {
     pub x: i64,

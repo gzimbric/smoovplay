@@ -1,7 +1,7 @@
-// Copy diagnostics (installer/launcher Core.cs Diagnostics and Feedback.cs): the Mac, the checks, the source, the
-// settings, the last session's log and test report, ready to paste into a bug report. Bug reports get pasted in
-// public places, so the user's home folder becomes "~" however a log spells it, and device names lose their
-// owner's name ("Alex's iPhone Camera" becomes "(name)'s iPhone Camera").
+// Copy diagnostics (installer/launcher Core.cs Diagnostics and Feedback.cs) collects the Mac, the checks, the
+// source, the settings, and the last session's log and test report, ready to paste into a bug report. Bug reports
+// get pasted in public places, so the user's home folder becomes "~" however a log spells it, and device names lose
+// their owner's name ("Alex's iPhone Camera" becomes "(name)'s iPhone Camera").
 import Foundation
 
 public enum Diagnostics {
@@ -14,13 +14,13 @@ public enum Diagnostics {
                                               options: [.caseInsensitive, .anchorsMatchLines])
             t = re.stringByReplacingMatches(in: t, range: NSRange(t.startIndex..., in: t), withTemplate: "~")
         }
-        // any other user folder: /Users/NAME (not Shared)
+        // any other user's folder, /Users/NAME (not Shared)
         let other = try! NSRegularExpression(pattern: #"/Users/(?!Shared(?:/|"|$))[^/"\s]+"#, options: [.anchorsMatchLines])
         t = other.stringByReplacingMatches(in: t, range: NSRange(t.startIndex..., in: t), withTemplate: "~")
         return noOwner(t)
     }
 
-    /// "Alex's iPhone Camera" -> "(name)'s iPhone Camera".
+    /// "Alex's iPhone Camera" becomes "(name)'s iPhone Camera".
     public static func noOwner(_ s: String) -> String {
         let re = try! NSRegularExpression(pattern: #"[^\s()"]+['’]s\b"#)
         return re.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "(name)'s")

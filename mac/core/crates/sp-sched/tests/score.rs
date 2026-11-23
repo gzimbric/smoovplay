@@ -1,5 +1,6 @@
-//! tests/test_hud_score.py, ported, and the GPU probe against the CPU reference: scoring sums, block means (exact,
-//! as torch's avg_pool2d on uint8), and what each costs at 1080p (cargo test --release --test score -- --nocapture).
+//! tests/test_hud_score.py, ported, and the GPU probe checked against the CPU reference for the scoring sums and the
+//! block means (exact, as torch's avg_pool2d on uint8). It also measures what each costs at 1080p
+//! (cargo test --release --test score -- --nocapture).
 
 use std::time::Instant;
 
@@ -18,13 +19,13 @@ fn frames() -> (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<[f32; 3]>, usize, usize) {
             for x in 0..w {
                 let mut v = texture[shift + x];
                 if y >= 40 {
-                    v = 90.0; // flat, still: no edges
+                    v = 90.0; // flat and still, so no edges
                 }
                 if (8..24).contains(&y) && (8..40).contains(&x) {
-                    v = 255.0; // the label...
+                    v = 255.0; // the label
                 }
                 if (12..20).contains(&y) && [(12..16), (20..24), (28..32)].iter().any(|r| r.contains(&x)) {
-                    v = 0.0; // ...with text on it
+                    v = 0.0; // with text on it
                 }
                 img[y * w + x] = [v; 3];
             }
@@ -44,8 +45,8 @@ fn test_hud_mask_finds_still_edges_only() {
     let m = hud_mask(&a, &b, &gt, w, h);
     assert_eq!(m.len(), 64 * 96);
     assert!(sum(&m, w, 12..20, 10..34) > 20); // the text's edges on the label
-    assert_eq!(sum(&m, w, 44..60, 0..w), 0); // the flat still band: no edges
-    assert_eq!(sum(&m, w, 28..36, 0..w), 0); // the scrolling background: not still
+    assert_eq!(sum(&m, w, 44..60, 0..w), 0); // the flat still band has no edges
+    assert_eq!(sum(&m, w, 28..36, 0..w), 0); // the scrolling background isn't still
 }
 
 #[test]
@@ -119,7 +120,7 @@ fn gpu_scoring_matches_the_cpu_reference_exactly() {
 
 #[test]
 fn gpu_block_means_are_exact() {
-    // torch's avg_pool2d on uint8: integer sums, divided once. sp_core::stats::block_means adds normalised floats.
+    // torch's avg_pool2d on uint8 sums integers and divides once. sp_core::stats::block_means adds normalised floats.
     let (w, h) = (1920, 1080);
     let mut g = Rng(42);
     let bgr: Vec<u8> = (0..w * h * 3).map(|_| (g.next() >> 24) as u8).collect();
@@ -148,7 +149,7 @@ fn hdr_frames_are_scored_in_8_bit_levels() {
     let pq = sp_sched::score::pq_of_nits(203.0);
     let f = Frame::new(4, 4, PixelKind::Rgba16f);
     let half = |v: f32| -> [u8; 2] {
-        // f32 -> f16 for values in 0..1 (normal range), by hand
+        // f32 to f16 by hand, for values in 0 to 1 (normal range)
         let b = v.to_bits();
         let e = ((b >> 23) & 0xff) as i32 - 127 + 15;
         let m = (b >> 13) & 0x3ff;
@@ -176,7 +177,7 @@ fn hdr_frames_are_scored_in_8_bit_levels() {
     assert!(m.data.iter().all(|&v| (v - 254.0).abs() <= 1.0), "{:?}", &m.data[..3]); // truncated, as to_u8
 }
 
-/// What scoring costs at 1080p, both ways (printed; run in release for the real figure).
+/// Prints what scoring costs at 1080p, both ways. Run it in release for the real figure.
 #[test]
 fn scoring_cost_at_1080p() {
     let (w, h) = (1920, 1080);

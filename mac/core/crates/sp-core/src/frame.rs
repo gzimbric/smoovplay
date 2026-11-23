@@ -1,10 +1,10 @@
-//! A picture on the GPU: a Metal texture, BGRA8 for SDR video or RGBA16F for HDR10 (PQ, BT.2020, as
-//! framegen/hdr.py's "pq16"), never written to once a source has handed it on (as Python's Tick.frame).
+//! A picture on the GPU. It's a Metal texture, BGRA8 for SDR video or RGBA16F for HDR10 (PQ, BT.2020, as
+//! framegen/hdr.py's "pq16"). Like Python's Tick.frame, it's never written to once a source has handed it on.
 //!
-//! Textures use shared storage: on Apple silicon the GPU and CPU share memory, so a test or a CPU-side check can read
+//! Textures use shared storage. On Apple silicon the GPU and CPU share memory, so a test or a CPU-side check can read
 //! one without a blit. A frame made from a decoder's IOSurface keeps that surface alive through `owner`.
 //!
-//! Hold the `Frame`, not just its texture, until GPU work reading it has finished: a producer (sp-media's Converter,
+//! Hold the `Frame`, not only its texture, until GPU work reading it has finished. A producer (sp-media's Converter,
 //! sp-rife's output ring) reuses a texture once nothing holds its Frame any more.
 
 use std::any::Any;
@@ -24,7 +24,7 @@ pub type Texture = ProtocolObject<dyn MTLTexture>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PixelKind {
-    /// 8-bit BGRA (alpha unused), full-range SDR: what every SDR source gives and RIFE takes.
+    /// 8-bit BGRA (alpha unused), full-range SDR. Every SDR source gives this and RIFE takes it.
     Bgra8,
     /// Half-float RGBA, PQ-encoded BT.2020 (HDR output).
     Rgba16f,
@@ -55,7 +55,7 @@ pub struct Frame {
     pub owner: Option<Arc<dyn Any + Send + Sync>>,
 }
 
-// Metal textures are safe to share between threads; a Frame is never written to once handed on.
+// Metal textures are safe to share between threads, and a Frame is never written to once handed on.
 unsafe impl Send for Frame {}
 unsafe impl Sync for Frame {}
 
@@ -136,8 +136,8 @@ impl Frame {
         f
     }
 
-    /// The frame's bytes as the texture holds them (BGRA8, or RGBA16F as little-endian halves). Waits for nothing:
-    /// call after the GPU work that wrote it has completed.
+    /// The frame's bytes as the texture holds them (BGRA8, or RGBA16F as little-endian halves). Waits for nothing,
+    /// so call it after the GPU work that wrote it has completed.
     pub fn read_raw(&self) -> Vec<u8> {
         let row = self.width * self.kind.bytes_per_pixel();
         let mut out = vec![0u8; row * self.height];

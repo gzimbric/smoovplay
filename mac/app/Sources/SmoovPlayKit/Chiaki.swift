@@ -1,7 +1,7 @@
-// The patched chiaki-ng (build/chiaki-ng-frametap/chiaki-ng.app, chiaki_tap/README.md "Build on macOS"): opened
-// with the frame tap on, hidden while SmoovPlay's video plays and shown again when it ends (run.py's
-// minimize_chiaki does this on Windows; on a Mac the app does it, with NSRunningApplication), and the Mac kept
-// awake meanwhile.
+// The patched chiaki-ng (build/chiaki-ng-frametap/chiaki-ng.app, from "Build on macOS" in chiaki_tap/README.md).
+// The app opens it with the frame tap on, hides it while SmoovPlay's video plays, shows it again when the video
+// ends, and keeps the Mac awake meanwhile. On Windows run.py's minimize_chiaki does the hiding. On a Mac the app
+// does it, with NSRunningApplication.
 import AppKit
 import IOKit.pwr_mgt
 
@@ -29,14 +29,14 @@ public final class Chiaki: @unchecked Sendable {
 
     public var oursRunning: Bool { ours.map { !$0.isTerminated } ?? false }
 
-    /// chiaki-ng copies SmoovPlay didn't open: they don't send the video to the tap (unless started with
-    /// run_chiaki_frametap.command, which the app can't tell).
+    /// chiaki-ng copies SmoovPlay didn't open. They don't send the video to the tap, unless they were started with
+    /// run_chiaki_frametap.command, which the app can't tell.
     public var others: [NSRunningApplication] {
         running.filter { $0.processIdentifier != ours?.processIdentifier }
     }
 
-    /// Opens chiaki-ng with CHIAKI_FRAMETAP=1 (and the shell's other CHIAKI_* variables, as
-    /// run_chiaki_frametap.command passes them), as a new copy.
+    /// Opens a new copy of chiaki-ng with CHIAKI_FRAMETAP=1, plus the shell's other CHIAKI_* variables as
+    /// run_chiaki_frametap.command passes them.
     public func open(env: [String: String], done: @escaping (String?) -> Void) {
         guard installed else {
             done("chiaki-ng isn't at \(app.path). Build it with chiaki_tap/build_macos.sh (chiaki_tap/README.md), or set SMOOVPLAY_CHIAKI.")
@@ -59,7 +59,7 @@ public final class Chiaki: @unchecked Sendable {
         }
     }
 
-    /// Quits these copies (asked nicely, then forced after 5 s).
+    /// Quits these copies. Each is asked to quit first, then forced after 5 s.
     public func close(_ apps: [NSRunningApplication], done: @escaping () -> Void) {
         for a in apps { a.terminate() }
         DispatchQueue.global().async {
@@ -70,8 +70,8 @@ public final class Chiaki: @unchecked Sendable {
         }
     }
 
-    /// While the video plays: hidden (it keeps streaming, and stops drawing video nobody sees). For the first 10 s
-    /// it's hidden again if it shows itself (its stream view opening); after that, showing it is the player's choice.
+    /// Hides it while the video plays. It keeps streaming, and stops drawing video nobody sees. For the first 10 s
+    /// it's hidden again if it shows itself, as its stream view opens. After that, showing it is the player's choice.
     public func hideForPlay() {
         guard let a = running.first(where: { $0.processIdentifier == ours?.processIdentifier }) ?? running.first else { return }
         if !a.isHidden { a.hide() }
@@ -93,23 +93,23 @@ public final class Chiaki: @unchecked Sendable {
         }
     }
 
-    /// The session ended: chiaki-ng's window back, without taking the keys from whatever has them.
+    /// Brings chiaki-ng's window back once the session ends, without taking the keys from whatever has them.
     public func showAfterPlay() {
         observers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         observers = []
         guard hiddenByUs else { return }
         hiddenByUs = false
-        // by process id, as hidden: the list of running apps by bundle id has come back empty at this point
+        // by process id, as they were hidden, because the list of running apps by bundle id has come back empty by now
         var apps = hiddenPIDs.compactMap { NSRunningApplication(processIdentifier: $0) }.filter { !$0.isTerminated }
         apps += running.filter { a in !apps.contains { $0.processIdentifier == a.processIdentifier } }
-        for a in apps { a.unhide() }  // (isHidden can lag behind; unhiding a shown app does nothing)
+        for a in apps { a.unhide() }  // isHidden can lag behind, and unhiding a shown app does nothing
         hiddenPIDs = []
         log("[launcher] chiaki-ng's window is back (\(apps.count) running)")
     }
 }
 
-/// Keeps the display and the Mac awake while the video plays (a controller isn't input to macOS, so the display
-/// would sleep mid-game).
+/// Keeps the display and the Mac awake while the video plays. A controller isn't input to macOS, so the display
+/// would sleep mid-game.
 public final class Awake: @unchecked Sendable {
     private var id: IOPMAssertionID = 0
     private var held = false

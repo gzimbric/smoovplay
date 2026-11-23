@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "SmoovPlay's video window on macOS: Metal drawing (FSR 1, fill modes, looks, overlays, the menu), presentation and HDR"
+description = "SmoovPlay's video window on macOS, with Metal drawing (FSR 1, fill modes, looks, overlays, the menu), presentation and HDR"
 
 [dependencies]
 sp-core.workspace = true
@@ -15,8 +15,8 @@ objc2-quartz-core.workspace = true
 objc2-app-kit.workspace = true
 objc2-core-foundation.workspace = true
 block2.workspace = true
-# Not in the workspace's list yet (same objc2 0.6 family): Core Text and Core Graphics for the menu and overlay text,
-# libdispatch for handing window work to the main thread.
+# Not in the workspace's list yet, though they're the same objc2 0.6 family. Core Text and Core Graphics draw the
+# menu and overlay text, and libdispatch hands window work to the main thread.
 objc2-core-graphics = "0.3.2"
 objc2-core-text = "0.3.2"
 dispatch2 = "0.3.0"

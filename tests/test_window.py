@@ -14,7 +14,7 @@ from framegen.sources import EXPERIMENTAL, KINDS, list_sources, make_detector
 from framegen.window import AppWindow, Grab, Rect, WindowSource, graph, pick, plan_grab
 
 # Window capture finds windows through user32 and DWM (stood in for here, but called through WINFUNCTYPE), so
-# these run on Windows only; the rest are platform-free logic.
+# these run on Windows only. The rest are platform-free logic.
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="window capture is Windows-only")
 
 MON = Rect(0, 0, 2560, 1440)

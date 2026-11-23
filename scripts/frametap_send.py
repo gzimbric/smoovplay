@@ -9,7 +9,8 @@ as a 30 fps game does; --hints marks each frame new or a repeat (FLAG_NEW / FLAG
 would, and without it SmoovPlay compares the pictures. --variable sends a picture only when it changes
 (FEATURE_VARIABLE), as an app that draws when it likes does. --format bgra sends BGRA instead of NV12.
 Runs on the CPU only (PyAV decoding), so it leaves the graphics card to SmoovPlay. On a Mac it's the same with
-.venv/bin/python (the tap is POSIX shared memory there: --tap NAME can have at most 24 characters after any Local\\).
+.venv/bin/python. The tap is POSIX shared memory there, so --tap NAME can have at most 24 characters after any
+Local\\.
 """
 from __future__ import annotations
 

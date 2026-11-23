@@ -3,9 +3,9 @@
 #
 #   ./build_release.sh
 #
-# Signing: SIGN_IDENTITY picks the code-signing identity (a name or SHA-1 from `security find-identity -v -p
-# codesigning`); unset or "auto", the keychain's first Apple Development identity, else ad hoc; "-" forces ad hoc.
-# The same rule as mac/app/bundle.sh and chiaki_tap/build_macos.sh.
+# SIGN_IDENTITY picks the code-signing identity, by name or by SHA-1 from `security find-identity -v -p codesigning`.
+# Unset or "auto" means the keychain's first Apple Development identity, or ad hoc if it has none. "-" forces ad hoc.
+# It's the same rule as in mac/app/bundle.sh and chiaki_tap/build_macos.sh.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

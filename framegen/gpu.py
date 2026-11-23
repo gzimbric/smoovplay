@@ -1,8 +1,8 @@
 """Which GPU PyTorch runs on: NVIDIA's CUDA, Apple's GPU through Metal (MPS) on a Mac, or the CPU.
 
 Everything NVIDIA-specific (CUDA graphs, TensorRT, NVDEC, CUDA-OpenGL interop, NVIDIA VFG and RTX VSR) stays on
-"cuda". On a Mac, RIFE runs eagerly on "mps": frames reach the window through the CPU (the memory is shared with
-the GPU, so the copy is cheap), and the stream is decoded with VideoToolbox.
+"cuda". On a Mac, RIFE runs eagerly on "mps". Frames reach the window through the CPU, which is cheap because the
+memory is shared with the GPU, and VideoToolbox decodes the stream.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ WINDOWS = sys.platform == "win32"
 
 @functools.cache
 def device() -> str:
-    """"cuda", "mps" or "cpu": the best PyTorch device here."""
+    """The best PyTorch device here: "cuda", "mps" or "cpu"."""
     if torch.cuda.is_available():
         return "cuda"
     if MAC and torch.backends.mps.is_available():
@@ -50,7 +50,8 @@ def empty_cache() -> None:
 
 @functools.cache
 def name() -> str:
-    """The graphics chip's name: CUDA's, or on a Mac the chip's (e.g. "Apple M5 Max"); "unknown" if it can't be told."""
+    """The graphics chip's name from CUDA, or on a Mac the chip's (for example "Apple M5 Max"). "unknown" if it can't
+    be told."""
     if torch.cuda.is_available():
         return torch.cuda.get_device_name(0)
     if MAC:
@@ -65,8 +66,8 @@ def name() -> str:
 
 
 def timer():
-    """A start/stop GPU timer: CUDA events on NVIDIA, else wall time around a synchronize (MPS's command buffers
-    can't be timed from PyTorch). Returns (start(), stop() -> ms)."""
+    """A GPU timer. It uses CUDA events on NVIDIA, else wall time around a synchronize, because MPS's command buffers
+    can't be timed from PyTorch. Returns (start, stop), and stop() returns the milliseconds since start()."""
     if device() == "cuda":
         a, b = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
 

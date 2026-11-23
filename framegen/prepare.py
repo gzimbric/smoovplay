@@ -52,7 +52,8 @@ def main() -> int:
 
 
 def prepare_mac(a: argparse.Namespace) -> int:
-    """A Mac: RIFE through PyTorch on Apple's GPU (Metal, framegen/gpu.py). Nothing to build ahead."""
+    """On a Mac, RIFE runs through PyTorch on Apple's GPU (Metal, framegen/gpu.py), so there's nothing to build
+    ahead."""
     import torch
 
     from . import gpu

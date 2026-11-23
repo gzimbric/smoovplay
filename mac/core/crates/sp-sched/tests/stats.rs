@@ -1,5 +1,5 @@
 //! tests/test_game_rate.py (GameRate, ShownRate, rate_advice, results(), the arrival line) and test_settings.py's
-//! results report, ported: same names, same assertions. Plus run.py write_results' file handling.
+//! results report, ported with the same names and assertions, plus run.py write_results' file handling.
 
 use std::collections::BTreeSet;
 
@@ -15,7 +15,7 @@ fn test_game_rate_counts_new_frames_over_two_seconds_of_ticks() {
     assert_eq!(r.fps(), None); // not a whole window yet
     r.add(Some(false));
     assert_eq!(r.fps(), Some(30.0));
-    r.add(None); // the source can't say: left out, not counted as a repeat
+    r.add(None); // the source can't say, so it's left out, not counted as a repeat
     assert_eq!(r.fps(), Some(30.0));
     for i in 0..120 {
         r.add(Some(i % 4 != 3)); // three new frames in every four ticks
@@ -46,7 +46,7 @@ fn test_rate_advice() {
     let a46 = rate_advice(Some(46.0), false, false);
     assert!(a46.contains("about 46 fps, not 30") && a46.contains("30 fps mode"));
     assert!(rate_advice(Some(59.6), false, false).contains("Game at 60 fps: no gaps to fill"));
-    assert!(rate_advice(Some(59.0), true, false).is_empty()); // test mode with a 60 fps game: as it should be
+    assert!(rate_advice(Some(59.0), true, false).is_empty()); // test mode with a 60 fps game is as it should be
     assert!(rate_advice(Some(30.0), true, false).contains("at 30 fps already: turn Simulate off"));
     assert!(rate_advice(Some(44.0), true, false).contains("about 44, so quality isn't measured"));
     for g in [30.0, 44.0, 46.0, 60.0] {
@@ -76,13 +76,13 @@ fn test_results_say_when_test_mode_had_no_60_fps_game_and_judge_by_extra_frames(
     let text = st.results(None).join("\n");
     assert!(text.contains("about 30 fps, not a steady 60") && text.contains("doesn't need it"));
     assert!(text.contains("Quality: not measured, as the game wasn't at a steady 60 fps"));
-    // 18% of ticks came in while busy, but 96% of the extra frames were shown: that's keeping up at 90
+    // 18% of ticks came in while busy, but 96% of the extra frames were shown, and that's keeping up at 90
     assert_eq!(last(&st), "Verdict: this PC keeps up at 90 fps");
     (st.quarter_shown, st.quarter_skipped) = (85, 15);
     assert!(last(&st).contains("mostly keeps up at 90 fps"));
     (st.quarter_shown, st.quarter_skipped) = (70, 30);
     assert!(last(&st).contains("falling behind at 90 fps"));
-    // a steady 60 fps game in test mode: no note, scores as usual
+    // a steady 60 fps game in test mode gets no note and scores as usual
     let st = Stats {
         proc_interp_ms: vec![8.0; 10],
         busy_ms: vec![9.0; 10],
@@ -100,7 +100,7 @@ fn test_results_say_when_test_mode_had_no_60_fps_game_and_judge_by_extra_frames(
     assert!(!text.contains("Game:") && text.contains("5.0% of each AI frame was visibly off"));
     assert!(text.contains("(10 frames measured, worst 5.0%)"));
     assert!(st.summary().contains("10 of 2000 frames were repeats"));
-    // 90 fps output with a game at about 37 fps: 44 frames from 60 fps fallbacks are too few to say anything
+    // 90 fps output with a game at about 37 fps, where 44 frames from 60 fps fallbacks are too few to say anything
     let mut st = Stats {
         proc_interp_ms: vec![18.0; 100],
         busy_ms: vec![9.0; 100],
@@ -155,16 +155,16 @@ fn test_results_report_reads_plainly() {
     };
     let text = st.results(None).join("\n");
     assert!(text.contains("Output: 60 fps and 120 fps"));
-    // Quality in plain terms (the share of each frame visibly off), not dB; the dB stay in the log
+    // Quality in plain terms (the share of each frame visibly off), not dB. The dB stay in the log.
     assert!(text.contains("6.2% of each AI frame was visibly off") && text.contains("against 12% when the last frame is repeated"));
     assert!(text.contains("50 frames measured") && !text.contains(" dB"));
     assert!(st.summary().contains("PSNR") && st.summary().contains("visibly off (more than 12 levels): RIFE 6.20% | repeat 12.00%"));
     assert!(text.contains("Verdict: this PC keeps up at 120 fps"));
-    st.behind = 50; // a quarter of the frames waited, but the extra frames were all but all shown: still keeping up
+    st.behind = 50; // a quarter of the frames waited, but nearly all extra frames were shown, so it's still keeping up
     assert!(last(&st).contains("keeps up at 120 fps"));
     (st.quarter_shown, st.quarter_skipped) = (60, 40);
     assert!(last(&st).contains("falling behind at 120 fps"));
-    // 60 fps: frames that waited say nothing; frames that took longer to make than a frame lasts do
+    // at 60 fps, frames that waited say nothing, but frames that took longer to make than a frame lasts do
     (st.hz_used, st.quarter_shown, st.quarter_skipped) = (BTreeSet::from([60]), 0, 0);
     assert_eq!(last(&st), "Verdict: this PC keeps up at 60 fps");
     assert!(!st.results(None).join("\n").contains("Running behind"));

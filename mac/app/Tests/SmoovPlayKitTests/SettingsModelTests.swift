@@ -36,7 +36,7 @@ import Testing
         #expect(rate.choices.filter(\.selected).map(\.tag) == ["60"])
         #expect(rate.hint.hasPrefix("One new frame for each real one"))
         #expect(p.sections.map(\.group) == ["Smoothness", "Picture", "Looks", "Display", "Instant replay", "PS5 Remote Play"])
-        // what this Mac can't use: greyed out with the core's reasons
+        // what this Mac can't use is greyed out, with the core's reasons
         let scaler = row(p, "scaler")
         #expect(scaler.choices.first(where: { $0.tag == "\"vsr\"" })!.enabled == false)
         #expect(scaler.choices.first(where: { $0.tag == "\"bilinear\"" })!.enabled)
@@ -96,11 +96,11 @@ import Testing
         let p = m.page()
         #expect(!p.live && !p.locked)
         #expect(p.quick[0].choices.filter(\.selected).map(\.tag) == ["120"])
-        #expect(m.value("fill") == "fit")  // not one of its choices: the default
+        #expect(m.value("fill") == "fit")  // not one of its choices, so the default
         #expect(m.value("look_on") == true)
         #expect(row(p, "scaler").choices.first(where: { $0.tag == "\"vsr\"" })!.enabled == false)  // a Mac
         #expect(row(p, "model").choices.first(where: { $0.tag == "\"vfg\"" })!.enabled == false)
-        #expect(row(p, "minimize_chiaki").enabled)  // the app does it: changeable with nothing playing
+        #expect(row(p, "minimize_chiaki").enabled)  // the app does it, so it can change with nothing playing
         #expect(row(p, "capture_size").note != nil)  // only with a capture card
         #expect(row(model(nil, source: "capture").page(), "capture_size").note == nil)
         #expect(p.status.hasPrefix("Saved for every session"))

@@ -1,6 +1,7 @@
 //! The whole source with stand-ins for a card (tests/test_capture.py's source tests, tests/test_audio.py's sound
-//! tests): raw frames read as a card's are, and recordings played at their own rate through the same per-frame path,
-//! checked against the Python's own frames (fixtures/capture/clip_*.bgr) and its sound timing (onset.mov).
+//! tests). Raw frames are read as a card's are, and recordings played at their own rate through the same per-frame
+//! path. Both are checked against the Python's own frames (fixtures/capture/clip_*.bgr) and its sound timing
+//! (onset.mov).
 
 mod common;
 
@@ -48,7 +49,7 @@ fn source_plays_raw_frames_like_a_card() {
         assert!(max_diff(&centres(g, H, W), &centres(want, H, W)) <= 4);
     }
     assert_eq!(got[0], got[1]); // a repeat stays bit-identical through the conversion
-    // paced like a card: 6 frames at 240 fps take 5/240 s from the first
+    // paced like a card, so 6 frames at 240 fps take 5/240 s from the first
     let span = ticks[5].t_arrival - ticks[0].t_arrival;
     assert!((span - 5.0 / 240.0).abs() < 0.01, "{span}");
 }
@@ -101,14 +102,14 @@ fn capture_stops_saying_why_when_no_frame_can_be_read() {
 #[test]
 fn frames_keep_the_cards_numbers_when_the_queue_drops_some() {
     // A frame dropped from the queue (the Mac behind for a moment) leaves a gap in the numbers rather than shifting
-    // them: Game frame rate 30 fps counts by them, and a shift made its beat move, a hitch.
+    // them. Game frame rate 30 fps counts by them, and a shift made its beat move, a hitch.
     let frames = (30..50).map(|s| Some(to_nv12(&blocks(H, W, s), H, W))).collect();
     let mut src = CardSource::raw_frames(frames, W, H, "nv12", 240.0, CardOptions { queue_size: 1, ..Default::default() }).unwrap();
     let mut ticks = Vec::new();
     while let Some(ev) = src.next_event() {
         if let Event::Tick(t) = ev {
             ticks.push(t);
-            std::thread::sleep(Duration::from_millis(20)); // slower than the "card" (240 fps): the queue drops frames
+            std::thread::sleep(Duration::from_millis(20)); // slower than the 240 fps stand-in, so the queue drops frames
         }
     }
     let dropped = src.dropped();
@@ -119,7 +120,7 @@ fn frames_keep_the_cards_numbers_when_the_queue_drops_some() {
     assert_eq!(seqs, ticks.iter().map(|t| (t.t_source.unwrap() * 240.0).round() as u64).collect::<Vec<_>>());
 }
 
-/// Stands in for the Player: records what it's given, and when.
+/// Stands in for the Player, recording what it's given and when.
 #[derive(Default)]
 struct Out {
     rate: u32,
@@ -156,7 +157,7 @@ fn mean(bgr: &[u8]) -> f64 {
     bgr.iter().map(|&v| v as f64).sum::<f64>() / bgr.len() as f64
 }
 
-/// A recording's sound comes out with its picture: the tone that starts with the flash comes out within a frame of
+/// A recording's sound comes out with its picture. The tone that starts with the flash comes out within a frame of
 /// the flash's tick (test_a_recordings_sound_comes_out_with_its_picture, measured to the sample).
 #[test]
 fn a_recordings_sound_comes_out_with_its_picture() {
@@ -200,7 +201,7 @@ fn a_recordings_sound_comes_out_with_its_picture() {
 #[test]
 fn no_sound_wanted_or_none_there() {
     let Some(path) = common::fixture("onset.mov") else { return };
-    let mut src = CardSource::video_file(&path, CardOptions::default()).unwrap(); // audio None: the picture only
+    let mut src = CardSource::video_file(&path, CardOptions::default()).unwrap(); // audio None, so the picture only
     assert!(!src.can_delay_audio());
     assert_eq!(ticks_of(&mut src).len(), 120);
     assert!(src.read_sound().is_empty());
@@ -217,7 +218,7 @@ fn the_capture_log_reports_once_a_minute_only_when_something_happened() {
     let Some(path) = common::fixture("silent.mov").and(common::fixture("onset.mov")) else { return };
     let out = Arc::new(Mutex::new(Out { stats: Some(SoundStats { longest_wait_ms: 21, kept_ms: 31, ..Default::default() }), ..Default::default() }));
     let mut src = CardSource::video_file(&path, CardOptions { audio: Some(recorder(&out)), ..Default::default() }).unwrap();
-    // a second in: sound has been played, and the first report found nothing to say
+    // a second in, sound has been played, and the first report found nothing to say
     for _ in 0..60 {
         src.next_event();
     }
@@ -231,9 +232,9 @@ fn the_capture_log_reports_once_a_minute_only_when_something_happened() {
     assert!(src.messages().iter().any(|l| l.starts_with("[capture] sound this session: ran dry 2 times")));
 }
 
-/// The recording standing in, frame for frame against the Python: PyAV's decode read with capture.py raw_to_bgr in
-/// the file's own colours (within a level), and the Python stand-in's own frames (the same picture but where swscale
-/// resamples chroma at colour edges). Played at its own rate: 12 s.
+/// The recording standing in, frame for frame against the Python. It matches PyAV's decode read with capture.py
+/// raw_to_bgr in the file's own colours to within a level. It also matches the Python stand-in's own frames, the
+/// same picture except where swscale resamples chroma at colour edges. Played at its own rate, it takes 12 s.
 #[test]
 fn a_recording_stands_in_through_the_raw_path() {
     let Some(m) = common::manifest() else { return };
@@ -241,7 +242,7 @@ fn a_recording_stands_in_through_the_raw_path() {
     let refs: Vec<u64> = m["clip"]["frames"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap()).collect();
     let (w, h) = (m["clip"]["w"].as_u64().unwrap() as usize, m["clip"]["h"].as_u64().unwrap() as usize);
     let out = Arc::new(Mutex::new(Out::default()));
-    // (a deep queue, so the frames compared aren't dropped while the ones before are read back)
+    // a deep queue, so the frames compared aren't dropped while the ones before are read back
     let opts = CardOptions { audio: Some(recorder(&out)), queue_size: 16, ..Default::default() };
     let mut src = CardSource::video_file(&clip, opts).unwrap();
     assert_eq!((src.width(), src.height(), src.fps(), src.fmt(), src.raw()), (w, h, 60.0, "nv12", true));
@@ -251,13 +252,13 @@ fn a_recording_stands_in_through_the_raw_path() {
     while let Some(ev) = src.next_event() {
         let Event::Tick(t) = ev else { continue };
         let s = seq(&t);
-        assert!(last_seq.is_none_or(|l| s > l)); // (a gap only where the queue dropped one)
+        assert!(last_seq.is_none_or(|l| s > l)); // a gap only where the queue dropped one
         last_seq = Some(s);
         assert!((t.t_source.unwrap() - s as f64 / 60.0).abs() < 1e-6, "{:?}", t.t_source);
         first.get_or_insert(t.t_arrival);
         last = t.t_arrival;
         if refs.contains(&s) {
-            raw.push((s, t.frame.read_raw())); // (only these kept: the converter reuses the rest)
+            raw.push((s, t.frame.read_raw())); // only these are kept, as the converter reuses the rest
         }
         n += 1;
     }
@@ -281,7 +282,7 @@ fn a_recording_stands_in_through_the_raw_path() {
         assert!(worst <= 1, "frame {i}: {worst} levels from the Python");
         assert!(mean_s < 1.0, "frame {i}: {mean_s} on average from the Python stand-in");
     }
-    // the clip's sound: all of it, out with the picture from the first frame on
+    // all of the clip's sound, out with the picture from the first frame on
     let o = out.lock().unwrap();
     let total: usize = o.pushed.iter().map(|(_, p)| p.len()).sum();
     let secs = total as f64 / o.channels as f64 / o.rate as f64;

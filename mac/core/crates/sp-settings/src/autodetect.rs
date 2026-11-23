@@ -1,9 +1,9 @@
-//! Auto-detect (framegen/autodetect.py): suggests settings for this machine from a short test of the GPU, the display
+//! Auto-detect (framegen/autodetect.py) suggests settings for this machine from a short test of the GPU, the display
 //! and what's installed. The launcher's Settings page runs it ("Auto-detect") and reads one `[detect-result] {json}`
 //! line, [`detect`]'s result.
 //!
 //! The binary times RIFE (one new real frame plus one in-between frame at 1080p, at full and at half motion detail)
-//! and hands the times in as a [`Timing`]; [`recommend`] turns them and the display into settings. It's a plain
+//! and hands the times in as a [`Timing`]. [`recommend`] turns them and the display into settings. It's a plain
 //! function, so the tests can try it on any machine.
 
 use std::path::{Path, PathBuf};
@@ -21,20 +21,21 @@ pub const LAPTOP_SHARE: f64 = 0.80;
 /// Upscaler times per frame at 1440p on that card (scaled by the card's speed and the display's size).
 pub const FSR_MS: f64 = 0.12;
 pub const VSR_MS: [(i64, f64); 4] = [(1, 1.3), (2, 1.6), (3, 3.6), (4, 4.9)];
-/// The test's half-motion time on that card: the yardstick for the card's speed.
+/// The test's half-motion time on that card, the yardstick for the card's speed.
 pub const REF_HALF_MS: f64 = 6.8;
 pub const REF_PIXELS: i64 = 2560 * 1440;
 /// TensorRT's time at full motion detail vs PyTorch's, when its engine isn't built yet to time.
 pub const TRT_SPEEDUP: f64 = 0.88;
-/// On a Mac each frame shown also goes GPU -> memory -> OpenGL and is swapped: about 3 ms on an M5 Max at 1080p,
-/// beyond the test's time (the Python pipeline's measurement; counted for any GPU named "Apple...").
+/// On a Mac each frame shown also goes from the GPU to memory to OpenGL and is swapped. The Python pipeline measured
+/// that at about 3 ms on an M5 Max at 1080p, beyond the test's time. It's counted for any GPU whose name starts with
+/// "Apple".
 pub const MAC_PRESENT_MS: f64 = 3.0;
 /// Frame rate and motion detail, best first. 90 fps at full detail beats 120 at half.
 pub const OPTIONS: [(i64, &str); 6] =
     [(120, "full"), (90, "full"), (120, "half"), (90, "half"), (60, "full"), (60, "half")];
 /// NVIDIA VFG's modes, most careful first.
 pub const VFG_QUALITIES: [&str; 3] = ["high", "medium", "low"];
-/// Next to the settings file: the last test's times on this GPU, which Auto motion detail goes by.
+/// The last test's times on this GPU, kept next to the settings file. Auto motion detail goes by them.
 pub const TIMING_FILE: &str = "card-timing.json";
 /// NVIDIA VFG's oldest driver.
 pub const VFG_MIN_DRIVER: (i128, i128) = (570, 65);
@@ -74,8 +75,8 @@ impl Timing {
         Timing { full: t(full_ms), half: t(half_ms) }
     }
 
-    /// --timing FULL,HALF (testing the launcher without loading the GPU): full with the engine Auto runs at full
-    /// detail ("trt" with TensorRT, else "torch"), half with "torch".
+    /// --timing FULL,HALF, for testing the launcher without loading the GPU. Full is timed with the engine Auto runs
+    /// at full detail ("trt" with TensorRT, else "torch"), and half with "torch".
     pub fn for_testing(full_ms: f64, half_ms: f64, trt: bool) -> Timing {
         Timing {
             full: MotionTime { ms: full_ms, engine: if trt { "trt" } else { "torch" }.into(), estimated: false },
@@ -184,21 +185,21 @@ fn is(current: &Map, key: &str, value: &str) -> bool {
     current.get(key).is_some_and(|v| v.py_eq(&Value::from(value)))
 }
 
-/// Settings for this machine: frame generation and picture settings only, the rest left as they are. NVIDIA VFG is
-/// suggested when it's set up and keeps up at least as high a frame rate as RIFE.
+/// Settings for this machine. Only frame generation and picture settings are suggested, and the rest are left as
+/// they are. NVIDIA VFG is suggested when it's set up and keeps up at least as high a frame rate as RIFE.
 pub fn recommend(current: &Map, timing: &Timing, display: Option<&Display>, opts: &Options) -> Recommendation {
     recommend_with(current, timing, display, opts, None)
 }
 
-/// recommend() with the cost of showing each frame given (ms per frame on top of the test's time): the Rust core's
-/// Metal window costs less than the Python's MAC_PRESENT_MS, as frames reach it without a CPU copy. None: the
-/// Python's rule (MAC_PRESENT_MS for a GPU named "Apple...", else nothing).
+/// recommend() with the cost of showing each frame given, in ms per frame on top of the test's time. The Rust core's
+/// Metal window costs less than the Python's MAC_PRESENT_MS, because frames reach it without a CPU copy. None keeps
+/// the Python's rule, MAC_PRESENT_MS for a GPU whose name starts with "Apple" and nothing otherwise.
 pub fn recommend_with(current: &Map, timing: &Timing, display: Option<&Display>, opts: &Options,
                       present_ms: Option<f64>) -> Recommendation {
     let share = if opts.gpu.to_lowercase().contains("laptop") { LAPTOP_SHARE } else { SHARE };
     let mac = opts.gpu.starts_with("Apple");
     let present_ms = present_ms.unwrap_or(if mac { MAC_PRESENT_MS } else { 0.0 });
-    let speed = timing.half.ms / REF_HALF_MS; // above 1 = slower than the card the numbers come from
+    let speed = timing.half.ms / REF_HALF_MS; // above 1 means slower than the card the numbers come from
     let pixels = display.map_or(REF_PIXELS, |d| d.width * d.height);
     let enlarge = pixels as f64 > (STREAM.0 * STREAM.1) as f64 * 1.05; // a 1080p display shows the stream as it is
     let fsr_ms = if enlarge { FSR_MS * speed * pixels as f64 / REF_PIXELS as f64 } else { 0.0 };
@@ -219,7 +220,7 @@ pub fn recommend_with(current: &Map, timing: &Timing, display: Option<&Display>,
     let mut reasons = Map::new();
     let mut notes = Vec::new();
 
-    // ---- model: NVIDIA VFG at the highest frame rate it keeps up with, then its most careful quality that fits
+    // ---- model. NVIDIA VFG at the highest frame rate it keeps up with, then its most careful quality that fits.
     let rife = spec("model").expect("model").default_value();
     let vfg_pick = opts.vfg.and_then(|vfg| {
         [120, 90, 60].into_iter().filter(|&h| h <= top).find_map(|h| {
@@ -283,7 +284,7 @@ pub fn recommend_with(current: &Map, timing: &Timing, display: Option<&Display>,
             .to_string()
     } else {
         let (cf, ch) = (cost("full"), cost("half"));
-        let need = if ch < cf { ch } else { cf }; // min(): the first of equals
+        let need = if ch < cf { ch } else { cf }; // the first of equals, as min() picks
         format!(
             "At {} each frame has {} ms, but your graphics card needs {} ms for an in-between frame. {} leaves it \
              enough time.",
@@ -295,7 +296,7 @@ pub fn recommend_with(current: &Map, timing: &Timing, display: Option<&Display>,
     };
     reasons.insert("hz", reason);
 
-    // ---- motion detail (Auto is half at 120 fps, full otherwise; half for this card's speed is saved as Half)
+    // ---- motion detail. Auto is half at 120 fps and full otherwise. Half for this card's speed is saved as Half.
     let auto_motion = if hz == 120 { "half" } else { "full" };
     settings.insert("motion", if motion == auto_motion { "auto" } else { motion });
     let reason = if motion == "half" && hz < 120 {
@@ -509,9 +510,9 @@ fn add_notes(cx: &Ctx, notes: &mut Vec<String>, settings: &Map, hz: i64, mac: bo
     debug_assert!(settings.iter().all(|(k, v)| { spec(k).is_some_and(|s| s.is_choice(v, &LookChoices::builtin())) }));
 }
 
-/// Auto motion detail for a w x h stream at hz: a quarter for 4K; half at 120 fps, or for a capture bigger than 1080p
-/// at 90; and half where the test's time at full detail (full_ms, at 1080p) doesn't fit a frame at hz on this GPU, by
-/// recommend()'s own rule. Else full.
+/// Auto motion detail for a w x h stream at hz. It's a quarter for 4K. It's half at 120 fps, for a capture bigger
+/// than 1080p at 90, and where the test's time at full detail (full_ms, at 1080p) doesn't fit a frame at hz on this
+/// GPU by recommend()'s own rule. Otherwise it's full.
 pub fn auto_scale(w: i64, h: i64, hz: i64, full_ms: Option<f64>, share: f64) -> f64 {
     let _ = w;
     if h > 1440 {
@@ -531,8 +532,8 @@ pub fn timing_path(settings_path: &Path) -> PathBuf {
     settings_path.with_file_name(TIMING_FILE)
 }
 
-/// Keeps the test's times for Auto motion detail. Best effort: a folder that can't be written to only means Auto goes
-/// by its plain rule.
+/// Keeps the test's times for Auto motion detail. This is best effort. A folder that can't be written to only means
+/// Auto goes by its plain rule.
 pub fn save_timing(settings_path: &Path, gpu: &str, timing: &Value) {
     let path = timing_path(settings_path);
     if let Some(dir) = path.parent() {
@@ -541,7 +542,7 @@ pub fn save_timing(settings_path: &Path, gpu: &str, timing: &Value) {
     let _ = std::fs::write(&path, json::dumps(&json::obj([("gpu", gpu.into()), ("timing", timing.clone())])));
 }
 
-/// The last test's time at full motion detail on this GPU, in ms; None if there's none, or it was another GPU's.
+/// The last test's time at full motion detail on this GPU, in ms. None if there's none or it was another GPU's.
 pub fn saved_full_ms(settings_path: &Path, gpu: &str) -> Option<f64> {
     let text = crate::py::read_text(&timing_path(settings_path)).ok()?;
     let saved = json::loads(&text).ok()?;
@@ -555,8 +556,8 @@ pub fn saved_full_ms(settings_path: &Path, gpu: &str) -> Option<f64> {
     }
 }
 
-/// Whether nvidia-smi's driver version (e.g. "566.36") is older than NVIDIA VFG's oldest. Unknown or in another
-/// form: false.
+/// Whether nvidia-smi's driver version (like "566.36") is older than NVIDIA VFG's oldest. False if it's unknown or
+/// in another form.
 pub fn vfg_driver_too_old(driver: Option<&str>) -> bool {
     let Some(d) = driver.filter(|d| !d.is_empty()) else { return false };
     let parts: Option<Vec<i128>> = d.split('.').take(2).map(crate::py::int_from_str).collect();
@@ -566,8 +567,9 @@ pub fn vfg_driver_too_old(driver: Option<&str>) -> bool {
     }
 }
 
-/// What Auto-detect says about setting up NVIDIA VFG, or "" for nothing: said when the card can run it (not_set_up)
-/// and it isn't set up. No speed or quality claims: NVIDIA's licence forbids publishing VFG's results.
+/// What Auto-detect says about setting up NVIDIA VFG, or "" for nothing. It's said when the card can run it
+/// (not_set_up) and it isn't set up. It makes no speed or quality claims, because NVIDIA's licence forbids publishing
+/// VFG's results.
 pub fn vfg_offer(not_set_up: bool, gpu: &str, driver: Option<&str>) -> String {
     if !not_set_up {
         return String::new();
@@ -609,12 +611,12 @@ pub struct Machine {
     pub trt: bool,
     /// Why RTX VSR can't be used, or None.
     pub vsr: Option<String>,
-    /// Why NVIDIA VFG isn't available or set up ("" if it is): vfg_unavailable(), or why it couldn't start.
+    /// Why NVIDIA VFG isn't available or set up, or "" if it is. That's vfg_unavailable(), or why it couldn't start.
     pub vfg_why: String,
 }
 
 impl Machine {
-    /// A Mac: no NVIDIA anything.
+    /// A Mac, so no NVIDIA anything.
     pub fn mac(gpu: &str, memory_gb: f64, display: Option<Display>) -> Machine {
         Machine {
             display,
@@ -636,13 +638,14 @@ fn engine_name(engine: &str, mac: bool) -> String {
         "trt" => "TensorRT".into(),
         "torch" => if mac { "PyTorch on Metal" } else { "PyTorch" }.into(),
         "dml" => "DirectML (Experimental)".into(),
-        "metal" => "Metal".into(), // (the Rust core's own; the Python never reports it)
+        "metal" => "Metal".into(), // the Rust core's own, which the Python never reports
         other => other.into(),
     }
 }
 
-/// The whole result the launcher reads after "[detect-result] ": recommend()'s, plus what was found ("found":
-/// label/value/detail rows), the times, how busy the GPU was and its name. vfg: NVIDIA VFG's times, if it was timed.
+/// The whole result the launcher reads after "[detect-result] ". That's recommend()'s, plus what was found ("found",
+/// rows of label, value and detail), the times, how busy the GPU was and its name. vfg is NVIDIA VFG's times, if it
+/// was timed.
 pub fn detect(current: &Map, machine: &Machine, timing: &Timing, vfg: Option<&VfgTiming>) -> Value {
     detect_with(current, machine, timing, vfg, None)
 }
@@ -764,9 +767,9 @@ pub fn detect_with(current: &Map, machine: &Machine, timing: &Timing, vfg: Optio
     Value::Dict(result)
 }
 
-/// After the test, as `python -m framegen.autodetect` finishes: keeps the times when they were measured and the GPU
-/// wasn't busy, and with `apply` saves the suggestions (not with `if_new` on a busy GPU: setup's suggestions would be
-/// too low). Returns the "[detect] ..." lines it would print.
+/// Runs after the test, as `python -m framegen.autodetect` finishes. It keeps the times when they were measured and
+/// the GPU wasn't busy. With `apply` it saves the suggestions, except with `if_new` on a busy GPU, where setup's
+/// suggestions would be too low. Returns the `[detect]` lines it would print.
 pub fn finish(
     settings: &mut Settings,
     settings_path: &Path,
@@ -836,7 +839,7 @@ mod mac {
     }
 
     pub fn display() -> Option<Display> {
-        // SAFETY: CoreGraphics calls on the main display; every copied object is released, nulls are checked.
+        // SAFETY: CoreGraphics calls on the main display. Every copied object is released and nulls are checked.
         unsafe {
             let id = CGMainDisplayID();
             let mode = CGDisplayCopyDisplayMode(id);
@@ -919,7 +922,7 @@ pub fn mac_memory_gb() -> f64 {
     }
 }
 
-/// The chip's name, as framegen/gpu.py name() gives it on a Mac ("Apple M5 Max"); "unknown" if it can't be told.
+/// The chip's name, as framegen/gpu.py name() gives it on a Mac ("Apple M5 Max"), or "unknown" if it can't be told.
 pub fn mac_gpu_name() -> String {
     #[cfg(target_os = "macos")]
     {

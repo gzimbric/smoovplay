@@ -1,6 +1,6 @@
-//! The sound ring (frametap.h "Sound ring"; framegen/chiaki_tap.py AudioTap): 16-bit PCM chunks timed by their
-//! arrival, for instant replay. A chiaki-ng from before this ring never writes it (its `features` lack
-//! FEATURE_AUDIO_TAP).
+//! The sound ring (frametap.h "Sound ring", framegen/chiaki_tap.py AudioTap). It holds 16-bit PCM chunks timed by
+//! their arrival, for instant replay. A chiaki-ng from before this ring never writes it, and its `features` lack
+//! FEATURE_AUDIO_TAP.
 
 use std::sync::atomic::Ordering;
 
@@ -9,7 +9,7 @@ use crate::layout::*;
 use crate::shm::{fence, Shm};
 use crate::Result;
 
-/// A chunk of sound: when its first sample arrived (seconds, perf_counter's timebase), and its samples.
+/// A chunk of sound, with its samples and when the first of them arrived (seconds, on perf_counter's timebase).
 #[derive(Clone, Debug, PartialEq)]
 pub struct SoundChunk {
     pub t: f64,
@@ -28,7 +28,7 @@ impl SoundChunk {
 
 pub struct AudioTap {
     shm: Shm,
-    /// The next chunk to read; None: from wherever the writer is now.
+    /// The next chunk to read. None starts from wherever the writer is now.
     pub next: Option<u64>,
 }
 
@@ -43,8 +43,8 @@ impl AudioTap {
         self.shm.u32(0) == AUDIO_MAGIC
     }
 
-    /// Forget the read position (a new stream): the next read starts at the writer's position, or at its first
-    /// chunk.
+    /// Forget the read position, for a new stream. The next read starts at the writer's position, or at its first
+    /// chunk with `from_start`.
     pub fn reset(&mut self, from_start: bool) {
         self.next = if from_start { Some(0) } else { None };
     }
@@ -63,7 +63,7 @@ impl AudioTap {
             Some(n) if n <= write_seq => n,
             _ => write_seq, // first read, or the writer started over
         };
-        next = next.max((write_seq + 1).saturating_sub(AUDIO_SLOTS as u64)); // a whole ring behind: what's left
+        next = next.max((write_seq + 1).saturating_sub(AUDIO_SLOTS as u64)); // a whole ring behind, take what's left
         let mut out = Vec::new();
         while next < write_seq {
             let seq = next;
@@ -91,7 +91,7 @@ impl AudioTap {
         out
     }
 
-    // Writer side, for tests and stand-in writers; chiaki-ng uses frametap.c.
+    // Writer side, for tests and stand-in writers. chiaki-ng uses frametap.c.
     pub fn begin(&self, rate: u32, channels: u32) {
         let m = &self.shm;
         m.xchg_u32(0, 0);
@@ -166,7 +166,7 @@ mod tests {
             a.push(&[0u8; 64], None);
         }
         assert_eq!(a.read_new().len(), AUDIO_SLOTS - 1);
-        a.begin(48000, 2); // the writer started over: the reader follows it
+        a.begin(48000, 2); // the writer started over, and the reader follows it
         a.push(&[5u8; 64], None);
         assert!(a.read_new().is_empty() && a.next == Some(1));
         a.end();

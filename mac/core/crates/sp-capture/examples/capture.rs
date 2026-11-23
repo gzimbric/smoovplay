@@ -1,4 +1,4 @@
-//! `python -m framegen.capture` for the Mac: the capture devices macOS has, and what one offers.
+//! `python -m framegen.capture` for the Mac. It lists the capture devices macOS has, and what one offers.
 //!
 //! ```text
 //! cargo run -p sp-capture --example capture -- --list [--json] [--raw]

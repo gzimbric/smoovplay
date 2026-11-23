@@ -37,7 +37,7 @@ fn tone(k: usize, n: usize) -> Vec<i16> {
     out
 }
 
-/// `seconds` of play: a frame shown at `hz`, a new game frame every third, 100 ms of sound every 0.1 s.
+/// Plays for `seconds`, with a frame shown at `hz`, a new game frame every third and 100 ms of sound every 0.1 s.
 fn feed(rec: &Recorder, seconds: f64, hz: usize, t0: f64, jitter: f64, seed: u64) {
     let mut rng = Rng::new(seed);
     rec.set_delay(40.0);
@@ -83,7 +83,7 @@ fn saves_what_was_shown_with_the_sound() {
     assert!(paths.len() == 1 && paths[0].parent() == Some(tmp.path()) && paths[0].extension().unwrap() == "mp4", "{paths:?}");
     let (v, a) = probe(&paths[0]);
     let (v, a) = (v.unwrap(), a.expect("no sound in the clip"));
-    // the last 3 s, from the keyframe before: 3 to 4 s, every frame shown
+    // the last 3 s from the keyframe before, so 3 to 4 s, with every frame shown
     assert!((3.0..=4.1).contains(&v.duration) && v.width == W as u64, "{v:?}");
     assert!((v.frames as f64 / v.duration - 90.0).abs() < 2.0, "{v:?}");
     assert!((a.duration - v.duration).abs() < 0.15, "sound {a:?} video {v:?}"); // the sound covers the clip
@@ -107,7 +107,7 @@ fn keeps_only_the_length_asked_for() {
     let limit = rec.length() as f64 + sp_replay::KEEP_EXTRA_S + sp_replay::KEY_EVERY_S + 0.1;
     assert!(held.all().iter().all(|(secs, _)| *secs <= limit), "{held:?}");
     assert!(held.after.0 >= rec.length() as f64, "{held:?}");
-    rec.set_length(0); // off: everything goes
+    rec.set_length(0); // off, so everything goes
     assert!(rec.flush(5.0) && held_nothing(&rec), "{:?}", rec.held());
     rec.close(0.0);
 }
@@ -182,7 +182,7 @@ fn labels_name_the_frame_rates() {
     rec.close(0.0);
 }
 
-/// Esc: the clip is finished first, but a before & after video carries on in its own process, so the video window
+/// On Esc the clip is finished first, but a before & after video carries on in its own process, so the video window
 /// never waits on it.
 #[test]
 fn stopping_waits_for_the_clip_but_not_the_before_and_after() {
@@ -276,7 +276,7 @@ fn nothing_yet() {
     r.close(0.0);
 }
 
-// ---- the sound's timing: arrival times jitter, the sound plays on; gaps and running ahead are put right
+// ---- the sound's timing. Arrival times jitter and the sound plays on, but gaps and running ahead are put right.
 fn place(c: &mut SoundClock, t0: &mut Option<f64>, t: f64, delay: f64) {
     c.place(t, 480, SR, delay, t0);
 }
@@ -292,7 +292,7 @@ fn jitter_doesnt_move_the_sound() {
     }
     // from the clock's zero, 5 s before the first
     let written = (c.a_pts - sp_replay::OFFSET * SR as i64 / sp_replay::TB) as f64 / SR as f64;
-    assert!((written - 8.0).abs() < 0.03, "{written}"); // exactly the sound given: nothing put in or skipped
+    assert!((written - 8.0).abs() < 0.03, "{written}"); // exactly the sound given, with nothing put in or skipped
 }
 
 #[test]
@@ -309,7 +309,7 @@ fn a_gap_becomes_silence_and_running_ahead_is_skipped() {
     }
     let a = c.a_next.unwrap();
     assert!((a - (t_gap + 0.5 + 0.2)).abs() < 0.02, "{a}"); // silence put in, then the sound on time
-    // SmoovPlay's delay drops by 100 ms and stays there: after a second the sound skips 100 ms, back in step
+    // SmoovPlay's delay drops by 100 ms and stays there. After a second the sound skips 100 ms to get back in step.
     for k in 0..150 {
         place(&mut c, &mut t0, t_gap + 0.5 + k as f64 * 0.01, 0.1);
     }
@@ -317,7 +317,7 @@ fn a_gap_becomes_silence_and_running_ahead_is_skipped() {
     assert!((a - (t_gap + 0.5 + 1.5 + 0.1)).abs() < 0.02, "{a}");
 }
 
-// ---- the pipeline's side: it reaches the recorder through sp_sched::Replay
+// ---- the pipeline's side, which reaches the recorder through sp_sched::Replay
 #[test]
 fn the_pipeline_feeds_it_through_the_replay_trait() {
     let tmp = TempDir::new("trait");
@@ -337,7 +337,7 @@ fn the_pipeline_feeds_it_through_the_replay_trait() {
         }
     }
     assert!(rec.flush(10.0));
-    // At 120 Hz every other frame is kept: 60 fps clips
+    // At 120 Hz every other frame is kept, for 60 fps clips
     let paths = rec.save(Some(Kind::Smoovplay), None, true);
     let v = probe(&paths[0]).0.unwrap();
     assert!((v.frames as f64 / v.duration - 60.0).abs() < 2.0, "{v:?}\n{}", said.log());

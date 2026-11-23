@@ -1,6 +1,6 @@
-//! Opening the source run.py's flags ask for, and the handles the session needs besides the stream itself: the
-//! pipeline owns the source while it plays, so chiaki-ng's reader is shared (a mutex taken a tick at a time, always on
-//! the pipeline's thread) with the delay test's presses, the frame log and the restarts' hold().
+//! Opening the source run.py's flags ask for, and the handles the session needs besides the stream itself. The
+//! pipeline owns the source while it plays, so chiaki-ng's reader is shared with the delay test's presses, the frame
+//! log and the restarts' hold(). Its mutex is taken a tick at a time, always on the pipeline's thread.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -114,8 +114,8 @@ impl Remote for ChiakiRemote {
     }
 }
 
-/// A capture card's side for the pipeline: Sound in sync holds its sound back; no presses (the delay test is
-/// Remote Play's).
+/// A capture card's side for the pipeline. Sound in sync holds its sound back. It has no presses, because the delay
+/// test is Remote Play's.
 pub struct CardRemote(pub Arc<Mutex<sp_capture::CardSource>>);
 
 impl Press for CardRemote {
@@ -147,13 +147,13 @@ pub struct Opened {
     pub h: usize,
     /// "chiaki" (also an app's compressed frames on the tap), "tap" (decoded frames) or "file".
     pub kind: String,
-    /// chiaki-ng's reader (or an app's compressed frames): log_tick, set_hdr, the delay test, the stream check.
+    /// chiaki-ng's reader (or an app's compressed frames), for log_tick, set_hdr, the delay test and the stream check.
     pub chiaki: Option<Arc<Mutex<ChiakiSource>>>,
     /// Stop decoding while a restart rebuilds the pipeline (on), and start from a fresh frame (off).
     pub hold: Option<Box<dyn FnMut(bool) + Send>>,
     /// HDR10 from the PS5 (chiaki-ng's H.265 HDR codec).
     pub hdr_stream: bool,
-    /// The game's sound since the last call, for instant replay (run.py: src.read_sound).
+    /// The game's sound since the last call, for instant replay (run.py's src.read_sound).
     pub sound: Option<Box<dyn FnMut() -> Vec<Sound> + Send>>,
     /// The other way, for the pipeline: chiaki-ng's presses and sound delay, or the card's sound delay.
     pub remote: Option<Box<dyn Remote + Send>>,
@@ -198,8 +198,8 @@ fn tap(src: TapSource) -> Opened {
     }
 }
 
-/// run.py frame_log(): played from the launcher (--results), a per-frame log of the stream next to the session's
-/// own (frames-<the session's time>.csv); the last 10 are kept.
+/// run.py frame_log(). When played from the launcher (--results), a per-frame log of the stream goes next to the
+/// session's own, as frames-<the session's time>.csv. The last 10 are kept.
 pub fn frame_log(results: Option<&str>) -> Option<PathBuf> {
     const KEPT: usize = 10;
     let r = PathBuf::from(results?);
@@ -225,7 +225,7 @@ pub fn frame_log(results: Option<&str>) -> Option<PathBuf> {
     Some(path)
 }
 
-/// Opens what run.py's flags ask for. Err: (the message, where it goes: true for stderr, and the exit code).
+/// Opens what run.py's flags ask for. Err holds the message and the exit code.
 pub fn open(a: &Args, kind: &str, test: &Option<SharedTestMode>) -> Result<Opened, (String, i32)> {
     match kind {
         "tap" => {
@@ -287,7 +287,7 @@ pub fn open(a: &Args, kind: &str, test: &Option<SharedTestMode>) -> Result<Opene
                     let (x, y) = s.split_once('x').unwrap_or((s, ""));
                     match (x.trim().parse::<u32>(), y.trim().parse::<u32>()) {
                         (Ok(x), Ok(y)) => (x, y),
-                        _ => crate::args::error(&format!("--capture-size {s}: give WIDTHxHEIGHT, e.g. 1920x1080")),
+                        _ => crate::args::error(&format!("--capture-size {s}: give WIDTHxHEIGHT, like 1920x1080")),
                     }
                 }
                 None => {

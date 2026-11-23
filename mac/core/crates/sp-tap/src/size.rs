@@ -1,5 +1,5 @@
-//! New frame or repeat from compressed size alone (framegen/chiaki_tap.py SizeRepeatDetector, line for line). Not
-//! the pipeline's call, which is the picture's; kept for the stream check, test mode and the frame log.
+//! New frame or repeat from compressed size alone (framegen/chiaki_tap.py SizeRepeatDetector, line for line). The
+//! pipeline decides from the picture, not from this. It's kept for the stream check, test mode and the frame log.
 
 use std::collections::VecDeque;
 
@@ -18,7 +18,7 @@ pub fn percentile(values: impl IntoIterator<Item = u64>, q: f64) -> f64 {
 }
 
 /// A frame is new if it's at least `ratio` of a typical recent new frame (the 75th percentile of the last 16
-/// non-keyframe sizes). Keyframes (and frames far bigger than anything recent) get the opposite of the frame before
+/// non-keyframe sizes). Keyframes, and frames far bigger than anything recent, get the opposite of the frame before
 /// if recent frames alternate (a 30 fps game), else None. See the Python docstring for the reasoning.
 #[derive(Clone, Debug)]
 pub struct SizeRepeatDetector {
@@ -27,7 +27,7 @@ pub struct SizeRepeatDetector {
     recent: VecDeque<(u64, bool)>,
     sizes: VecDeque<u64>,
     decisions: VecDeque<bool>,
-    /// The last update's typical new frame size (None: keyframe or warming up).
+    /// The last update's typical new frame size, or None for a keyframe or while warming up.
     pub r#ref: Option<f64>,
     /// The last update was treated as a keyframe for its size.
     pub big: bool,
@@ -40,7 +40,7 @@ impl Default for SizeRepeatDetector {
 }
 
 impl SizeRepeatDetector {
-    /// This many "big" frames among the last 2 * BIG_RUN aren't refresh frames but a busier scene.
+    /// When this many of the last 2 * BIG_RUN frames are big, they aren't refresh frames but a busier scene.
     pub const BIG_RUN: usize = 6;
 
     pub fn new(ratio: f64, window: usize) -> Self {

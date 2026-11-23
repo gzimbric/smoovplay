@@ -7,22 +7,22 @@ on the CPU), as three streams of Annex-B access units:
 
   h264.annexb     H.264 (libx264), tagged BT.709 limited range (as an encoder that writes its colours does)
   hevc.annexb     H.265 8-bit (libx265), untagged (what the fake PS5 sends)
-  hevc10.annexb   H.265 Main10 HDR10 (libx265 10-bit; PQ, BT.2020), what a PS5 in HDR mode sends
+  hevc10.annexb   H.265 Main10 HDR10 (libx265 10-bit, PQ, BT.2020), what a PS5 in HDR mode sends
 
-Each file: per access unit, a little-endian u32 length and the bytes. Then the references, decoded by FFmpeg in
+Each file holds, per access unit, a little-endian u32 length and the bytes. Then the references, decoded by FFmpeg in
 software from the same packets, for a few frames (REF):
 
   <stream>_<i>.bgr      PyAV's to_ndarray("bgr24") (what framegen/chiaki_tap.py's VideoToolbox path hands on)
   hevc10_<i>.sdr8.bgr   framegen.hdr.StreamConverter("sdr8") (its 3D LUT, as the Python pipeline runs it)
-  hevc10_<i>.exact.bgr  framegen.hdr.convert_yuv(..., "sdr8"): the same maths per pixel, no LUT
-  hevc10_<i>.pq16.f16   StreamConverter("pq16"): HxWx3 float16 BGR, PQ BT.2020
+  hevc10_<i>.exact.bgr  framegen.hdr.convert_yuv(..., "sdr8"), the same maths per pixel with no LUT
+  hevc10_<i>.pq16.f16   StreamConverter("pq16"), HxWx3 float16 BGR in PQ BT.2020
 
 and manifest.json describing them. For the file sources:
 
   clip_30.bgr     frame 30 of the clip itself, PyAV to_ndarray("bgr24") (FileSource's colours)
   sim_ticks.json  framegen.io.Ps5SimSource's (content, truth_new) for the first 120 ticks with hitch 0.3, seed 0
 
---sources-only remakes just those two.
+--sources-only remakes only those two.
 """
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def encode(codec: str, frames: int, hdr: bool, tag709: bool) -> list[bytes]:
     vs = src.streams.video[0]
     w, h = vs.codec_context.width, vs.codec_context.height
     enc = fake.encoder(codec, w, h, 15.0, sw=True, hdr=hdr)
-    if tag709:  # (set before open() in encoder(); reopened here with the tags)
+    if tag709:  # encoder() sets these before open(), so it's reopened here with the tags
         enc = av.CodecContext.create(enc.name, "w")
         enc.width, enc.height, enc.pix_fmt = w, h, "yuv420p"
         from fractions import Fraction

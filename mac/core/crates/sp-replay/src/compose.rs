@@ -1,17 +1,17 @@
-//! The before & after video (replay.py compose and `python -m framegen.replay compose`): the game's own frames
-//! (each held until the next) and SmoovPlay's (every frame shown), at SmoovPlay's times, split down the middle or
-//! side by side, with labels; the sound copied in.
+//! The before & after video (replay.py compose and `python -m framegen.replay compose`). It shows the game's own
+//! frames, each held until the next, beside SmoovPlay's, which are every frame shown, at SmoovPlay's times. The two
+//! are split down the middle or side by side, with labels, and the sound is copied in.
 //!
-//! On a Mac: the tracks (MP4s the recorder writes, each placed on the replay's timeline) are decoded by VideoToolbox
-//! (sp-media's VtDecoder) into NV12 pixel buffers; a Metal kernel composes each picture straight into a buffer from
-//! the encoder's pool; a VTCompressionSession that isn't real time encodes it (so the live replay's sessions come
-//! first on the media engine), and the MP4 is written as packets come, its moov at the front.
+//! On a Mac, VideoToolbox (sp-media's VtDecoder) decodes the tracks into NV12 pixel buffers. The tracks are MP4s the
+//! recorder writes, each placed on the replay's timeline. A Metal kernel composes each picture straight into a
+//! buffer from the encoder's pool. A VTCompressionSession that isn't real time encodes it, so the live replay's
+//! sessions come first on the media engine. The MP4 is written as packets come, with its moov at the front.
 //!
-//! [`compose_main`] is the subcommand (`smoovplay replay-compose ...`, or `sp-replay-compose ...`) with the Python
+//! [`compose_main`] is the subcommand (`smoovplay replay-compose ...` or `sp-replay-compose ...`) with the Python
 //! CLI's arguments: --after --before [--sound] --out [--layout split|side] [--labels BEFORE AFTER] [--encoder]
-//! [--cleanup FOLDER] [--mark FOLDER]. It runs at low priority (the recorder starts it at nice 10; it asks for the
-//! utility QoS too) and keeps `FOLDER/<pid>.txt` (the video's path) while it works; if it fails, the file stays, with
-//! why.
+//! [--cleanup FOLDER] [--mark FOLDER]. It runs at low priority. The recorder starts it at nice 10, and it asks for
+//! the utility QoS too. It keeps `FOLDER/<pid>.txt`, holding the video's path, while it works. If it fails, the file
+//! stays and says why.
 
 use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
@@ -45,7 +45,7 @@ pub struct ComposeArgs {
     pub layout: Layout,
     pub labels: (String, String),
     pub encoder: Option<String>,
-    /// Deleted (the tracks) when done.
+    /// The tracks' folder, deleted when done.
     pub cleanup: Option<PathBuf>,
     /// `FOLDER/<process id>.txt` holds the video's path while it's made, for the launcher.
     pub mark: Option<PathBuf>,
@@ -119,10 +119,10 @@ fn part_path(out: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// The subcommand: makes the video, keeping the launcher's marker meanwhile. Returns the exit status.
+/// The subcommand. It makes the video and keeps the launcher's marker meanwhile. Returns the exit status.
 pub fn compose_main(args: &[String]) -> i32 {
     unsafe {
-        // Below the game: the utility QoS (CPU, GPU and disk), on top of the nice 10 the recorder starts it at
+        // The utility QoS (CPU, GPU and disk) keeps it below the game, on top of the nice 10 the recorder starts it at
         libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0);
     }
     let a = match ComposeArgs::parse(args) {
@@ -177,7 +177,7 @@ pub fn compose_main(args: &[String]) -> i32 {
     }
 }
 
-/// A video track's decoder: AVCC samples in, NV12 pictures out.
+/// A video track's decoder. AVCC samples go in and NV12 pictures come out.
 struct Dec {
     vt: VtDecoder,
     len_size: usize,
@@ -213,8 +213,8 @@ fn label_texture(l: &Label) -> Result<Retained<Texture>> {
     }
 }
 
-/// A before & after video of `after` (every frame shown) and `before` (the game's own frames), at after's times,
-/// `sound` copied in; written to `out` (through out.part). Returns its length in seconds.
+/// Makes a before & after video of `after` (every frame shown) and `before` (the game's own frames) at after's
+/// times, with `sound` copied in. It's written to out.part and then moved to `out`. Returns its length in seconds.
 pub fn compose(
     after: &Path,
     before: &Path,
@@ -257,7 +257,7 @@ pub fn compose(
     }
 }
 
-/// A video track decoded on a thread of its own, a few pictures ahead: (time on the 90 kHz clock, picture).
+/// A video track decoded on a thread of its own, a few pictures ahead, as (time on the 90 kHz clock, picture).
 fn decoding(mut file: Mp4File, track: ReadTrack) -> Result<Receiver<Result<(i64, Decoded)>>> {
     let mut dec = Dec::new(&track)?;
     let (tx, rx) = sync_channel(4);
@@ -273,7 +273,7 @@ fn decoding(mut file: Mp4File, track: ReadTrack) -> Result<Receiver<Result<(i64,
                 }
             };
             if sent.is_err() {
-                return; // (the compose stopped)
+                return; // the compose stopped
             }
         }
     })?;
@@ -295,7 +295,7 @@ fn run(
     // Both tracks decode ahead on threads of their own while pictures are composed and encoded here
     let ra = decoding(fa, va.clone())?;
     let rb = decoding(fb, vb.clone())?;
-    // The game's frames, each held until the next: (time, picture)
+    // The game's frames as (time, picture), each held until the next
     let next_b = || -> Result<Option<(i64, Decoded)>> { rb.recv().ok().transpose() };
     let mut cur_b: Option<(i64, Decoded)> = None;
     let mut nxt_b = next_b()?;
@@ -307,7 +307,7 @@ fn run(
         params: ComposeParams,
         lab: [Retained<Texture>; 2],
         base: i64,
-        audio: Vec<(i64, usize)>, // (time from base, 90 kHz; sample index) still to write
+        audio: Vec<(i64, usize)>, // (time from base at 90 kHz, sample index) still to write
         a_next: usize,
         format: Option<Format>,
         written: i64,
@@ -315,10 +315,10 @@ fn run(
     let mut o: Option<Out> = None;
     let mut last = 0i64;
     let mut frames = 0usize;
-    let mut prof = [0f64; 5]; // waiting for after, before; composing; encoding; finishing (SP_REPLAY_PROFILE)
+    let mut prof = [0f64; 5]; // waiting for after and for before, composing, encoding, finishing (SP_REPLAY_PROFILE)
     let gpu = Gpu::shared();
 
-    // Packets that have come out: video in, then the sound up to the last of them
+    // Writes the packets that have come out, video first and then the sound up to the last of them
     fn drain(o: &mut Out, sin: &mut Option<&mut (Mp4File, ReadTrack)>, upto: Option<i64>) -> Result<()> {
         while let Ok(r) = o.rx.try_recv() {
             match r {

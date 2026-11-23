@@ -1,4 +1,5 @@
-//! POSIX shared memory, as frametap.c and framegen/chiaki_tap.py's `_shm_map` make it: either side may come first.
+//! POSIX shared memory, made as frametap.c and framegen/chiaki_tap.py's `_shm_map` make it. Either side may come
+//! first.
 
 use std::ffi::CString;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -6,9 +7,9 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use crate::layout::{AUDIO_SUFFIX, SHM_NAME_MAX};
 use crate::{Error, Result};
 
-/// A tap's name as a POSIX shared-memory name: what follows the last backslash, after a "/" (`Local\chiaki-frametap`
-/// is `/chiaki-frametap`; "/name" and "name" are "/name" too). Err if nothing is left, it has a "/" in it, or it's
-/// longer than SHM_NAME_MAX (31 characters with the "/").
+/// A tap's name as a POSIX shared-memory name, which is "/" and whatever follows the last backslash.
+/// `Local\chiaki-frametap` is `/chiaki-frametap`, and "/name" and "name" are "/name" too. Err if nothing is left, it
+/// has a "/" in it, or it's longer than SHM_NAME_MAX (31 characters with the "/").
 pub fn posix_name(name: &str) -> Result<String> {
     let base = name.rsplit('\\').next().unwrap_or("").trim_start_matches('/');
     if base.is_empty() || base.contains('/') {
@@ -42,9 +43,9 @@ pub fn check_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Remove the tap `name` and its sound ring (memory already mapped stays usable until it's unmapped); for tests and
-/// clean-up. Neither side does this in normal use: a reader that did would leave chiaki-ng writing into memory nobody
-/// else can open.
+/// Remove the tap `name` and its sound ring, for tests and clean-up. Memory already mapped stays usable until it's
+/// unmapped. Neither side does this in normal use, because a reader that did would leave chiaki-ng writing into
+/// memory nobody else can open.
 pub fn unlink(name: &str) {
     for n in [name.to_string(), format!("{name}{AUDIO_SUFFIX}")] {
         if let Ok(p) = posix_name(&n) {
@@ -63,13 +64,14 @@ pub struct Shm {
     len: usize,
 }
 
-// The mapping is plain memory another process writes to as well; every access goes through volatile or atomic
+// The mapping is plain memory another process writes to as well. Every access goes through volatile or atomic
 // operations, so sharing it between threads is as safe as sharing it between processes.
 unsafe impl Send for Shm {}
 unsafe impl Sync for Shm {}
 
 impl Shm {
-    /// `size` bytes of the shared memory `name` (a tap name: [`posix_name`] applies), created if it isn't there.
+    /// `size` bytes of the shared memory `name`, created if it isn't there. `name` is a tap name, so [`posix_name`]
+    /// applies.
     /// macOS sets a shared-memory object's size only once, while it's still empty, so the second side to try gets
     /// EINVAL and finds it already sized.
     pub fn open(name: &str, size: usize) -> Result<Shm> {
@@ -91,12 +93,12 @@ impl Shm {
             if st.st_size == 0 && libc::ftruncate(fd, size as libc::off_t) != 0 {
                 let e = std::io::Error::last_os_error();
                 if e.raw_os_error() != Some(libc::EINVAL) {
-                    // EINVAL: the other side sized it first
+                    // EINVAL means the other side sized it first
                     return close(e.into());
                 }
             }
             // When both sides size it at once, the one that gets EINVAL can still see 0 bytes for a moment, until
-            // the other's ftruncate shows (about 1 in 600 simultaneous opens here): give that up to 200 ms.
+            // the other's ftruncate shows. It happens in about 1 in 600 simultaneous opens here, so wait up to 200 ms.
             let t_end = crate::clock::now() + 0.2;
             loop {
                 if libc::fstat(fd, &mut st) != 0 {
@@ -108,7 +110,7 @@ impl Shm {
                 std::thread::sleep(std::time::Duration::from_micros(200));
             }
             if (st.st_size as u64) < size as u64 {
-                // (macOS rounds the size up to whole pages)
+                // macOS rounds the size up to whole pages
                 return close(Error::Io(std::io::Error::other(format!(
                     "the shared memory {path} is {} bytes, too small for the frame tap ({size}): something else made \
                      it. Remove it (sp_tap::unlink) or use another name",
@@ -167,7 +169,7 @@ impl Shm {
         assert!(off.is_multiple_of(8));
         unsafe { AtomicU64::from_ptr(self.at(off, 8) as *mut u64) }
     }
-    /// frametap.c's XCHG: a full-barrier store.
+    /// frametap.c's XCHG, a full-barrier store.
     pub fn xchg_u32(&self, off: usize, v: u32) -> u32 {
         self.atomic_u32(off).swap(v, Ordering::SeqCst)
     }
@@ -195,7 +197,7 @@ impl Drop for Shm {
 }
 
 /// A full barrier where frametap.c has one (`__atomic_thread_fence(__ATOMIC_SEQ_CST)`) and Python calls
-/// OSMemoryBarrier: Apple's chips may show another core one core's stores out of order.
+/// OSMemoryBarrier. Apple's chips may show one core's stores to another core out of order.
 #[inline]
 pub fn fence() {
     std::sync::atomic::fence(Ordering::SeqCst);

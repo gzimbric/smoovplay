@@ -1,7 +1,7 @@
-//! What instant replay costs at 1080p: the test clip's frames as the pipeline has them (GPU frames from sp-media's
-//! decoder), shown in real time at --hz (90) for --seconds (65) with a --length (60) s replay, the game's frames at
-//! 30 fps and 48 kHz stereo sound alongside. Prints the pipeline thread's time per frame, the GPU's, the encoder's
-//! latency, frames dropped, and the memory held per minute (against the settings' hint).
+//! Measures what instant replay costs at 1080p. The test clip's frames come as the pipeline has them, as GPU frames
+//! from sp-media's decoder. They're shown in real time at --hz (90) for --seconds (65) with a --length (60) s replay,
+//! with the game's frames at 30 fps and 48 kHz stereo sound alongside. It prints the pipeline thread's time per frame,
+//! the GPU's, the encoder's latency, frames dropped, and the memory held per minute against the settings' hint.
 //!
 //!     cargo run --release -p sp-replay --example replay_bench -- [--hz 90] [--seconds 65] [--length 60] [--clip FILE]
 

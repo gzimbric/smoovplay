@@ -1,11 +1,13 @@
-//! GPU time of the window's drawing, without a window: FSR 1 (and bilinear) from 1920x1080 to a 6016x3384 target
-//! (this Mac's main display), and looks on top of it (the heaviest built-in ones, and one with every node type).
+//! Measures the GPU time of the window's drawing, without a window. It runs FSR 1 (and bilinear) from 1920x1080 to a
+//! 6016x3384 target, the size of this Mac's main display, then looks on top of it. The looks are the heaviest
+//! built-in ones and one with every node type.
 //!
 //!     cargo run --release -p sp-present --example gpu_time [-- 6016x3384 [frames]]
 //!
-//! Each case draws `frames` frames (default 240), one command buffer each, paced at 120 fps as the window draws
-//! them, and reports GPUEndTime - GPUStartTime per frame (each frame alone on the GPU; frames committed back to back
-//! queue behind each other and their start/end times overlap), and the throughput of the same frames back to back.
+//! Each case draws `frames` frames (default 240) with one command buffer each, paced at 120 fps as the window draws
+//! them. It reports GPUEndTime - GPUStartTime per frame, with each frame alone on the GPU, because frames committed
+//! back to back queue behind each other and their start and end times overlap. It also reports the throughput of
+//! the same frames back to back.
 
 use std::sync::{Arc, Mutex};
 use std::ptr::NonNull;
@@ -86,7 +88,7 @@ fn main() {
             }
         }
         last.unwrap().waitUntilCompleted();
-        // throughput: the same frames back to back
+        // throughput, with the same frames back to back
         let t0 = sp_core::clock::now();
         let mut lastb = None;
         for k in 0..frames {

@@ -1,6 +1,6 @@
 //! Test mode's report file (run.py write_results): a header, then each tested session's engine line and
-//! Stats::results(). The launcher shows it after a session and adds it to Copy diagnostics. Written whole each time,
-//! via a temporary file, so it's never seen half-written.
+//! Stats::results(). The launcher shows it after a session and adds it to Copy diagnostics. It is written whole each
+//! time through a temporary file, so it's never seen half-written.
 
 use std::path::Path;
 
@@ -13,13 +13,13 @@ they stay on this PC: Copy diagnostics leaves them out.";
 /// What a session ran with (run.py's session config).
 #[derive(Clone, Debug, PartialEq)]
 pub struct SessionInfo {
-    /// "metal", "trt", "torch", "dml"...
+    /// For example "metal", "trt", "torch" or "dml".
     pub engine: String,
     /// RIFE model ("4.22.lite"), or "vfg".
     pub model: String,
     /// Motion detail: 1.0 Full, 0.5 Half, 0.25 Quarter.
     pub motion: f64,
-    /// NVIDIA VFG's quality's display name (model "vfg" only).
+    /// The display name of NVIDIA VFG's quality (model "vfg" only).
     pub vfg_quality: String,
 }
 
@@ -47,7 +47,7 @@ fn g(x: f64) -> String {
     s.strip_suffix(".0").map(str::to_string).unwrap_or(s)
 }
 
-/// Python's str(float): 1.0, 0.5.
+/// Python's str(float), as in 1.0 or 0.5.
 fn py_str(x: f64) -> String {
     if x.fract() == 0.0 && x.abs() < 1e16 { format!("{x:.1}") } else { format!("{x}") }
 }
@@ -110,7 +110,7 @@ pub fn results_lines(header: &ReportHeader, sessions: &[(SessionInfo, &Stats)]) 
     Some(lines)
 }
 
-/// Writes the report to `path` (through path.tmp, then renamed). False when nothing was tested or it couldn't be
+/// Writes the report to path.tmp and renames it to `path`. Returns false when nothing was tested or it couldn't be
 /// written.
 pub fn write_results(path: &Path, header: &ReportHeader, sessions: &[(SessionInfo, &Stats)]) -> bool {
     let Some(lines) = results_lines(header, sessions) else { return false };

@@ -7,7 +7,7 @@ pub fn dict(pairs: &[(&CFString, &CFType)]) -> CFRetained<CFDictionary> {
     let keys: Vec<&CFString> = pairs.iter().map(|p| p.0).collect();
     let values: Vec<&CFType> = pairs.iter().map(|p| p.1).collect();
     let d: CFRetained<CFDictionary<CFString, CFType>> = CFDictionary::from_slices(&keys, &values);
-    // (the same object, untyped)
+    // the same object, untyped
     unsafe { CFRetained::cast_unchecked(d) }
 }
 

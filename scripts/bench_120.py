@@ -69,7 +69,7 @@ def main() -> int:
     with av.open(a.videos[0]) as c:
         w, h = c.streams.video[0].codec_context.width, c.streams.video[0].codec_context.height
     dev = gpu.device()
-    pin = dev == "cuda"  # (pinned memory is CUDA's; on a Mac the memory is shared anyway)
+    pin = dev == "cuda"  # pinned memory is CUDA's, and on a Mac the memory is shared anyway
     pinned = torch.empty((h, w, 3), dtype=torch.uint8, pin_memory=pin)
     out_pinned = torch.empty((h, w, 3), dtype=torch.uint8, pin_memory=pin)
     print(f"{gpu.name()}  {w}x{h}  RIFE {a.model}")
@@ -80,7 +80,7 @@ def main() -> int:
 
         def load(img, slot):
             np.copyto(pinned.numpy(), img)
-            it.load(pinned)  # asynchronous on CUDA: wait for it before the pinned buffer is reused
+            it.load(pinned)  # asynchronous on CUDA, so wait for it before the pinned buffer is reused
             if pin:
                 torch.cuda.current_stream().synchronize()
             it.prepare(slot)

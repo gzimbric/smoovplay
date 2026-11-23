@@ -27,7 +27,7 @@ before it's shown, with what it knows about it:
 ## Two kinds of frames
 
 - **Compressed** (H.264 or H.265, layout version 1): what a streaming client receives, before decoding. SmoovPlay
-  decodes it on the graphics card (NVDEC; VideoToolbox on a Mac). This is what chiaki-ng sends. A decoded repeat is never an exact copy,
+  decodes it on the graphics card (NVDEC, or VideoToolbox on a Mac). This is what chiaki-ng sends. A decoded repeat is never an exact copy,
   but changes far less than a new frame, so SmoovPlay tells repeats by comparing the pictures (it learns the line
   between the two from the last few frames) without being told.
 - **Decoded** (NV12 or BGRA, layout version 2): finished pictures, for an app that only has those. SmoovPlay
@@ -62,22 +62,27 @@ chiaki-ng's tap is named `Local\chiaki-frametap`. Create the mapping with
 `CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, 67112960, name)` and map all of it. All
 numbers are little-endian. Times are `QueryPerformanceCounter` values; the header carries their frequency.
 
-**On macOS** the layout, sizes and protocol are the same, in POSIX shared memory:
+On macOS the layout, sizes and protocol are the same, but the memory is POSIX shared memory.
 
-- The name is `/` plus what follows the Windows name's last backslash: `Local\smoovplay-tap` is `/smoovplay-tap`,
-  chiaki-ng's is `/chiaki-frametap`, and the sound ring adds `-audio` as on Windows. macOS allows 31 characters with
-  the `/`, so a name can have at most 24 after any `Local\` (SmoovPlay refuses a longer one).
-- Open it with `shm_open(path, O_RDWR | O_CREAT, 0600)`. Either side may come first, and macOS sets a shared-memory
-  object's size only once, while it's empty: `ftruncate` it to the size only if `fstat` says 0 (if both sides try at
-  once, the second gets `EINVAL`, which is fine), then check that `fstat` gives at least the size (macOS rounds it up
-  to whole pages) and `mmap` it `MAP_SHARED`. Don't `shm_unlink` it: it lasts until a restart, and the next reader or
-  writer opens the same memory.
-- There's no event: SmoovPlay looks at `write_seq` every half millisecond while it waits.
-- Times are nanoseconds of `clock_gettime_nsec_np(CLOCK_UPTIME_RAW)` (the same as `mach_absolute_time`, and as
-  Python's `time.monotonic_ns()`), and `qpc_freq` is 1,000,000,000. Not `CLOCK_MONOTONIC`: on macOS that one also
-  counts the time the Mac slept, so it's days off.
-- Use real barriers (`__atomic_thread_fence(__ATOMIC_SEQ_CST)`) where the steps below say so: Apple's chips, unlike
-  x86, may show another core your stores out of order.
+The name is a slash followed by what comes after the Windows name's last backslash, so `Local\smoovplay-tap` is
+`/smoovplay-tap` and chiaki-ng's is `/chiaki-frametap`. The sound ring adds `-audio`, as on Windows. macOS allows 31
+characters including the slash, so a name can have at most 24 after any `Local\`, and SmoovPlay refuses a longer one.
+
+Open it with `shm_open(path, O_RDWR | O_CREAT, 0600)`. Either side may come first, and macOS only lets a shared
+memory object be sized once, while it's still empty. So `ftruncate` it to the full size only if `fstat` reports 0
+bytes. If both sides try at once, the second gets `EINVAL`, which is fine, but it can still read 0 bytes for a moment,
+so wait up to 200 ms for the size to appear. Then check that `fstat` gives at least the size (macOS rounds it up to
+whole pages) and `mmap` it with `MAP_SHARED`. Don't `shm_unlink` it. It lasts until the Mac restarts, and the next
+reader or writer opens the same memory.
+
+There's no event. SmoovPlay looks at `write_seq` every half millisecond while it waits.
+
+Times are nanoseconds from `clock_gettime_nsec_np(CLOCK_UPTIME_RAW)`, the same clock as `mach_absolute_time` and
+Python's `time.monotonic_ns()`, and `qpc_freq` is 1,000,000,000. Don't use `CLOCK_MONOTONIC`. On macOS it also counts
+time the Mac spent asleep, so it can be days off.
+
+Use real memory barriers (`__atomic_thread_fence(__ATOMIC_SEQ_CST)`) where the steps below call for them. Unlike x86,
+Apple's chips may let another core see your writes out of order.
 
 ## Header (the first 4096 bytes)
 

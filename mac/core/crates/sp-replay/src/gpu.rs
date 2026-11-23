@@ -1,6 +1,7 @@
-//! The replay's GPU side: frames into the encoder's NV12 buffers (BT.709 limited range, replay.py's sums: Y per
-//! pixel, Cb/Cr from the mean of each 2x2 block), and the before & after picture, composed straight from the decoded
-//! NV12 into the encoder's. Pixel buffers are seen as Metal textures through a CVMetalTextureCache (no copies).
+//! The replay's GPU side. It converts frames into the encoder's NV12 buffers in BT.709 limited range with replay.py's
+//! sums, Y per pixel and Cb and Cr from the mean of each 2x2 block. It also composes the before & after picture
+//! straight from the decoded NV12 into the encoder's. Pixel buffers are seen as Metal textures through a
+//! CVMetalTextureCache, with no copies.
 
 use std::ffi::c_void;
 use std::ptr::NonNull;
@@ -32,7 +33,8 @@ using namespace metal;
 
 struct ToNv12 { float4 ky; float4 ku; float4 kv; uint w; uint h; uint pad0; uint pad1; };
 
-// A frame (BGRA8, or anything read as RGBA 0..1) into NV12 planes, BT.709 limited range: replay.py bgr_to_i420.
+// Converts a frame (BGRA8, or anything read as RGBA 0 to 1) into NV12 planes in BT.709 limited range, as replay.py
+// bgr_to_i420 does.
 kernel void to_nv12(texture2d<float, access::read> src [[texture(0)]],
                     texture2d<float, access::write> oy [[texture(1)]],
                     texture2d<float, access::write> ouv [[texture(2)]],
@@ -62,11 +64,11 @@ struct Compose {
     uint ow, oh;    // the output (even)
     uint layout;    // 0 split, 1 side by side
     uint w, h;      // the after picture's even size (what's shown of it)
-    uint hw;        // side by side: each half's width
+    uint hw;        // each half's width, side by side
     uint aw, ah;    // after's luma size
     uint bw, bh;    // before's luma size
     uint mid;
-    int lbx, lby, lbw, lbh;   // the before label: where, and its size
+    int lbx, lby, lbw, lbh;   // the before label's position and size
     int lax, lay, law, lah;   // the after label
     uint has_b;
 };
@@ -76,8 +78,9 @@ static float4 px(texture2d<float, access::read> t, int2 q) {
     return round(t.read(uint2(q)) * 255.0);
 }
 
-// Pixel p of a dsize picture made from the (0, 0, src) region of plane t: copied when the sizes match, else the mean
-// of the area it covers (shrinking, as OpenCV's INTER_AREA) or bilinear (growing). In 0..255.
+// Pixel p of a dsize picture made from the (0, 0, src) region of plane t, in 0 to 255. It's copied when the sizes
+// match. Otherwise it's the mean of the area it covers when shrinking, as OpenCV's INTER_AREA does, or bilinear when
+// growing.
 static float4 fetch(texture2d<float, access::read> t, float2 src, float2 dsize, uint2 p) {
     if (abs(src.x - dsize.x) < 0.5 && abs(src.y - dsize.y) < 0.5) return px(t, int2(p));
     float2 s = src / dsize;
@@ -107,8 +110,8 @@ static bool inside(int2 q, int x, int y, int w, int h) {
     return q.x >= x && q.y >= y && q.x < x + w && q.y < y + h;
 }
 
-// The before & after picture (replay.py compose): the game's frame on the left, SmoovPlay's on the right, split down
-// the middle or side by side, the amber line between, the labels on translucent boxes.
+// The before & after picture (replay.py compose). The game's frame is on the left and SmoovPlay's on the right, split
+// down the middle or side by side, with the amber line between and the labels on translucent boxes.
 kernel void compose(texture2d<float, access::read> ay [[texture(0)]],
                     texture2d<float, access::read> auv [[texture(1)]],
                     texture2d<float, access::read> by [[texture(2)]],
@@ -154,7 +157,7 @@ kernel void compose(texture2d<float, access::read> ay [[texture(0)]],
     c = rint(c);
     int gx = int(g.x);
     if (gx >= mid / 2 - 1 && gx < mid / 2 + 1) c = p.amber.yz;
-    // A label's Cb/Cr are 128 (white on black); its weight here is the mean of the 2x2 block's
+    // A label's Cb and Cr are 128 (white on black). Its weight here is the mean of the 2x2 block's.
     int2 gi = int2(g) * 2;
     if (inside(gi, p.lbx, p.lby, p.lbw, p.lbh)) {
         float a = alpha_b * 0.25;
@@ -189,7 +192,7 @@ pub fn kernels() -> Result<&'static Kernels> {
     Ok(K.get_or_init(|| k))
 }
 
-/// A pixel buffer's two planes as textures (R8 luma, RG8 chroma); they keep the buffer's surface in use while held.
+/// A pixel buffer's two planes as textures (R8 luma, RG8 chroma). They keep the buffer's surface in use while held.
 pub struct Planes {
     _cv: [CFRetained<CVMetalTexture>; 2],
     pub y: Retained<Texture>,
@@ -202,11 +205,11 @@ unsafe impl Sync for Planes {}
 
 pub struct TexCache {
     cache: CFRetained<CVMetalTextureCache>,
-    // One caller at a time (the pipeline's thread and the replay's both make textures)
+    // One caller at a time, since the pipeline's thread and the replay's both make textures
     lock: std::sync::Mutex<()>,
 }
 
-// The cache is a CF object, used under its lock; Metal textures are thread-safe.
+// The cache is a CF object, used under its lock. Metal textures are thread-safe.
 unsafe impl Send for TexCache {}
 unsafe impl Sync for TexCache {}
 
@@ -312,8 +315,8 @@ pub struct ComposeParams {
     pub has_b: u32,
 }
 
-/// Queues the before & after picture: `after` and `before` planes (before may be after's again), the labels as
-/// RG32Float textures of (Y, weight), into `out`.
+/// Queues the before & after picture into `out`, from the `after` and `before` planes (before may be after's again)
+/// and the labels as RG32Float textures of (Y, weight).
 pub fn encode_compose(
     cb: &CommandBuffer,
     after: &Planes,

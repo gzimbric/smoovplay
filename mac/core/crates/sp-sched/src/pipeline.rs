@@ -1,12 +1,13 @@
-//! Source -> repeat detection -> scheduler -> interpolator -> presenter, with latency and quality stats
-//! (framegen/pipeline.py Pipeline.run). The loop is the Python's line by line; its docstring describes it:
+//! The source, repeat detection, the scheduler, the interpolator and the presenter in one loop, with latency and
+//! quality stats (framegen/pipeline.py Pipeline.run). The loop follows the Python line by line, so its docstring
+//! describes this one too.
 //!
-//! hz = 120 or 90 (needs a presenter): more generated frames per 30 fps frame, shown at least 1/hz apart.
-//!   120: a new frame B after A shows A->B at 1/4 then 1/2; its repeat tick shows 3/4 then B.
-//!    90: the new frame's tick shows 1/3 then 2/3; its repeat tick shows B.
-//! When the pipeline is running behind, a tick skips the extra frame(s) and shows what 60 Hz would (the 1/2 frame,
-//! or B), so it never builds a backlog. A 40-60 fps game is evened out (FrameTimeline) and a 30 fps game that dips
-//! is timed as its frames arrived (Dip smoothing).
+//! At hz 120 or 90, which needs a presenter, more frames are generated per 30 fps frame and shown at least 1/hz
+//! apart. At 120, the tick a new frame B arrives after A shows the frames 1/4 and then 1/2 of the way from A to B,
+//! and its repeat tick shows 3/4 and then B. At 90, the new frame's tick shows 1/3 and then 2/3, and its repeat tick
+//! shows B. When the pipeline is running behind, a tick skips the extra frames and shows what 60 Hz would, the 1/2
+//! frame or B, so it never builds a backlog. A 40 to 60 fps game is evened out (FrameTimeline). A 30 fps game that
+//! dips is timed as its frames arrived (Dip smoothing).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -24,18 +25,19 @@ use crate::score;
 use crate::settings::{Live, LiveSettings, OverlayStyle};
 use crate::stats::{self, Exit, GameRate, RATE_NOTE_S, RATE_TOAST_S, ShownRate, Stats, TICK, Worst};
 
-/// Steady HUD: the largest real-frame difference (0..1) that counts as still (framegen/steady.py).
+/// The largest real-frame difference, from 0 to 1, that Steady HUD counts as still (framegen/steady.py).
 pub const STEADY_HUD_THRESHOLD: f32 = 0.03;
 
-/// chiaki-ng's requests the other way (framegen/chiaki_tap.py ChiakiSource, capture.CardSource): presses for the
-/// delay test, and holding its sound back to meet the picture. In the Python this is the source itself; here a handle
-/// to it, since the pipeline already holds the source mutably.
+/// What the pipeline asks of chiaki-ng or a capture card in return: presses for the delay test, and holding the
+/// sound back to meet the picture (framegen/chiaki_tap.py ChiakiSource, capture.CardSource). In the Python this is
+/// the source itself. Here it is a handle to it, since the pipeline already holds the source mutably.
 pub trait Remote: Press {
-    /// It can press a button now (chiaki-ng that comes with SmoovPlay, connected).
+    /// It can press a button now (the chiaki-ng that comes with SmoovPlay, connected).
     fn can_press(&self) -> bool {
         false
     }
-    /// It presses buttons at all (Python: hasattr(remote, "press")): which message to give when it can't now.
+    /// It presses buttons at all, like Python's hasattr(remote, "press"). This picks the message to give when it
+    /// can't press now.
     fn has_press(&self) -> bool {
         true
     }
@@ -45,7 +47,8 @@ pub trait Remote: Press {
     fn set_audio_delay(&mut self, _ms: i64) {}
 }
 
-/// Instant replay (framegen/replay.py Recorder): every frame shown, each new frame from the game and the delay.
+/// Instant replay (framegen/replay.py Recorder). It gets every frame shown, each new frame from the game and the
+/// delay.
 pub trait Replay {
     fn set_output_hz(&mut self, _hz: u32) {}
     fn set_delay(&mut self, _ms: f64) {}
@@ -53,7 +56,7 @@ pub trait Replay {
     fn frame(&mut self, frame: &Frame, t: f64);
     /// The game's own new frame (for a before & after video), and when it arrived.
     fn real_frame(&mut self, frame: &Frame, t: f64);
-    /// R ("None") and B ("compare").
+    /// Saves a replay. R passes None and B passes "compare".
     fn save(&mut self, kind: Option<&str>);
 }
 
@@ -61,7 +64,7 @@ pub trait Replay {
 pub struct RunOptions<'a> {
     /// Frame generation on (followed from `settings` when given).
     pub enabled: bool,
-    /// --score: score each generated frame against the source's ground truth, and keep the worst.
+    /// With --score, each generated frame is scored against the source's ground truth and the worst is kept.
     pub score: bool,
     /// The engine's name for the overlay ("RIFE").
     pub label: String,
@@ -72,10 +75,11 @@ pub struct RunOptions<'a> {
     pub settings: Option<&'a dyn LiveSettings>,
     pub remote: Option<&'a mut dyn Remote>,
     pub replay: Option<&'a mut dyn Replay>,
-    /// on_tick(tick, diff, action, proc_ms, t_start), after each tick is processed (the stream check, frame logs).
-    /// It runs while the tick holds Status::stats, so it mustn't read status().stats() itself (nor may the presenter).
+    /// Called as on_tick(tick, diff, action, proc_ms, t_start) after each tick is processed, for the stream check
+    /// and frame logs. It runs while the tick holds Status::stats, so neither it nor the presenter may read
+    /// status().stats().
     pub on_tick: Option<&'a mut dyn FnMut(&Tick, &FrameDiff, Action, f64, f64)>,
-    /// The real frame left out at a content index, for scoring; default `source.ground_truth`.
+    /// The real frame left out at a content index, for scoring. Defaults to `source.ground_truth`.
     pub gt: Option<&'a mut dyn FnMut(i64) -> Option<Frame>>,
 }
 
@@ -95,7 +99,8 @@ impl Default for RunOptions<'_> {
     }
 }
 
-/// Times the Python reads from module constants (which its tests change): kept here so tests can too.
+/// Times the Python reads from module constants, which its tests change. They live here so tests can change them
+/// too.
 #[derive(Clone, Copy, Debug)]
 pub struct Tuning {
     pub rate_note_s: f64,
@@ -115,9 +120,9 @@ impl Default for Tuning {
     }
 }
 
-/// What another thread can read while run() plays: when its loop last went round (run.py's watchdog), the source's
-/// Waiting while no frame comes, and the running session's Stats (for reports written while it plays; locked for a
-/// tick at a time, so a reader waits at most about a tick).
+/// What another thread can read while run() plays: when its loop last went round (for run.py's watchdog), the
+/// source's Waiting while no frame comes, and the running session's Stats for reports written during play. Stats is
+/// locked a tick at a time, so a reader waits at most about a tick.
 #[derive(Debug, Default)]
 pub struct Status {
     beat: AtomicU64,
@@ -150,14 +155,14 @@ pub struct Pipeline<I: Interpolator> {
     pub probe: Box<dyn Probe>,
     pub clock: Arc<dyn Clock>,
     pub tuning: Tuning,
-    /// The engine's numbers mustn't be shared (NVIDIA VFG in the Python): summary() leaves them out.
+    /// The engine's numbers mustn't be shared (NVIDIA VFG in the Python), so summary() leaves them out.
     pub private: bool,
-    /// Where the "[pipeline] ..." lines go (Python's print).
+    /// Where the [pipeline] lines go (Python's print).
     pub log: Log,
     status: Arc<Status>,
 }
 
-/// The presenter, instant replay and the frame pacer: what showing a frame touches.
+/// What showing a frame touches: the presenter, instant replay and the frame pacer.
 struct Out<'s, 'r> {
     sink: Option<&'s mut dyn Presenter>,
     replay: Option<&'r mut dyn Replay>,
@@ -168,8 +173,8 @@ struct Out<'s, 'r> {
 }
 
 impl Out<'_, '_> {
-    /// Frame pacer: each present is due one gap after the previous one was due, so sleep overshoot and present time
-    /// don't accumulate; when late it goes straight away and the schedule restarts from now.
+    /// The frame pacer. Each present is due one gap after the previous one was due, so sleep overshoot and present
+    /// time don't add up. When late it goes straight away and the schedule restarts from now.
     fn present(&mut self, frame: &Frame, ov: &Overlay, hz: u32, gap: f64) -> SinkReply {
         if hz > 60 {
             let now = self.clock.now();
@@ -226,8 +231,8 @@ fn fps_str(f: Option<i64>) -> String {
 }
 
 impl<I: Interpolator> Pipeline<I> {
-    /// detector: None for the default (a fixed threshold of 2, against the previous frame; make_detector picks the
-    /// right one for a source).
+    /// A `detector` of None gives the default, a fixed threshold of 2 against the previous frame. make_detector
+    /// picks the right one for a source.
     pub fn new(interp: I, detector: Option<DuplicateDetector>) -> Pipeline<I> {
         Pipeline {
             interp,
@@ -260,8 +265,8 @@ impl<I: Interpolator> Pipeline<I> {
         self.status.clone()
     }
 
-    /// Plays `source` to `sink` (None: headless, no window) until the source ends or the presenter says quit or
-    /// restart. Returns the session's Stats (also left in status()).
+    /// Plays `source` to `sink` until the source ends or the presenter says quit or restart. A `sink` of None runs
+    /// headless, with no window. Returns the session's Stats, which are also left in status().
     pub fn run<S: Source + ?Sized>(&mut self, source: &mut S, sink: Option<&mut dyn Presenter>, opts: RunOptions<'_>) -> Stats {
         let RunOptions { mut enabled, score, label, mut hz, settings, mut remote, replay, mut on_tick, mut gt } = opts;
         let clock = self.clock.clone();
@@ -276,14 +281,15 @@ impl<I: Interpolator> Pipeline<I> {
         let status = self.status.clone();
         *status.stats.lock().unwrap() = Stats { private: self.private, ..Default::default() };
         let mut steady: Option<bool> = None; // Steady HUD as last applied to the interpolator
-        let mut quarter_due = false; // 120 Hz: the previous tick interpolated, so this repeat tick owes the 3/4 frame
+        let mut quarter_due = false; // at 120 Hz the previous tick interpolated, so this repeat tick owes the 3/4 frame
         let behind_ms = 1000.0 * TICK * 0.6; // start-of-tick lag above which the extra frames are skipped
         let mut gap = 0.95 / hz as f64; // time between two presents, 5% short so the schedule has slack
         let mut cuts = CutDetector::new(self.cut_threshold, true);
         let mut slot = 0usize;
         let mut key_frame: Option<Frame> = None; // last frame that arrived as new content
         let mut key_content: Option<i64> = None;
-        // Scoring: --score, or live while "Simulate a 30 fps game" is on (the source keeps the left-out frames).
+        // Scoring is on with --score, or live while "Simulate a 30 fps game" is on (the source keeps the left-out
+        // frames).
         let mut scoring = score || live.as_ref().is_some_and(|l| l.simulate_30);
         status.stats.lock().unwrap().hz_used.insert(hz);
         let mut out_dev = Out {
@@ -331,7 +337,7 @@ impl<I: Interpolator> Pipeline<I> {
             let mut st = status.stats.lock().unwrap();
             let tick = match event {
                 Event::Waiting(w) => {
-                    // no frame for a moment: keep the window answering until one comes
+                    // no frame for a moment, so keep the window answering until one comes
                     *status.waiting.lock().unwrap() = Some(w.clone());
                     if let Some(s) = out_dev.sink.as_deref_mut() {
                         match s.wait(&w) {
@@ -352,11 +358,11 @@ impl<I: Interpolator> Pipeline<I> {
             };
             *status.waiting.lock().unwrap() = None;
             if tick.t_arrival < t_start {
-                st.stale += 1; // queued while the previous session was restarting: show live frames only
+                st.stale += 1; // queued while the previous session was restarting, and only live frames are shown
                 continue;
             }
             if let Some(s) = settings {
-                // changed in the menu (or by a hotkey) since the last tick?
+                // pick up anything changed in the menu or by a hotkey since the last tick
                 let l = s.live();
                 out_dev.overlay_on = l.overlay;
                 let want_hz = if has_sink { l.hz } else { 60 };
@@ -375,7 +381,7 @@ impl<I: Interpolator> Pipeline<I> {
                     scoring = !scoring;
                     key_gpu = None;
                     ov_next = 0.0;
-                    seen_rate.clear(); // test mode changes what the pipeline sees; the game's own rate stays
+                    seen_rate.clear(); // test mode changes what the pipeline sees, but the game's own rate stays
                     off_since = None;
                     note.clear();
                     log(&format!(
@@ -407,7 +413,7 @@ impl<I: Interpolator> Pipeline<I> {
             let diff = detector.update(&probe.block_means(&tick.frame));
             // A source that knows better (the frame tap's flags, test mode) overrides the image check.
             let mut is_new = tick.new_hint.unwrap_or(diff.is_new);
-            // Dip smoothing, by the picture's own call; not in test mode, nor without a window
+            // Dip smoothing goes by the picture's own call. Not in test mode, nor without a window.
             dip_watch.update(is_new);
             let game_new_in = tick.extra.contains_key("game_new");
             let dipping = dip_watch.dipping
@@ -416,7 +422,7 @@ impl<I: Interpolator> Pipeline<I> {
                 && !game_new_in
                 && live.as_ref().is_some_and(|l| l.even_dips);
             let seen_new = is_new;
-            // Game frame rate set to 30 fps: every other tick is new (not in test mode)
+            // With the game frame rate set to 30 fps, every other tick is new (not in test mode)
             let lock30 = live.as_ref().is_some_and(|l| l.game_fps_30) && !game_new_in;
             if lock30 != rhythm.is_some() {
                 rhythm = lock30.then(RhythmLock::new);
@@ -450,7 +456,7 @@ impl<I: Interpolator> Pipeline<I> {
                 }
                 last_new_at = Some(tick.t_arrival);
             }
-            // In test mode the source's own word on the game's frame
+            // In test mode the source says whether the game's frame is new
             let game_new = if game_new_in { opt_bool(&tick.extra["game_new"]) } else { Some(is_new) };
             game_rate.add(game_new);
             if game_new_in {
@@ -477,7 +483,7 @@ impl<I: Interpolator> Pipeline<I> {
                     ov_next = 0.0;
                 }
             }
-            // Sound: every 2 s, chiaki-ng is told to hold the sound back by the picture's time in SmoovPlay.
+            // Every 2 s, chiaki-ng is told to hold the sound back by the picture's time in SmoovPlay.
             let sync = live.as_ref().is_none_or(|l| l.audio_sync);
             if let Some(r) = remote.as_deref_mut()
                 && t0 >= audio_next && (!st.real_delay_ms.is_empty() || !sync) {
@@ -505,9 +511,9 @@ impl<I: Interpolator> Pipeline<I> {
             }
 
             let mut to_score: Option<(Option<Frame>, Option<i64>)> = None;
-            let mut early_cmd = SinkReply::Continue; // 90/120 Hz: the first of this tick's frames, already shown
+            let mut early_cmd = SinkReply::Continue; // at 90 or 120 Hz, the first of this tick's frames, already shown
             let mut mid_t = 0.5; // the generated frame this tick ends on
-            // Behind = waiting frames, not decode time.
+            // Behind means waiting frames, not decode time.
             let t_avail = tick.t_ready.unwrap_or(tick.t_arrival);
             let behind = (t0 - t_avail) * 1000.0 >= behind_ms;
             st.behind += behind as u64;
@@ -534,7 +540,7 @@ impl<I: Interpolator> Pipeline<I> {
                 quarter_due = false;
                 timed = false;
             } else {
-                // A damaged frame is held like a cut; `|` so the cut detector still sees every new frame.
+                // A damaged frame is held like a cut. The `|` lets the cut detector still see every new frame.
                 let is_cut = is_new && (cuts.update(diff.mean_diff, diff.cut.as_ref()) | tick.damaged);
                 action = sched.step(is_new, is_cut);
                 timeline.set_at_arrival(dipping);
@@ -575,7 +581,7 @@ impl<I: Interpolator> Pipeline<I> {
                 }
                 if is_new && !timed {
                     slot = 1 - slot;
-                    it.prepare(slot); // (the input holds this tick's frame)
+                    it.prepare(slot); // the input holds this tick's frame
                     in_slot[slot] = added.as_ref().map_or(-1, |a| a.id);
                 }
                 if timed {
@@ -587,7 +593,7 @@ impl<I: Interpolator> Pipeline<I> {
                             st.uneven_fps.push(timeline.fps().unwrap_or(0));
                         }
                     }
-                    let mut phases = timeline.slots(hz); // (quarter_due is set below, as for any tick)
+                    let mut phases = timeline.slots(hz); // quarter_due is set below, as for any tick
                     if phases.len() > 1 && !extra_ok {
                         st.quarter_skipped += (phases.len() - 1) as u64;
                         phases = vec![*phases.last().unwrap()];
@@ -634,8 +640,8 @@ impl<I: Interpolator> Pipeline<I> {
                 } else if matches!(action, Action::Pending | Action::Hold) {
                     out = key_frame.clone().or_else(|| Some(tick.frame.clone()));
                 } else if rhythm.is_some() && key_frame.is_some() {
-                    // Game frame rate 30 fps, and the lock called this tick a repeat: the frame the lock last called
-                    // new keeps the order, a tick late, after a game held a frame for a third tick.
+                    // Game frame rate is 30 fps and the lock called this tick a repeat. Showing the frame the lock
+                    // last called new keeps the order, a tick late, after a game held a frame for a third tick.
                     out = key_frame.clone();
                 } else {
                     out = Some(tick.frame.clone());
@@ -668,8 +674,9 @@ impl<I: Interpolator> Pipeline<I> {
                     let mut test = live.as_ref().is_some_and(|l| l.simulate_30);
                     let even = live.as_ref().is_none_or(|l| l.even_out);
                     let game_fps = game_rate.fps();
-                    // Simulate on a game at about 30 fps already plays it at 15: after RATE_TOAST_S it goes off by
-                    // itself. Not when the game has been at 60 since Simulate went on: a 30 fps cutscene.
+                    // Simulate on a game that already runs at about 30 fps plays it at 15, so after RATE_TOAST_S it
+                    // goes off by itself. Not when the game has been at 60 since Simulate went on, because then it's
+                    // a 30 fps cutscene.
                     test_at_60 = test && (test_at_60 || game_fps.is_some_and(|g| g >= 50.0));
                     let at30 = test && !test_at_60 && game_fps.is_some_and(|g| (24.0..38.5).contains(&g));
                     at30_since = if !at30 { None } else { Some(at30_since.unwrap_or(t_ready)) };
@@ -724,7 +731,8 @@ impl<I: Interpolator> Pipeline<I> {
                 st.sink_ms.push((t_shown - t_ready) * 1000.0);
             }
 
-            // When each real frame first reaches the screen (timed: when the game time shown reaches it).
+            // When each real frame first reaches the screen. With even timing, that's when the game time shown
+            // reaches it.
             if timed {
                 let r = std::mem::take(&mut reached);
                 st.real_delay_ms.extend(r.iter().map(|f| (t_shown - f.t_arrival) * 1000.0));
@@ -802,15 +810,16 @@ impl<I: Interpolator> Pipeline<I> {
         st.clone()
     }
 
-    /// Even timing: frames a then b in the interpolator's two slots, b the newer, putting in what isn't there yet.
-    /// Returns b's slot. (Overwrites the input: only after this tick's frame has been looked at.)
+    /// For even timing, puts frames a and b in the interpolator's two slots, b the newer, loading whichever isn't
+    /// there yet. Returns b's slot. It overwrites the input, so call it only after this tick's frame has been looked
+    /// at.
     fn timed_pair(it: &mut I, a: &TimedFrame<Frame>, b: &TimedFrame<Frame>, mut slot: usize, in_slot: &mut [i64; 2]) -> usize {
         if in_slot[slot] == b.id && in_slot[1 - slot] == a.id {
             return slot;
         }
         if in_slot[slot] != a.id {
             if in_slot[1 - slot] == a.id {
-                slot = 1 - slot; // a is the older of the two already: b goes in after it
+                slot = 1 - slot; // a is already the older of the two, so b goes in after it
             } else {
                 slot = 1 - slot;
                 it.load(a.frame.as_ref().unwrap());
@@ -826,8 +835,8 @@ impl<I: Interpolator> Pipeline<I> {
     }
 }
 
-/// Scores one generated frame (pipeline.py _score). a: the previous real frame; b: this tick's; only clean 2-tick
-/// steps are scored, where the in-between source frame exists.
+/// Scores one generated frame (pipeline.py _score). `a` is the previous real frame and `tick.frame` this tick's.
+/// Only clean 2-tick steps are scored, where the in-between source frame exists.
 #[allow(clippy::too_many_arguments)]
 fn score_frame(
     probe: &mut dyn Probe,
@@ -861,7 +870,7 @@ fn score_frame(
     }
 }
 
-/// What the overlay is made from (pipeline.py overlay_text / mini_text / test_line).
+/// What the overlay is made from (pipeline.py overlay_text, mini_text and test_line).
 struct OverlayCtx<'a> {
     st: &'a Stats,
     live: Option<&'a Live>,
@@ -876,7 +885,7 @@ struct OverlayCtx<'a> {
 }
 
 impl OverlayCtx<'_> {
-    /// Test mode's badge, and quality over the last ~30 scored frames.
+    /// Test mode's badge, and quality over up to the last 30 scored frames.
     fn test_line(&self) -> String {
         let mut text = String::from("TEST: 60 fps game played as 30 fps");
         let ai = np::tail(&self.st.off_interp, 30);

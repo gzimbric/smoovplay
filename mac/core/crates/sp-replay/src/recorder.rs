@@ -1,11 +1,11 @@
-//! The recorder (replay.py Recorder): the pipeline calls [`Recorder::frame`] for each frame it shows,
-//! [`Recorder::real_frame`] for each new frame from the game and [`Recorder::set_delay`] with its delay (through
-//! sp_sched::Replay); the game's sound comes from [`Recorder::attach_sound`] (polled) or [`Recorder::add_sound`].
-//! [`Recorder::save`] writes a clip.
+//! The recorder (replay.py Recorder). Through sp_sched::Replay, the pipeline calls [`Recorder::frame`] for each frame
+//! it shows, [`Recorder::real_frame`] for each new frame from the game and [`Recorder::set_delay`] with its delay.
+//! The game's sound comes from [`Recorder::attach_sound`] (polled) or [`Recorder::add_sound`]. [`Recorder::save`]
+//! writes a clip.
 //!
-//! Threads: the pipeline's only queues GPU work and a message (it never waits for the GPU or the encoder; a frame is
-//! dropped instead when the encoder is behind, or not open yet); the replay's own thread waits for the GPU, feeds
-//! VideoToolbox and AudioToolbox, and opens encoders; VideoToolbox's thread puts packets in the ring; a save runs on
+//! The pipeline's thread only queues GPU work and a message. It never waits for the GPU or the encoder, and drops a
+//! frame instead when the encoder is behind or not open yet. The replay's own thread waits for the GPU, feeds
+//! VideoToolbox and AudioToolbox, and opens encoders. VideoToolbox's thread puts packets in the ring. A save runs on
 //! a thread of its own, and a before & after video in a process of its own.
 
 use std::collections::{HashSet, VecDeque};
@@ -88,39 +88,39 @@ impl Layout {
     }
 }
 
-/// Messages for the user (the window's toasts): (text, seconds).
+/// Messages for the user (the window's toasts), as (text, seconds).
 pub type Notify = Arc<dyn Fn(&str, f64) + Send + Sync>;
 /// Where the `[replay] ...` lines go (Python's print).
 pub type Log = Arc<dyn Fn(&str) + Send + Sync>;
-/// Settings "Looks in clips": the frame with the look drawn on (the video window's baked()), for the SmoovPlay
-/// video only. Err: without the look (said once).
+/// Settings "Looks in clips". It gives the frame with the look drawn on (the video window's baked()), for the
+/// SmoovPlay video only. Err means the clip goes without the look, and that's said once.
 pub type LookFn = Box<dyn FnMut(&Frame) -> std::result::Result<Frame, String> + Send>;
-/// The game's sound since the last call (ChiakiSource / CardSource read_sound), polled every 20 ms.
+/// The game's sound since the last call (ChiakiSource or CardSource read_sound), polled every 20 ms.
 pub type SoundFn = Box<dyn FnMut() -> Vec<Sound> + Send>;
 
 /// The recorder's settings (replay.py Recorder's arguments that apply on a Mac).
 pub struct Options {
-    /// How much to keep, in seconds (0: off; set_length changes it).
+    /// How much to keep, in seconds. 0 is off, and set_length changes it.
     pub length_s: u32,
     /// What save() writes by default.
     pub clip: Kind,
     pub layout: Layout,
-    /// Where clips go (None: [`videos_folder`]).
+    /// Where clips go, or None for [`videos_folder`].
     pub out_dir: Option<PathBuf>,
     pub notify: Option<Notify>,
-    /// None: stdout.
+    /// None prints to stdout.
     pub log: Option<Log>,
-    /// false (tests): wait for the encoder instead of dropping a frame.
+    /// When false, as in tests, it waits for the encoder instead of dropping a frame.
     pub drop_when_behind: bool,
     /// The stream's size, so warm_up() can open the encoders before play.
     pub size: Option<(usize, usize)>,
-    /// [`crate::saving_dir`] when SmoovPlay runs it: before & after videos say they're being made.
+    /// [`crate::saving_dir`] when SmoovPlay runs it. Before & after videos say there that they're being made.
     pub mark_dir: Option<PathBuf>,
-    /// The before & after maker and its first arguments (None: this program with `replay-compose`); the compose
+    /// The before & after maker and its first arguments, or None for this program with `replay-compose`. The compose
     /// arguments follow.
     pub compose_cmd: Option<Vec<OsString>>,
-    /// The keys that work from anywhere, for the "on" message, e.g. "Control-Option-R and Control-Option-B from
-    /// anywhere" (None: the app has none).
+    /// The keys that work from anywhere, for the message that replay is on, for example "Control-Option-R and
+    /// Control-Option-B from anywhere". None if the app has none.
     pub hotkeys: Option<String>,
 }
 
@@ -142,7 +142,7 @@ impl Default for Options {
     }
 }
 
-/// What's held: (seconds, megabytes) per track.
+/// What's held, as (seconds, megabytes) per track.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Held {
     pub after: (f64, f64),
@@ -181,14 +181,15 @@ impl Summary {
     }
 }
 
-/// How the recorder is doing (the last 20 000 frames): what it costs the pipeline's thread, the GPU and the encoder.
+/// How the recorder is doing over the last 20 000 frames, in what it costs the pipeline's thread, the GPU and the
+/// encoder.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Stats {
-    /// Time on the pipeline's thread per frame taken, microseconds.
+    /// Time on the pipeline's thread per frame taken, in microseconds.
     pub put_us: Summary,
-    /// GPU time of the conversion per frame, microseconds.
+    /// GPU time of the conversion per frame, in microseconds.
     pub gpu_us: Summary,
-    /// From handing a frame to VideoToolbox to its packet, milliseconds.
+    /// Time from handing a frame to VideoToolbox to its packet, in milliseconds.
     pub encode_ms: Summary,
     /// Video packets kept.
     pub packets: u64,
@@ -262,7 +263,7 @@ impl Shared {
                 if length > 0 && t[track].generation == generation {
                     if t[track].format.as_ref() != Some(&e.format) {
                         if t[track].format.is_some() {
-                            // A new codec header mid-stream: what's held can't be cut with it
+                            // A new codec header mid-stream, so what's held can't be cut with it
                             t[track].ring.clear();
                             t[track].keys.clear();
                             t[track].nbytes = 0;
@@ -488,29 +489,29 @@ impl Recorder {
         self.inner.cfg.lock().unwrap().size = size.map(|(w, h)| (w & !1, h & !1));
     }
 
-    /// "Looks in clips" (None: clips as the game looked).
+    /// "Looks in clips", or None for clips as the game looked.
     pub fn set_look(&self, look: Option<LookFn>) {
         *self.inner.look.lock().unwrap() = look;
     }
 
-    /// HDR output: how HDR10 frames (RGBA16F) become the 8-bit SDR frames clips are made of (sp-media's pq16_to_8,
-    /// as "shown in SDR" would show them). None: the default HDR settings.
+    /// For HDR output, how HDR10 frames (RGBA16F) become the 8-bit SDR frames clips are made of. It's sp-media's
+    /// pq16_to_8, as "shown in SDR" would show them. None means the default HDR settings.
     pub fn set_hdr(&self, hdr: Option<HdrSettings>) {
         *self.inner.hdr.lock().unwrap() = hdr;
     }
 
-    /// SmoovPlay's delay (a real frame's arrival to the screen): the before frames and the sound move by it.
+    /// SmoovPlay's delay, from a real frame's arrival to the screen. The before frames and the sound move by it.
     pub fn set_delay(&self, ms: f64) {
         self.inner.delay.store((ms / 1000.0).max(0.0).to_bits(), Ordering::SeqCst);
     }
 
-    /// The rate frames are shown at: from 120 a second, every other one is kept (60 fps clips).
+    /// The rate frames are shown at. From 120 a second, every other one is kept, for 60 fps clips.
     pub fn set_output_hz(&self, hz: u32) {
-        let gap: f64 = if hz >= 120 { 0.75 / 60.0 } else { 0.0 }; // 1.5 frames at 120: alternate ones, whatever the jitter
+        let gap: f64 = if hz >= 120 { 0.75 / 60.0 } else { 0.0 }; // 1.5 frames at 120 keeps alternate ones despite jitter
         self.inner.after_gap.store(gap.to_bits(), Ordering::SeqCst);
     }
 
-    /// fn() -> new sound chunks since the last call, polled on the replay's thread.
+    /// A function that returns the new sound chunks since the last call, polled on the replay's thread.
     pub fn attach_sound(&self, f: Option<SoundFn>) {
         *self.inner.sound_fn.lock().unwrap() = f;
     }
@@ -524,7 +525,7 @@ impl Recorder {
     }
 
     // ---- frames
-    /// A frame just shown, at t (the core's clock).
+    /// A frame just shown, at t on the core's clock.
     pub fn frame(&self, frame: &Frame, t: f64) {
         let i = &self.inner;
         if !self.on() {
@@ -548,7 +549,7 @@ impl Recorder {
         i.put(AFTER, &f, t);
     }
 
-    /// A new frame from the game, that arrived at t_arrival.
+    /// A new frame from the game, which arrived at t_arrival.
     pub fn real_frame(&self, frame: &Frame, t_arrival: f64) {
         if self.on() {
             let t = t_arrival + f64_of(&self.inner.delay);
@@ -577,7 +578,7 @@ impl Recorder {
         self.inner.dropped.load(Ordering::SeqCst)
     }
 
-    /// What's held: seconds and megabytes per track.
+    /// What's held, in seconds and megabytes per track.
     pub fn held(&self) -> Held {
         let t = self.inner.sh.tracks.lock().unwrap();
         let f = |k: usize| (t[k].seconds(), t[k].nbytes as f64 / 1e6);
@@ -596,8 +597,8 @@ impl Recorder {
     }
 
     // ---- saving
-    /// Saves the replay: what was shown, a before & after, or both (default: the clip setting), in the background
-    /// unless `wait`, which returns the files written.
+    /// Saves the replay, which is what was shown, a before & after, or both. The default is the clip setting. It
+    /// saves in the background unless `wait`, which returns the files written.
     pub fn save(&self, kind: Option<Kind>, layout: Option<Layout>, wait: bool) -> Vec<PathBuf> {
         let i = &self.inner;
         let (kind, layout) = {
@@ -611,7 +612,7 @@ impl Recorder {
         if wait {
             return i.save(kind, layout, false);
         }
-        // close() waits for the clip itself; a before & after video carries on in its own process
+        // close() waits for the clip itself. A before & after video carries on in its own process.
         *i.quick.0.lock().unwrap() += 1;
         let i2 = i.clone();
         let spawned = std::thread::Builder::new().name("replay-save".into()).spawn(move || {
@@ -623,8 +624,8 @@ impl Recorder {
         Vec::new()
     }
 
-    /// Stops recording. A clip being saved is finished first (waiting up to `wait_saves` seconds); a before & after
-    /// video being made carries on in its own process, and isn't waited for.
+    /// Stops recording. A clip being saved is finished first, waiting up to `wait_saves` seconds. A before & after
+    /// video being made carries on in its own process and isn't waited for.
     pub fn close(&self, wait_saves: f64) {
         let i = &self.inner;
         let Some((handle, done)) = self.worker.lock().unwrap().take() else { return };
@@ -725,7 +726,7 @@ impl Inner {
         self.sh.length.load(Ordering::SeqCst)
     }
 
-    /// The clock's zero: set by the first frame or sound, a little before it (OFFSET leaves 10 s more).
+    /// Sets the clock's zero a little before the first frame or sound. OFFSET leaves 10 s more.
     fn zero(&self, t: f64) {
         let mut z = self.t0.lock().unwrap();
         if z.is_none() {
@@ -773,7 +774,8 @@ impl Inner {
         Ok(())
     }
 
-    /// Starts a video track with a new encoder for this size (what it held goes: it can't be cut with the new one).
+    /// Starts a video track with a new encoder for this size. What it held goes, since it can't be cut with the new
+    /// one.
     fn open_track(&self, track: usize, w: usize, h: usize) -> Result<()> {
         let (nominal, bpp) = if track == BEFORE { (BEFORE_NOMINAL, BEFORE_BPP) } else { (AFTER_NOMINAL, AFTER_BPP) };
         let config = VideoConfig { width: w, height: h, nominal, bpp, realtime: true, expected_fps: None };
@@ -801,7 +803,7 @@ impl Inner {
         Ok(())
     }
 
-    /// The track's encoder for frames of this size; None while one is being opened (asked for here).
+    /// The track's encoder for frames of this size. None while one is being opened, which this asks for.
     fn encoder_for(&self, track: usize, w: usize, h: usize) -> Option<Arc<VideoEnc>> {
         let get = || {
             self.encs.lock().unwrap()[track].as_ref().filter(|e| (e.enc.width, e.enc.height) == (w, h)).cloned()
@@ -844,7 +846,8 @@ impl Inner {
         }
     }
 
-    /// An SDR frame: converted on the GPU into a buffer from the encoder's pool, then to the replay's thread.
+    /// Takes an SDR frame. It's converted on the GPU into a buffer from the encoder's pool, then goes to the replay's
+    /// thread.
     fn put_sdr(&self, track: usize, frame: &Frame, t: f64) -> Result<bool> {
         let (w, h) = (frame.width & !1, frame.height & !1);
         let Some(enc) = self.encoder_for(track, w, h) else { return Ok(false) };
@@ -862,8 +865,8 @@ impl Inner {
         Ok(true)
     }
 
-    /// An HDR frame: copied on the GPU at once (the frame's texture may be drawn over soon), tone-mapped and
-    /// converted on the replay's thread.
+    /// Takes an HDR frame. It's copied on the GPU at once, since the frame's texture may be drawn over soon, then
+    /// tone-mapped and converted on the replay's thread.
     fn put_hdr(&self, track: usize, frame: &Frame, t: f64) -> Result<bool> {
         if !self.slot(track) {
             return Ok(false);
@@ -1020,7 +1023,7 @@ impl Inner {
             }
             self.notify(&format!("Making a before & after video of the last {} in the background. Keep playing.", dur(secs)), 6.0);
             let t0 = Instant::now();
-            // A process of its own, at nice 10, which carries on if play stops or SmoovPlay closes: only its result
+            // A process of its own at nice 10, which carries on if play stops or SmoovPlay closes. Only its result
             // waits here.
             let mut c = std::process::Command::new(&cmd[0]);
             c.args(&cmd[1..])
@@ -1107,8 +1110,8 @@ fn samples(pieces: &[Piece], timescale_is_90k: bool) -> Vec<(Sample, &[u8])> {
         .collect()
 }
 
-/// A saved clip: the video's pieces from `base` (a keyframe) to `end` and the sound's, timed from `base`, without
-/// encoding again (replay.py to_mp4).
+/// Writes a saved clip without encoding again (replay.py to_mp4). It has the video's pieces from `base` (a keyframe)
+/// to `end` and the sound's, timed from `base`.
 pub(crate) fn write_clip(
     path: &Path,
     video: &Format,

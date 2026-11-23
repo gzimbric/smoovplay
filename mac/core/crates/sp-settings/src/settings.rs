@@ -2,9 +2,9 @@
 //! page, the command line and the saved file all share, and [`Settings`], the current values, saved to the same JSON
 //! file the Python writes, in the same layout.
 //!
-//! Values are kept as the JSON they came as ([`Value`]): the Python keeps a file's `"hz": 90.0` as a float, and
+//! Values are kept as the JSON they came as ([`Value`]). The Python keeps a file's `"hz": 90.0` as a float, and
 //! writes it back and reports it that way, so this does too. A value is accepted when it equals one of the
-//! setting's choices by Python's == (so `1` is a choice of On/Off, and `0` of FSR sharpening's `0.0`).
+//! setting's choices by Python's == (so `1` counts as On, and `0` as FSR sharpening's `0.0`).
 //!
 //! `live: false` settings are saved at once but take effect at the next in-app restart. `saved: false` settings
 //! (test modes) are never written to the file.
@@ -44,37 +44,37 @@ pub struct Spec {
     pub key: &'static str,
     pub label: &'static str,
     pub(crate) choices: &'static [C],
-    /// The Python keeps this setting's choices in a list, not a tuple (only "look"): it shows in error messages.
+    /// The Python keeps this setting's choices in a list, not a tuple (only "look"). It shows in error messages.
     pub(crate) choices_are_list: bool,
     pub(crate) default: C,
     pub(crate) names: &'static [(C, &'static str)],
-    /// Applies immediately; false: on the next restart.
+    /// Applies immediately. False means on the next restart.
     pub live: bool,
     pub help: &'static str,
-    /// False: this session only, never written to the settings file (test modes).
+    /// False means this session only, never written to the settings file (test modes).
     pub saved: bool,
     /// The section on the launcher's Settings page.
     pub group: &'static str,
     /// One of the few big choices at the top of the launcher's Settings page.
     pub quick: bool,
-    /// (key, values): only used, and only shown, while setting `key` is one of `values`.
+    /// (key, values). This setting is only used, and only shown, while setting `key` is one of `values`.
     pub(crate) applies: Option<(&'static str, &'static [C])>,
     /// A note at the end of the launcher's dropdown, about choices that aren't offered yet.
     pub later: &'static str,
     pub(crate) hints: &'static [(C, &'static str)],
-    /// "picture" and/or "speed": a rough line on what it does, in this order.
+    /// A rough line on what it does, under "picture", "speed" or both, in that order.
     pub impact: &'static [(&'static str, &'static str)],
     pub experimental: bool,
-    /// Only used with these sources (framegen/sources.py kinds); empty: all.
+    /// Only used with these sources (framegen/sources.py kinds). Empty means all.
     pub sources: &'static [&'static str],
-    /// Source kind -> why it isn't used there ("": any other source).
+    /// Why it isn't used with each source kind ("" for any other source).
     pub elsewhere: &'static [(&'static str, &'static str)],
-    /// The "Which look" setting: its choices and names are the looks library's ([`LookChoices`]).
+    /// Marks the "Which look" setting, whose choices and names are the looks library's ([`LookChoices`]).
     pub(crate) looks: bool,
 }
 
-/// The "Which look" setting's choices and names: the built-in looks, then the user's (looks::Library::choices()).
-/// The Python keeps them in module globals that the library updates in place; here each Settings holds its own.
+/// The "Which look" setting's choices and names, the built-in looks and then the user's (looks::Library::choices()).
+/// The Python keeps them in module globals that the library updates in place. Here each Settings holds its own.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LookChoices {
     pub ids: Vec<String>,
@@ -125,12 +125,12 @@ impl Spec {
         self.choices.iter().any(|c| c.eq_value(v))
     }
 
-    /// The choice equal to `v`, in the spec's own type (JSON 1 -> 1.0 for FSR sharpening), if there is one.
+    /// The choice equal to `v`, in the spec's own type (JSON 1 becomes 1.0 for FSR sharpening), if there is one.
     pub fn canonical(&self, v: &Value, looks: &LookChoices) -> Option<Value> {
         self.choices(looks).into_iter().find(|c| c.py_eq(v))
     }
 
-    /// The text shown for a value; values without a name are shown as str(value).
+    /// The text shown for a value. Values without a name are shown as str(value).
     pub fn name(&self, v: &Value, looks: &LookChoices) -> String {
         if self.looks {
             if let Some(n) = v.as_str().and_then(|s| looks.name(s)) {
@@ -152,7 +152,7 @@ impl Spec {
         self.applies.map(|(k, vs)| (k, vs.iter().map(|c| c.value()).collect()))
     }
 
-    /// Whether this setting is used with these values (e.g. VFG quality only while NVIDIA VFG is picked).
+    /// Whether this setting is used with these values (VFG quality, for example, only while NVIDIA VFG is picked).
     pub fn applies_to(&self, values: &Map) -> bool {
         match self.applies {
             None => true,
@@ -169,7 +169,7 @@ impl Spec {
         Some(get(source).or_else(|| get("")).unwrap_or("Not used with this source.").to_string())
     }
 
-    /// repr() of the choices, as the Python's error message shows them: a tuple, or for "look" a list.
+    /// repr() of the choices, as the Python's error message shows them. That's a tuple, or a list for "look".
     fn choices_repr(&self, looks: &LookChoices) -> String {
         let items: Vec<String> = self.choices(looks).iter().map(Value::py_repr).collect();
         if self.choices_are_list || self.looks {
@@ -196,7 +196,7 @@ fn index(key: &str) -> Option<usize> {
     generated::SPECS.iter().position(|s| s.key == key)
 }
 
-/// Capture card resolution: name -> (width, height).
+/// A capture card resolution's (width, height), by name.
 pub fn capture_size(name: &str) -> Option<(u32, u32)> {
     generated::CAPTURE_SIZES.iter().find(|(k, _)| *k == name).map(|(_, wh)| *wh)
 }
@@ -225,7 +225,7 @@ pub type Allowed<'a> = &'a dyn Fn(&str, &Value) -> bool;
 /// Called with the settings and the key after any value changes.
 pub type Listener = Box<dyn FnMut(&Settings, &str) + Send>;
 
-/// Stops a listener: [`Settings::unwatch`].
+/// Give it to [`Settings::unwatch`] to stop a listener.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WatchId(u64);
 
@@ -247,7 +247,7 @@ impl std::fmt::Debug for Settings {
 }
 
 impl Settings {
-    /// Settings(values, path): known, saved settings whose value is one of their choices are taken; the rest are
+    /// Settings(values, path). Known, saved settings whose value is one of their choices are taken, and the rest are
     /// defaults.
     pub fn new(values: &Map, path: Option<PathBuf>, looks: LookChoices) -> Self {
         let specs = specs();
@@ -268,7 +268,7 @@ impl Settings {
         Self::new(&Map::new(), None, LookChoices::builtin())
     }
 
-    /// Settings.load(path): a missing, unreadable or broken file (or one that isn't a JSON object) gives the
+    /// Settings.load(path). A missing, unreadable or broken file, or one that isn't a JSON object, gives the
     /// defaults.
     pub fn load(path: impl AsRef<Path>, looks: LookChoices) -> Self {
         let path = path.as_ref();
@@ -287,7 +287,7 @@ impl Settings {
         index(key).map(|i| &self.v[i])
     }
 
-    /// bool(value): On/Off settings (a file's 1 reads as On, as in the Python).
+    /// bool(value), for On or Off settings. A file's 1 reads as On, as in the Python.
     pub fn get_bool(&self, key: &str) -> bool {
         self.get(key).is_some_and(Value::truthy)
     }
@@ -297,7 +297,7 @@ impl Settings {
         self.get(key).and_then(Value::as_f64).unwrap_or(0.0)
     }
 
-    /// A whole-number setting (hz, replay, vsr_quality); 0 if it isn't one.
+    /// A whole-number setting (hz, replay, vsr_quality), or 0 if it isn't one.
     pub fn get_i64(&self, key: &str) -> i64 {
         self.get(key).and_then(Value::as_i64).unwrap_or(0)
     }
@@ -321,8 +321,8 @@ impl Settings {
         &self.looks
     }
 
-    /// The looks library changed (Library::reload()): the "Which look" setting's choices are now these. The value
-    /// isn't touched; LookState::reload puts it back to the default if its look is gone, as the Python does.
+    /// The looks library changed (Library::reload()), so the "Which look" setting's choices are now these. The value
+    /// isn't touched. LookState::reload puts it back to the default if its look is gone, as the Python does.
     pub fn set_look_choices(&mut self, looks: LookChoices) {
         self.looks = looks;
     }
@@ -380,12 +380,12 @@ impl Settings {
         for (_, f) in ls.iter_mut() {
             f(self, key);
         }
-        // (listeners added while these ran go after them)
+        // Listeners added while these ran go after them.
         ls.append(&mut self.listeners);
         self.listeners = ls;
     }
 
-    /// The next/previous choice (wrapping), skipping values `allowed(key, value)` rejects. Returns the value now.
+    /// The next or previous choice (wrapping), skipping values `allowed(key, value)` rejects. Returns the value now.
     pub fn step(&mut self, key: &str, delta: i64, allowed: Option<Allowed>) -> Result<Value, SettingsError> {
         let i = index(key).ok_or_else(|| SettingsError::UnknownKey(key.to_string()))?;
         let choices = specs()[i].choices(&self.looks);
@@ -404,7 +404,7 @@ impl Settings {
         Ok(self.v[i].clone())
     }
 
-    /// The file's text: json.dumps(saved, indent=2), every setting in SPECS order.
+    /// The file's text, json.dumps(saved, indent=2) with every setting in SPECS order.
     pub fn file_text(&self) -> String {
         json::dumps_indent(&Value::Dict(self.saved_values()), 2)
     }
@@ -426,8 +426,8 @@ impl Settings {
     }
 }
 
-/// The registry for the launcher's Settings page (`python -m framegen.settings`): every setting with its choices in
-/// display order, and where the saved file is.
+/// The registry for the launcher's Settings page (`python -m framegen.settings`). It has every setting with its
+/// choices in display order, and where the saved file is.
 pub fn specs_json(path: &Path, looks: &LookChoices) -> Value {
     let rows: Vec<Value> = specs()
         .iter()

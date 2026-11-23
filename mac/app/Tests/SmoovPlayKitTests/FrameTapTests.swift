@@ -105,7 +105,7 @@ import Testing
         tap.close()
     }
 
-    /// The core plays what the writer sends: run.py --source tap, no window, until the writer ends the stream.
+    /// The core plays what the writer sends (run.py --source tap, no window) until the writer ends the stream.
     @Test(.enabled(if: Fixture.hasPython)) func coreReadsTheTap() async throws {
         let name = "sp-core-\(getpid())"
         FrameTapWriter.unlink(name)
@@ -122,8 +122,8 @@ import Testing
         let tap = try FrameTapWriter(name: name)
         let w = 640, h = 360
         try tap.begin(width: w, height: h, maxFPS: 60, features: FrameTapWriter.featureVariable)
-        // a 30 fps "game": a new picture every 33 ms (variable rate: repeats aren't sent), for up to 60 s, and 3 s
-        // once the core is playing
+        // a 30 fps game, with a new picture every 33 ms (variable rate, so repeats aren't sent), for up to 60 s, and
+        // 3 s once the core is playing
         var pics: [[UInt8]] = (0..<8).map { FrameTapTests.picture($0 * 30, w, h, stride: w * 4) }
         for y in 0..<h { for x in 0..<w { for k in 0..<8 { pics[k][(y * w + x) * 4 + 1] = UInt8((x + y + k * 8) & 0xFF) } } }
         let start = Date()

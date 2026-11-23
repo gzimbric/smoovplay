@@ -1,7 +1,8 @@
-//! The convolutions, as MPSGraph executables: one per IFBlock (its two strided convolutions, eight residual
-//! convolutions and its last layer, a transposed convolution that net.rs turns into a plain one) and one for the
-//! encoder's first three layers, each compiled once for its input size. MPSGraph is what PyTorch's MPS backend runs convolutions on, so the same kernels (Apple's, which
-//! use the GPU's matrix hardware) do the work; what's gone is the per-op dispatch PyTorch adds around each.
+//! The convolutions, as MPSGraph executables. There's one per IFBlock, for its two strided convolutions, eight
+//! residual convolutions and last layer (a transposed convolution that net.rs turns into a plain one), and one for
+//! the encoder's first three layers. Each is compiled once for its input size. PyTorch's MPS backend runs
+//! convolutions on MPSGraph too, so the same kernels do the work. They're Apple's and use the GPU's matrix hardware.
+//! What's gone is the per-op dispatch PyTorch adds around each one.
 //!
 //! Tensors are NHWC fp16 in plain MTLBuffers the Metal kernels in kernels.rs read and write, so data never leaves the
 //! GPU and nothing is copied between the two.
@@ -43,17 +44,17 @@ pub enum Layer {
     Residual(Conv),
     /// conv + bias
     Conv(Conv),
-    /// ConvTranspose2d (weights (in, out, k, k) as PyTorch stores them) + bias
+    /// ConvTranspose2d + bias, with weights (in, out, k, k) as PyTorch stores them
     Deconv(Conv),
     /// A 4x4, stride 2, padding 1 ConvTranspose2d (weights as for Deconv) as four 2x2 convolutions, one per output
-    /// pixel parity, side by side in the channels: output (h, w, 4 * out), channel (py * 2 + px) * out + o holds
-    /// the transposed convolution's output o at (2y + py, 2x + px). The same sums, without MPSGraph's slower
-    /// transposed convolution.
+    /// pixel parity, side by side in the channels. The output is (h, w, 4 * out), and channel (py * 2 + px) * out + o
+    /// holds the transposed convolution's output o at (2y + py, 2x + px). It does the same sums without MPSGraph's
+    /// slower transposed convolution.
     Subpixel(Conv),
 }
 
-/// A Subpixel layer's weights for output parity (py, px) as a 2x2 convolution (OIHW) and its padding (left,
-/// right, top, bottom): rows (y - 1, y) take kernel rows (3, 1) for py = 0, rows (y, y + 1) take (2, 0) for py = 1.
+/// A Subpixel layer's weights for output parity (py, px) as a 2x2 convolution (OIHW), and its padding (left,
+/// right, top, bottom). For py = 0, rows (y - 1, y) take kernel rows (3, 1). For py = 1, rows (y, y + 1) take (2, 0).
 pub fn subpixel_weights(c: &Conv, py: usize, px: usize) -> (Vec<f16>, [usize; 4]) {
     assert!(c.k == 4 && c.stride == 2 && c.pad == 1, "subpixel takes 4x4 stride 2 padding 1");
     let mut w = vec![f16::ZERO; c.cout * c.cin * 4];
@@ -71,8 +72,8 @@ pub fn subpixel_weights(c: &Conv, py: usize, px: usize) -> (Vec<f16>, [usize; 4]
     (w, pad)
 }
 
-/// The same transposed convolution as one 3x3 convolution with 4 * out outputs (Subpixel's layout); 2.25 times the
-/// multiplies (the zeros), for comparison.
+/// The same transposed convolution as one 3x3 convolution with 4 * out outputs, in Subpixel's layout. It does 2.25
+/// times Subpixel's multiplies, the extra ones on zeros.
 pub fn deconv_as_conv3(c: &Conv) -> Conv {
     let mut w = vec![f16::ZERO; 4 * c.cout * c.cin * 9];
     let mut b = vec![f16::ZERO; 4 * c.cout];
@@ -115,7 +116,7 @@ pub struct Stack {
     pub out_shape: [usize; 4],
 }
 
-// MPSGraphExecutable is thread-safe once compiled (Apple: executables may be encoded from any thread).
+// MPSGraphExecutable is thread-safe once compiled. Apple says executables may be encoded from any thread.
 unsafe impl Send for Stack {}
 unsafe impl Sync for Stack {}
 
@@ -226,7 +227,7 @@ impl Stack {
         }
     }
 
-    /// Encodes the stack: `input` (in_shape) -> `output` (out_shape), both fp16 NHWC buffers.
+    /// Encodes the stack from `input` (in_shape) to `output` (out_shape), both fp16 NHWC buffers.
     pub fn encode(&self, cb: &MPSCommandBuffer, input: &TensorBuf, output: &TensorBuf) {
         unsafe {
             self.exe.encodeToCommandBuffer_inputsArray_resultsArray_executionDescriptor(

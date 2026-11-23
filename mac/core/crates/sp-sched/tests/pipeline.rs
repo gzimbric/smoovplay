@@ -1,6 +1,6 @@
 //! The pipeline tests of tests/test_timeline.py, test_120fps.py, test_game_rate.py, test_dips.py, test_delaytest.py,
-//! test_waiting.py, test_watchdog.py and test_steady.py, ported: same names, same assertions. The Python runs them
-//! on the real clock with sped-up ticks; here a FakeClock moves as the ticks would.
+//! test_waiting.py, test_watchdog.py and test_steady.py, ported with the same names and assertions. The Python runs
+//! them on the real clock with sped-up ticks. Here a FakeClock moves as the ticks would.
 
 mod common;
 
@@ -42,8 +42,9 @@ fn no_waits() -> Tuning {
     Tuning { rate_note_s: 0.0, rate_toast_s: 0.0, ..Tuning::default() }
 }
 
-/// test_game_rate.py _game: a live 60 Hz stream, sped up: a tick every 2 ms there, plus the Python pipeline's own
-/// time per tick, which a fake clock doesn't have (2.5 ms here), so the overlay sees a second of frames go by.
+/// test_game_rate.py _game, a live 60 Hz stream sped up. The Python has a tick every 2 ms plus its pipeline's own
+/// time per tick. A fake clock has no pipeline time, so a tick here takes 2.5 ms and the overlay sees a second of
+/// frames go by.
 fn game(clock: Arc<FakeClock>, pattern: impl Fn(u64) -> bool + Send + 'static, n: u64) -> impl sp_core::Source {
     let (mut i, mut content) = (0u64, 0u64);
     FnSource::new(move || {
@@ -90,13 +91,13 @@ fn test_minimal_overlay_is_a_few_numbers_and_a_dot() {
     let s = settings(|l| l.even_out = false);
     run(&mut p, &mut game(clock.clone(), |i| i % 4 != 3, 600), &mut sink, &s);
     let last = sink.texts.last().unwrap().clone().unwrap();
-    assert!(last.minimal && !last.text.contains('\n')); // the default style; the advice is a message, not a line
+    assert!(last.minimal && !last.text.contains('\n')); // the default style, where the advice is a message, not a line
     let texts: Vec<&str> = last.parts.iter().map(|(t, _)| t.as_str()).collect();
     assert!(texts[0].ends_with(" fps") && texts[1] == "game 45" && texts[2].starts_with("delay "));
-    assert_eq!(last.parts[1].1, "warn"); // 45 fps isn't what frame generation is for: amber
+    assert_eq!(last.parts[1].1, "warn"); // 45 fps isn't what frame generation is for, so amber
     assert_eq!(last.health, "good"); // the stand-in interpolator takes no time
     assert_eq!(sink.toasts, [rate_advice(Some(45.0), false, false)]);
-    // (the drawn size of the box is sp-present's)
+    // the box's drawn size is left to sp-present
 }
 
 #[test]
@@ -127,7 +128,7 @@ fn test_a_30_fps_game_gets_no_advice() {
     run(&mut p, &mut game(clock.clone(), |i| i % 2 == 0, 600), &mut sink, &s);
     let last = text(sink.texts.last().unwrap());
     assert!(last.contains("game 30 fps") && !last.contains('\n') && sink.toasts.is_empty());
-    let mut sink = RecSink::default(); // the minimal overlay: the game's rate in plain grey
+    let mut sink = RecSink::default(); // the minimal overlay shows the game's rate in plain grey
     let s = settings(|_| {});
     run(&mut p, &mut game(clock.clone(), |i| i % 2 == 0, 600), &mut sink, &s);
     let last = sink.texts.last().unwrap().clone().unwrap();
@@ -142,22 +143,22 @@ fn tm_tick(i: u64, new: Option<bool>) -> Tick {
 fn test_test_mode_notes_the_games_own_repeats_and_scores_only_fair_frames() {
     let s = settings(|l| l.simulate_30 = true);
     let mk = || TestMode::new(FnSource::new(|| None), s.clone());
-    // a 60 fps game: every frame new, so every left-out frame can be scored
+    // in a 60 fps game every frame is new, so every left-out frame can be scored
     let mut tm = mk();
     let ticks: Vec<Tick> = (0..8).map(|i| tm.apply(tm_tick(i, Some(true))).unwrap()).collect();
     assert!(ticks.iter().all(|t| t.extra["game_new"] == json!(true)));
     assert!(tm.gt(5).is_some());
-    // a 30 fps game (A A B B): the frame left out is just the kept one again
+    // in a 30 fps game (A A B B) the frame left out is the kept one again
     let mut tm = mk();
     let ticks: Vec<Tick> = (0..8).map(|i| tm.apply(tm_tick(i, Some(i % 2 == 0))).unwrap()).collect();
     let game: Vec<Value> = ticks.iter().map(|t| t.extra["game_new"].clone()).collect();
     assert_eq!(game, [true, false, true, false, true, false, true, false].map(Value::Bool));
     assert!([1, 3, 5].iter().all(|&i| tm.gt(i).is_none()));
-    // the other phase: the left-out frame is new, but the kept ones around it are repeats
+    // in the other phase the left-out frame is new, but the kept ones around it are repeats
     let mut tm = mk();
     (0..8).for_each(|i| drop(tm.apply(tm_tick(i, Some(i % 2 == 1)))));
     assert!([1, 3, 5].iter().all(|&i| tm.gt(i).is_none()));
-    // no word from the source (it compares pictures): scored as before
+    // with no word from the source (it compares pictures), frames are scored as before
     let mut tm = mk();
     (0..8).for_each(|i| drop(tm.apply(tm_tick(i, None))));
     assert!(tm.gt(5).is_some());
@@ -258,7 +259,7 @@ fn test_the_pipeline_shows_even_motion() {
         let from = sink.values.len() - (st.uneven_ticks as f64 * hz as f64 / 60.0) as usize + 30;
         let worst = diff(&sink.values[from..]).iter().map(|d| (d - 60.0 / hz as f64).abs()).fold(0.0, f64::max);
         assert!(worst < 0.1, "{hz}: {worst}");
-        // and the even timing off: shown as they come, unevenly
+        // and with even timing off, frames are shown unevenly as they come
         let mut sink2 = RecSink::default();
         let mut p2 = pipeline(BlendInterp::new(clock.clone()), &clock, &logs);
         let st2 = run(&mut p2, &mut stream(clock.clone(), game_times(45.0, ticks), ticks), &mut sink2, &settings(|l| l.even_out = false));
@@ -270,7 +271,7 @@ fn test_the_pipeline_shows_even_motion() {
 // ------------------------------------------------------------------------------------------------ test_120fps.py
 const AI: i64 = 200;
 
-/// test_120fps.py's _Interp: an AI frame at t shows AI + round(4 t).
+/// test_120fps.py's _Interp. An AI frame at t shows AI + round(4 t).
 fn quarter_value(tag: &Value) -> i64 {
     match tag.get("ai") {
         Some(ai) => AI + (4.0 * ai[2].as_f64().unwrap()).round() as i64,
@@ -278,7 +279,7 @@ fn quarter_value(tag: &Value) -> i64 {
     }
 }
 
-/// A 30 fps game on a 60 Hz stream; each tick arrives as it's taken, so none is late.
+/// A 30 fps game on a 60 Hz stream. Each tick arrives as it's taken, so none is late.
 fn game30(clock: Arc<FakeClock>, n: u64) -> impl sp_core::Source {
     let mut i = 0u64;
     FnSource::new(move || {
@@ -356,7 +357,7 @@ fn test_90_fps_is_unchanged() {
 
 // ------------------------------------------------------------------------------------------------ test_dips.py
 /// A 30 fps game that misses about held3 of its frames (each then stays up `hold` ticks), after `steady` frames that
-/// it doesn't, with Remote Play's sizes and frame numbers. Python's random, so the same games.
+/// it doesn't, with Remote Play's sizes and frame numbers. It uses Python's random, so the games are the same.
 fn dipping_game(clock: Arc<FakeClock>, frames: usize, held3: f64, seed: u64, hold: usize, steady: usize) -> impl sp_core::Source {
     let mut rnd = PyRandom::new(seed);
     let mut ticks = Vec::new();
@@ -436,7 +437,7 @@ fn test_a_steady_30_fps_game_is_unchanged_by_the_30_fps_setting() {
             .0
         })
         .collect();
-    assert_eq!(shown[1][40..], shown[0][40..]); // (after the lock has found the rhythm)
+    assert_eq!(shown[1][40..], shown[0][40..]); // after the lock has found the rhythm
 }
 
 #[test]
@@ -448,7 +449,7 @@ fn test_even_out_dips_spreads_a_dip_instead_of_freezing() {
                 l.hz = hz;
                 l.even_dips = true;
             });
-            let skip = (200 * hz / 60) as usize; // (after the dips have switched it on)
+            let skip = (200 * hz / 60) as usize; // after the dips have switched it on
             assert!(st.dip_ticks > 300);
             assert_eq!(backward_steps(&on), 0);
             let (u_on, u_off) = (unevenness(&on[skip..]), unevenness(&off[skip..]));
@@ -490,7 +491,7 @@ fn test_even_out_dips_changes_nothing_while_a_game_holds_30_fps() {
 
 #[test]
 fn test_even_out_dips_is_off_by_default() {
-    assert!(!Live::default().even_dips); // (that it's marked experimental is sp-settings')
+    assert!(!Live::default().even_dips); // marking it experimental is up to sp-settings
     let (_, st) = play_dips(300, 0.15, 4, 40, |l| l.hz = 90);
     assert_eq!(st.dip_ticks, 0);
 }
@@ -538,7 +539,7 @@ fn test_the_pipeline_runs_it_and_keeps_the_sound_in_step() {
     assert!(st.summary().contains(&st.delay_tests[0]) && st.results(None).join("\n").contains(&st.delay_tests[0]));
     assert!(logs.lock().unwrap().iter().any(|l| l.contains("delay test started")));
     assert!(!remote.st.lock().unwrap().audio.is_empty()); // told chiaki-ng how long to wait (whole ms, by type)
-    // Sound in sync off: chiaki-ng is told 0
+    // with Sound in sync off, chiaki-ng is told 0
     let mut remote2 = TraceRemote::new(&json!({}), clock.clone(), ev.clone());
     let s2 = settings(|l| l.audio_sync = false);
     let mut src = menu_game(clock.clone(), remote2.st.clone(), 0.3);
@@ -565,7 +566,7 @@ fn test_without_remote_play_it_says_so() {
 // ------------------------------------------------------------------------------------------------ test_waiting.py, test_watchdog.py
 #[test]
 fn test_pipeline_quits_during_a_stall() {
-    // Q (or closing the window) while no frame comes: the session ends instead of hanging. On the real clock.
+    // Q or closing the window while no frame comes ends the session instead of hanging. This runs on the real clock.
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let mut p = Pipeline::new(BlendInterp::new(Arc::new(FakeClock::new(0.0))), None).with_clock(clock).with_probe(Box::new(TagProbe));
     let status = p.status();
@@ -574,7 +575,7 @@ fn test_pipeline_quits_during_a_stall() {
     let mut stalled = FnSource::new(|| Some(Event::Waiting(Waiting { since: 1.0, what: "the PS5".into(), why: String::new() })));
     let st = p.run(&mut stalled, Some(&mut sink), RunOptions::default());
     assert!(st.exit == Exit::Quit && sink.waits == 3);
-    assert!(status.beat() > before); // (the watchdog reads it)
+    assert!(status.beat() > before); // the watchdog reads it
     assert_eq!(status.waiting().unwrap().what, "the PS5");
 }
 

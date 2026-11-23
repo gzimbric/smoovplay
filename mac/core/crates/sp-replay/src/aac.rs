@@ -1,7 +1,8 @@
-//! AAC-LC encoding (48 kHz stereo, 160 kbit/s: replay.py's sound track) with AudioToolbox's AudioConverter, fed a
-//! sample at a time as the sound comes, with each packet's timestamp worked out from where its samples were put.
+//! AAC-LC encoding with AudioToolbox's AudioConverter, at 48 kHz stereo and 160 kbit/s like replay.py's sound track.
+//! It's fed a sample at a time as the sound comes, and each packet's timestamp is worked out from where its samples
+//! were put.
 //!
-//! The encoder holds back `priming` samples at the start (2112 for Apple's): packet k decodes to input samples from
+//! The encoder holds back `priming` samples at the start (2112 for Apple's). Packet k decodes to input samples from
 //! k*1024 - priming, so that's the time it's given, and a clip cut from anywhere has its sound in place.
 
 use std::collections::VecDeque;
@@ -148,7 +149,7 @@ pub struct AacEncoder {
     max_packet: usize,
     /// Samples put in so far.
     fed: i64,
-    /// Where the timeline jumps: (input sample index, its timestamp), oldest first.
+    /// Where the timeline jumps, as (input sample index, its timestamp), oldest first.
     segments: VecDeque<(i64, i64)>,
     packets: i64,
 }
@@ -223,7 +224,7 @@ impl AacEncoder {
         p + (index - i)
     }
 
-    /// Interleaved stereo 16-bit samples at 48 kHz, the first of them at `pts`; returns the packets now done.
+    /// Takes interleaved stereo 16-bit samples at 48 kHz, the first of them at `pts`. Returns the packets now done.
     pub fn write(&mut self, pcm: &[i16], pts: i64) -> Vec<Packet> {
         let frames = (pcm.len() / 2) as i64;
         if frames == 0 {
@@ -277,8 +278,9 @@ impl Drop for AacEncoder {
     }
 }
 
-/// Interleaved 16-bit samples, any rate and channel count, as stereo at 48 kHz (mono to both sides, surround's
-/// front left and right; other rates linearly), keeping the resampler's place between chunks.
+/// Turns interleaved 16-bit samples of any rate and channel count into stereo at 48 kHz, keeping the resampler's place
+/// between chunks. Mono goes to both sides, surround keeps its front left and right, and other rates are resampled
+/// linearly.
 #[derive(Default)]
 pub struct ToStereo48 {
     rate: u32,

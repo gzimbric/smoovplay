@@ -1,5 +1,5 @@
 //! The settings the pipeline follows live (framegen/settings.py's keys that pipeline.py reads). Another crate maps
-//! the real settings onto [`LiveSettings`]; [`SharedLive`] is a plain one for tests and simple hosts.
+//! the real settings onto [`LiveSettings`]. [`SharedLive`] is a plain one for tests and simple hosts.
 
 use std::sync::Mutex;
 
@@ -11,8 +11,8 @@ pub enum OverlayStyle {
     Detailed,
 }
 
-/// One reading of the settings, taken at the start of each tick (the Python reads them as it goes; a change made in
-/// the menu in the middle of a tick is picked up at the next one either way).
+/// One reading of the settings, taken at the start of each tick. The Python reads them as it goes, but a change made
+/// in the menu in the middle of a tick is picked up at the next one either way.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Live {
     /// "interp": frame generation on.
@@ -23,7 +23,7 @@ pub struct Live {
     pub simulate_30: bool,
     /// "steady_hud".
     pub steady_hud: bool,
-    /// "overlay": the stats overlay drawn (off: the presenter gets None).
+    /// "overlay": the stats overlay is drawn. When off, the presenter gets None.
     pub overlay: bool,
     /// "overlay_style".
     pub overlay_style: OverlayStyle,
@@ -33,7 +33,7 @@ pub struct Live {
     pub even_dips: bool,
     /// "game_fps" == "30": every other frame is new (RhythmLock).
     pub game_fps_30: bool,
-    /// "audio_sync": hold chiaki-ng's (or the card's) sound back to meet the picture.
+    /// "audio_sync": hold chiaki-ng's or the card's sound back to meet the picture.
     pub audio_sync: bool,
 }
 
@@ -57,12 +57,12 @@ impl Default for Live {
 
 pub trait LiveSettings: Send + Sync {
     fn live(&self) -> Live;
-    /// settings.override("simulate_30", on): this run only (the pipeline turns test mode off on a game that's at 30
-    /// already). The source's test mode follows the setting.
+    /// settings.override("simulate_30", on), for this run only. The pipeline turns test mode off on a game that's at
+    /// 30 already. The source's test mode follows the setting.
     fn set_simulate_30(&self, on: bool);
 }
 
-/// Settings in a mutex: tests, and hosts without a settings store of their own.
+/// Settings in a mutex, for tests and for hosts without a settings store of their own.
 #[derive(Debug, Default)]
 pub struct SharedLive(Mutex<Live>);
 

@@ -1,12 +1,12 @@
-//! The panels drawn over the video, as images: the stats overlay in both styles (io.py _mini and _detail), messages
-//! (io.py _pill) and the settings menu (menu.py Menu.render). Same layout and colours as the Python window's, with
-//! Core Text's system font at the screen's own pixels instead of OpenCV's Hershey font.
+//! The panels drawn over the video, as images. They are the stats overlay in both styles (io.py _mini and _detail),
+//! messages (io.py _pill) and the settings menu (menu.py Menu.render). Layout and colours match the Python window's,
+//! but the text uses Core Text's system font at the screen's own pixels instead of OpenCV's Hershey font.
 
 use crate::display::{MenuModel, MenuRow};
 use crate::menu::{Menu, Row};
 use crate::text::{Canvas, Face, Font, Rgb, wrap};
 
-/// A drawn panel: premultiplied BGRA, rows top first.
+/// A drawn panel, premultiplied BGRA with rows top first.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Image {
     pub w: usize,
@@ -20,7 +20,7 @@ impl Image {
     }
 }
 
-// OpenCV's Hershey Simplex at scale 1 has digits about 22 px tall; SF's cap height is about 0.7 of its size, so a
+// OpenCV's Hershey Simplex at scale 1 has digits about 22 px tall. SF's cap height is about 0.7 of its size, so a
 // Python font scale `s` is SF at about 31 * s px.
 fn hershey(scale: f64) -> f64 {
     31.0 * scale
@@ -68,8 +68,8 @@ fn i(v: f64) -> f64 {
     v.trunc()
 }
 
-/// The minimal overlay: a small dark box with a dot (green keeping up, amber tight, red falling behind) and a few
-/// numbers, plus the test line under them while a test runs.
+/// The minimal overlay. It's a small dark box with a dot and a few numbers, plus the test line under them while a
+/// test runs. The dot is green when keeping up, amber when tight and red when falling behind.
 pub fn mini(parts: &[(String, String)], health: &str, second: &str, ui: f64) -> Image {
     let font = Font::new(Face::Digits, hershey(0.52 * ui));
     let small = Font::new(Face::Digits, hershey(0.42 * ui));
@@ -95,8 +95,8 @@ pub fn mini(parts: &[(String, String)], health: &str, second: &str, ui: f64) -> 
     Image::of(c)
 }
 
-/// The detailed overlay: its line (and a second, the advice or a test line) on a box like the minimal one's.
-/// min_w: the box only grows, so it doesn't jitter as the numbers change width.
+/// The detailed overlay. Its line, and a second one with the advice or a test line, go on a box like the minimal
+/// one's. With `min_w` the box only grows, so it doesn't jitter as the numbers change width.
 pub fn detail(text: &str, ui: f64, min_w: usize) -> Image {
     let font = Font::new(Face::Digits, hershey(0.52 * ui));
     let (pad, lead) = (i(6.0 * ui).max(3.0), i(8.0 * ui));
@@ -131,13 +131,13 @@ pub fn pill(text: &str, ui: f64) -> Image {
     Image::of(c)
 }
 
-/// The keys, at the bottom of the menu: on the main page, and on a section's page (menu.py KEYS).
+/// The keys at the bottom of the menu, on the main page and on a section's page (menu.py KEYS).
 pub const MENU_KEYS: [&str; 2] = [
     "Up/Down select   Left/Right change   Enter open   M close   Q quit",
     "Up/Down select   Left/Right change   Esc back   M close   Q quit",
 ];
 
-/// Draws the menu (menu.py render): the size stays the same whatever page and row are shown, so the rows stay put
+/// Draws the menu (menu.py render). Its size stays the same whatever page and row are shown, so the rows stay put
 /// while the player goes through it.
 #[derive(Default)]
 pub struct MenuDrawer {

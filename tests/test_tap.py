@@ -20,7 +20,7 @@ def tap():
     yield t
     t.end()
     t.close()
-    unlink(NAME)  # (POSIX: shared memory lasts until it's removed)
+    unlink(NAME)  # POSIX shared memory lasts until it's removed
 
 
 def test_raw_layout_fits_the_same_memory():

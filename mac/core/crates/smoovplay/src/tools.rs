@@ -46,7 +46,7 @@ fn kind_json(kind: &str, show_all: bool) -> Value {
     let i = sp_core::SourceInfo::of(kind);
     let controls = match kind {
         "chiaki" => "Your controller connects to this PC; chiaki-ng sends it to the PS5".to_string(),
-        "tap" => "Your controller connects to the app as usual".to_string(), // (sp-core's SourceInfo::of leaves it out)
+        "tap" => "Your controller connects to the app as usual".to_string(), // sp-core's SourceInfo::of leaves it out
         _ => i.controls.clone(),
     };
     let mut m = Map::new();
@@ -82,21 +82,21 @@ pub fn sources_main(as_json: bool, all: bool) -> i32 {
     0
 }
 
-// ------------------------------------------------------------------------------------------- capture / replay
-/// `smoovplay capture --list [--json]` / `--formats NAME [--json]` (python -m framegen.capture): sp-capture's.
+// ------------------------------------------------------------------------------------------- capture and replay
+/// `smoovplay capture --list [--json]` or `--formats NAME [--json]` (python -m framegen.capture), from sp-capture.
 pub fn capture_main(args: &[String]) -> i32 {
     sp_capture::cli::main(args)
 }
 
-/// `smoovplay replay-compose ...` (python -m framegen.replay compose): sp-replay's before & after maker, which the
-/// recorder starts as a process of its own.
+/// `smoovplay replay-compose ...` (python -m framegen.replay compose) runs sp-replay's before & after maker, which
+/// the recorder starts as a process of its own.
 pub fn replay_compose_main(args: &[String]) -> i32 {
     let args: Vec<String> = args.iter().skip_while(|a| *a == "compose").cloned().collect();
     sp_replay::compose_main(&args)
 }
 
 // ------------------------------------------------------------------------------------------- settings
-/// `smoovplay settings` (python -m framegen.settings): the registry for the launcher's Settings page.
+/// `smoovplay settings` (python -m framegen.settings) prints the registry for the launcher's Settings page.
 pub fn settings_main() -> i32 {
     println!("{}", json::dumps(&specs_json(&default_path(), &LookChoices::builtin())));
     0
@@ -116,9 +116,9 @@ fn noise_frame(w: usize, h: usize) -> Frame {
     Frame::from_bgra(&bgra, w, h)
 }
 
-/// autodetect.py time_rife(): ms for one new real frame plus one in-between frame at 1080p, at full and half
-/// motion detail, on Metal: the median of five rounds of 12 ticks (after two that let the GPU's clocks come up),
-/// each tick waited for as the pipeline waits for it.
+/// autodetect.py time_rife() on Metal. Returns the ms for one new real frame plus one in-between frame at 1080p, at
+/// full and half motion detail. Each is the median of five rounds of 12 ticks, after two rounds that let the GPU's
+/// clocks come up, and each tick is waited for as the pipeline waits for it.
 fn time_rife(model: &str, log: &dyn Fn(&str)) -> Result<Timing, String> {
     let (w, h) = (autodetect::STREAM.0 as usize, autodetect::STREAM.1 as usize);
     let frame = noise_frame(w, h);
@@ -239,7 +239,7 @@ pub fn prepare_main(args: &[String]) -> i32 {
             "--no-detect" => detect = false,
             "--width" | "--height" | "--scales" => {
                 let name = args[i].split('=').next().unwrap().to_string();
-                let _ = arg_value(args, &mut i, &name); // (TensorRT's; nothing to build ahead on a Mac)
+                let _ = arg_value(args, &mut i, &name); // TensorRT's, and there's nothing to build ahead on a Mac
             }
             other => {
                 eprintln!("smoovplay prepare: error: unrecognized arguments: {other}");
@@ -320,7 +320,7 @@ impl LookDrawer {
     }
 }
 
-/// `smoovplay looks ...` (python -m framegen.looks): sp-settings' CLI, and `preview` drawn here.
+/// `smoovplay looks ...` (python -m framegen.looks). It's sp-settings' CLI, with `preview` drawn here.
 pub fn looks_main(args: &[String]) -> i32 {
     let lib_dir = looks::looks_dir();
     let samples = samples_dir();
@@ -372,10 +372,10 @@ fn key_error(k: &str) -> String {
     format!("'{k}'")
 }
 
-/// `smoovplay looks-preview` (python -m framegen.looks_preview): one JSON request per line on stdin, one JSON answer
-/// per line on stdout; anything else printed goes to stderr.
+/// `smoovplay looks-preview` (python -m framegen.looks_preview) reads one JSON request per line on stdin and writes
+/// one JSON answer per line on stdout. Anything else printed goes to stderr.
 pub fn looks_preview_main() -> i32 {
-    // stdout carries the answers: everything else this process prints goes to stderr
+    // stdout carries the answers, so everything else this process prints goes to stderr
     let out_fd = unsafe { libc::dup(1) };
     unsafe { libc::dup2(2, 1) };
     let mut out = unsafe { std::fs::File::from_raw_fd(out_fd) };

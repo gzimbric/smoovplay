@@ -5,10 +5,10 @@
 //! capture --formats NAME [--json]   # what a device offers, and the format SmoovPlay would pick
 //! ```
 //!
-//! --list --json gives {"video": [{"name", "kind", "alt"}...], "audio": [...]} (alt: AVFoundation's unique ID),
-//! --formats NAME --json {"modes": [Mode...], "pick": Mode or null, "note": "..."}, as the Python does. --raw lists
-//! what AVFoundation says of each device (its unique ID, model, maker, and whether it carries sound) instead of
-//! FFmpeg's log. Neither opens a device.
+//! --list --json gives {"video": [{"name", "kind", "alt"}...], "audio": [...]}, where alt is AVFoundation's unique
+//! ID. --formats NAME --json gives {"modes": [Mode...], "pick": Mode or null, "note": "..."}, as the Python does.
+//! --raw lists what AVFoundation says of each device (its unique ID, model, maker, and whether it carries sound)
+//! instead of FFmpeg's log. Neither opens a device.
 
 use crate::devices::{self, av_devices, formats_json, has_sound, pick_mode};
 

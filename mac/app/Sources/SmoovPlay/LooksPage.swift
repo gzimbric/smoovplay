@@ -1,5 +1,5 @@
-// The Looks page (LooksPage.cs, LookPreview.cs): the looks on the left, the picked one's name, buttons, preview
-// and effects on the right. Holding the mouse on the preview shows the picture without the look.
+// The Looks page (LooksPage.cs, LookPreview.cs), with the looks on the left and the picked one's name, buttons,
+// preview and effects on the right. Holding the mouse on the preview shows the picture without the look.
 import SmoovPlayKit
 import SwiftUI
 

@@ -1,6 +1,6 @@
-//! Plays the card's sound on the Mac's output (framegen/audio.py Player): Core Audio's default output unit, which
-//! follows the output picked in System Settings and converts the card's rate to the device's (as WASAPI's
-//! auto_convert does on Windows), pulling from a [`PlayerCore`] on its real-time thread.
+//! Plays the card's sound on the Mac's output (framegen/audio.py Player). It uses Core Audio's default output unit,
+//! which follows the output picked in System Settings and converts the card's rate to the device's, as WASAPI's
+//! auto_convert does on Windows. The unit pulls from a [`PlayerCore`] on its real-time thread.
 //!
 //! The output's own latency (the device's, its safety offset, its buffer, its stream's, and the unit's rate
 //! converter) is taken off the delay asked for, so the total is what the pipeline asked for. Core Audio's overload
@@ -90,8 +90,9 @@ fn device_name(obj: AudioObjectID) -> String {
     }
 }
 
-/// The output's latency in seconds: the device's own, its safety offset, its IO buffer and its first output
-/// stream's, at the device's rate (what PortAudio reports as an output stream's latency), plus the unit's.
+/// The output's latency in seconds. That's the device's own, its safety offset, its IO buffer and its first output
+/// stream's, at the device's rate, which is what PortAudio reports as an output stream's latency. The unit's is
+/// added on top.
 fn output_latency(unit: AudioUnit, device: AudioObjectID) -> f64 {
     let out = kAudioObjectPropertyScopeOutput;
     let rate = get_f64(device, kAudioDevicePropertyNominalSampleRate, kAudioObjectPropertyScopeGlobal).filter(|r| *r > 0.0);
@@ -198,7 +199,7 @@ impl Player {
     }
 
     fn refcon(&self) -> *mut c_void {
-        // (the boxed pair lives as long as the Player, at an address that doesn't move)
+        // the boxed pair lives as long as the Player, at an address that doesn't move
         &*self.cb as *const (Arc<PlayerCore>, usize) as *mut c_void
     }
 
@@ -262,7 +263,7 @@ impl Player {
         Ok(())
     }
 
-    /// The output's own latency, seconds (taken off the delay).
+    /// The output's own latency in seconds, which is taken off the delay.
     pub fn latency(&self) -> f64 {
         self.cb.0.latency()
     }
@@ -322,7 +323,7 @@ impl SoundOut for Player {
     }
 }
 
-/// What plays a capture card's sound: a [`Player`] on the Mac's default output (run.py sound_player).
+/// What plays a capture card's sound, a [`Player`] on the Mac's default output (run.py sound_player).
 pub fn player_factory() -> SoundFactory {
     Box::new(|rate, channels| {
         let p = Player::open(rate, channels)?;

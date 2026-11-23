@@ -1,7 +1,7 @@
-//! `smoovplay`: SmoovPlay's macOS core, run.py and the framegen helpers the launcher calls as one binary, on the
-//! Rust crates (sp-core, sp-tap, sp-media, sp-rife, sp-sched, sp-present, sp-settings). The Python pipeline is the
-//! reference: the same flags, the same "[run] ..." lines and the same --control protocol, so the Mac app switches
-//! cores by changing only the command it starts.
+//! `smoovplay` is SmoovPlay's macOS core. It puts run.py and the framegen helpers the launcher calls into one binary,
+//! built on the Rust crates (sp-core, sp-tap, sp-media, sp-rife, sp-sched, sp-present, sp-settings). The Python
+//! pipeline is the reference. The flags, the `[run]` lines and the --control protocol match the Python's, so the Mac
+//! app switches cores by changing only the command it starts.
 //!
 //!     smoovplay [run.py's flags]          play (see --help)
 //!     smoovplay autodetect ...            python -m framegen.autodetect

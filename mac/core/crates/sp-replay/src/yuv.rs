@@ -1,12 +1,12 @@
-//! BT.709, limited range, for BGR input (replay.py's colour section): Y = 16 + 219 (kr R + kg G + kb B), Cb/Cr =
-//! 128 + 224 (...), with R..B in 0..1. The GPU kernels use these weights; [`bgr_to_i420`] is the same sums on the CPU
-//! (for the labels, the divider and the tests).
+//! BT.709 limited range for BGR input (replay.py's colour section). Y = 16 + 219 (kr R + kg G + kb B), and Cb and Cr
+//! are 128 + 224 times their own weighted sums, with R, G and B in 0 to 1. The GPU kernels use these weights.
+//! [`bgr_to_i420`] does the same sums on the CPU, for the labels, the divider and the tests.
 
 pub const KR: f32 = 0.2126;
 pub const KB: f32 = 0.0722;
 pub const KG: f32 = 1.0 - KR - KB;
 
-/// Rows Y, Cb, Cr of weights on (B, G, R) in 0..255, giving 0..255 (before the +16 / +128): replay.py _M709.
+/// replay.py _M709. Rows Y, Cb and Cr of weights on (B, G, R) in 0 to 255, giving 0 to 255 before the +16 or +128.
 pub fn m709() -> [[f32; 3]; 3] {
     let s = [219.0f32 / 255.0, 224.0 / 255.0, 224.0 / 255.0];
     let rows = [
@@ -31,8 +31,8 @@ fn u8_of(v: f32) -> u8 {
     v.round_ties_even().clamp(0.0, 255.0) as u8
 }
 
-/// H x W packed BGR (even size) -> I420 (BT.709, limited range): Y (h*w), then U, then V (each h/2 * w/2), as
-/// replay.py bgr_to_i420.
+/// Converts H x W packed BGR (even size) to I420 in BT.709 limited range, as replay.py bgr_to_i420 does. The output
+/// is Y (h*w), then U, then V (each h/2 * w/2).
 pub fn bgr_to_i420(bgr: &[u8], w: usize, h: usize) -> Vec<u8> {
     assert!(w.is_multiple_of(2) && h.is_multiple_of(2) && bgr.len() >= w * h * 3);
     let m = m709();

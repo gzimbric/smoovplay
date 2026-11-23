@@ -40,7 +40,7 @@ pub const OFF_PRESS_QPC: usize = 80;
 pub const OFF_AUDIO_DELAY_MS: usize = 88;
 pub const OFF_COLOUR: usize = 92;
 
-// Codecs (the header's `codec`): ChiakiCodec's, then decoded frames
+// Codecs (the header's `codec`). ChiakiCodec's values, then decoded frames.
 pub const CODEC_H264: u32 = 0;
 pub const CODEC_H265: u32 = 1;
 pub const CODEC_H265_HDR: u32 = 2;
@@ -83,8 +83,8 @@ impl RawFormat {
     }
 }
 
-/// NV12's colours from the header's `colour`: (bt709, full_range); None for 0 (auto: BT.709 from 720 lines up,
-/// else BT.601, limited range).
+/// NV12's colours from the header's `colour`, as (bt709, full_range). None for 0 (auto), which picks BT.709 from
+/// 720 lines up, else BT.601, limited range.
 pub fn colour_of(colour: u32) -> Option<(bool, bool)> {
     match colour {
         1 => Some((true, false)),
@@ -110,7 +110,7 @@ pub const FLAG_TRUNCATED: u32 = 1;
 pub const FLAG_REPEAT: u32 = 2;
 pub const FLAG_NEW: u32 = 4;
 
-// The sound ring (its own mapping: the name + AUDIO_SUFFIX)
+// The sound ring, in a mapping of its own named the tap's name + AUDIO_SUFFIX
 pub const AUDIO_SUFFIX: &str = "-audio";
 pub const AUDIO_MAGIC: u32 = 0x4154_4643; // 'CFTA'
 pub const AUDIO_HEADER: usize = 64;
@@ -123,13 +123,13 @@ pub const AUDIO_TOTAL: usize = AUDIO_HEADER + AUDIO_SLOTS * AUDIO_SLOT_SIZE;
 pub const BUTTON_OPTIONS: u32 = 1 << 12;
 pub const BUTTON_PS: u32 = 1 << 15;
 
-/// POSIX shared memory names: "/" and the name, at most this long with the "/" (macOS's PSHMNAMLEN).
+/// POSIX shared memory names are "/" and the name, at most this long counting the "/" (macOS's PSHMNAMLEN).
 pub const SHM_NAME_MAX: usize = 31;
 /// How often a waiting reader looks at the header, in seconds.
 pub const POLL_S: f64 = 0.0005;
 
-/// (slot_count, slot_size) for decoded frames of this format and size: slots a whole number of MiB that hold one
-/// frame and its slot header, as many as fit in CAPACITY (at most 32). Err if fewer than 4 fit.
+/// (slot_count, slot_size) for decoded frames of this format and size. Each slot is a whole number of MiB and holds
+/// one frame and its slot header, and there are as many as fit in CAPACITY, at most 32. Err if fewer than 4 fit.
 pub fn raw_layout(fmt: RawFormat, width: usize, height: usize) -> crate::Result<(usize, usize)> {
     let need = SLOT_HEADER + fmt.frame_bytes(width, height);
     let size = need.div_ceil(1 << 20) << 20;

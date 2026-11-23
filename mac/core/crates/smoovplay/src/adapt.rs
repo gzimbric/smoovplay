@@ -1,7 +1,7 @@
-//! The real settings (sp-settings) as the other crates want them: sp-sched's LiveSettings for the pipeline, sp-present's
-//! MenuModel and DisplaySettings for the window's menu and hotkeys, and the Remote's Rules for the launcher. The rules
-//! are run.py's on a Mac: the window's allowed() and disabled() (io.py GLWindowSink), run.py's unavailable rows and
-//! choices, model_rows() and restart_reasons().
+//! The real settings (sp-settings) as the other crates want them: sp-sched's LiveSettings for the pipeline,
+//! sp-present's MenuModel and DisplaySettings for the window's menu and hotkeys, and the Remote's Rules for the
+//! launcher. The rules are run.py's on a Mac: the window's allowed() and disabled() (io.py GLWindowSink), run.py's
+//! unavailable rows and choices, model_rows() and restart_reasons().
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -37,7 +37,7 @@ pub fn from_serde(v: &serde_json::Value) -> Value {
     sp_settings::json::loads(&v.to_string()).unwrap_or(Value::Null)
 }
 
-/// What a session is built from (run.py session_config): a restart is needed when this changes.
+/// What a session is built from (run.py session_config). A restart is needed when this changes.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Cfg {
     /// Always "metal" here (the Python's Mac engine is "torch").
@@ -46,7 +46,7 @@ pub struct Cfg {
     pub model: String,
 }
 
-/// What the run's rules go by and doesn't change while it plays.
+/// What the run's rules go by, which doesn't change while it plays.
 #[derive(Clone, Debug)]
 pub struct Ctx {
     /// The stream's size.
@@ -60,7 +60,7 @@ pub struct Ctx {
     /// may take.
     pub card_full_ms: Option<f64>,
     pub card_share: f64,
-    /// Why NVIDIA VFG can't be used ("" if it can: never on a Mac).
+    /// Why NVIDIA VFG can't be used, or "" if it can (never on a Mac).
     pub vfg_why: String,
     /// The pipeline carries HDR10 frames (RGBA16F PQ) to the window.
     pub hdr10: bool,
@@ -109,9 +109,9 @@ pub fn py_float(x: f64) -> String {
 /// The rows and choices the window and the launcher grey out or limit, and the session that's playing.
 #[derive(Debug, Default)]
 pub struct Rows {
-    /// run.py's `unavailable`: key -> why.
+    /// run.py's `unavailable`, why each key is greyed out.
     pub unavailable: BTreeMap<String, String>,
-    /// run.py's `choices`: key -> the values that can be picked.
+    /// run.py's `choices`, the values that can be picked for each key.
     pub choices: BTreeMap<String, Vec<Value>>,
     /// The playing session's config (run.py `started`).
     pub started: Option<Cfg>,
@@ -132,7 +132,7 @@ impl RunRules {
     /// The window's allowed(key, value).
     pub fn allowed(&self, _s: &Settings, key: &str, value: &Value) -> bool {
         if key == "scaler" {
-            return value.as_str().is_some_and(|v| v == "fsr" || v == "bilinear"); // (RTX VSR is NVIDIA's)
+            return value.as_str().is_some_and(|v| v == "fsr" || v == "bilinear"); // RTX VSR is NVIDIA's
         }
         match lock_any(&self.rows).choices.get(key) {
             Some(vs) => value.py_in(vs),
@@ -216,7 +216,7 @@ impl LiveSettings for LiveAdapter {
     }
 }
 
-/// The looks: which one the video shows (the settings', or the launcher's preview) and the library.
+/// The looks. It holds which one the video shows (the settings', or the launcher's preview) and the library.
 pub struct Looks {
     pub state: LookState,
     pub library: Library,
@@ -231,13 +231,13 @@ pub struct MenuAdapter {
     pub looks: SharedLooks,
     /// Bumped by a watcher on every settings change.
     pub rev: Arc<AtomicU64>,
-    /// The look last converted for the renderer: (LookState rev, the look).
+    /// The look last converted for the renderer, with the LookState rev it was converted at.
     cache: RefCell<Option<(u64, Option<Arc<sp_present::looks::Look>>)>>,
     /// The look the window shows, for instant replay's "Looks in clips".
     pub shown: Arc<Mutex<Option<Arc<sp_present::looks::Look>>>>,
 }
 
-// (RefCell: the window calls its model from one thread at a time; MenuModel needs Send only.)
+// RefCell is enough because the window calls its model from one thread at a time. MenuModel needs Send only.
 impl MenuAdapter {
     pub fn new(settings: SharedSettings, rules: Arc<RunRules>, looks: SharedLooks, rev: Arc<AtomicU64>) -> MenuAdapter {
         MenuAdapter { settings, rules, looks, rev, cache: RefCell::new(None), shown: Arc::new(Mutex::new(None)) }
@@ -260,8 +260,8 @@ impl MenuAdapter {
     }
 }
 
-/// A look as sp-present's renderer takes it: sp-settings' normalized look, through its JSON (both normalize the
-/// same format).
+/// A look as sp-present's renderer takes it. sp-settings' normalized look goes through its JSON, as both normalize
+/// the same format.
 pub fn present_look(look: &sp_settings::looks::Look) -> Option<Arc<sp_present::looks::Look>> {
     let v: serde_json::Value = serde_json::from_str(&sp_settings::json::dumps(&look.to_value())).ok()?;
     match sp_present::looks::normalize(&v) {
@@ -316,7 +316,7 @@ impl MenuModel for MenuAdapter {
             return false;
         }
         if key == "look_on" {
-            lock_any(&self.looks).state.preview = None; // K: the Look settings' look again (LookState.toggle)
+            lock_any(&self.looks).state.preview = None; // K goes back to the Look settings' look (LookState.toggle)
         }
         let v = sp.canonical(&v, s.look_choices()).unwrap_or(v);
         if save { s.set(key, v).is_ok() } else { s.override_value(key, v).is_ok() }
@@ -351,7 +351,7 @@ impl MenuModel for MenuAdapter {
                 Some((r, l)) if *r == rev => l.clone(),
                 _ => {
                     let l = if self.rules.ctx.hdr10 {
-                        None // (looks are made for SDR pictures)
+                        None // looks are made for SDR pictures
                     } else {
                         looks.state.current(&s, &looks.library).and_then(present_look)
                     };

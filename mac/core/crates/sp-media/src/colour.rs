@@ -1,6 +1,6 @@
 //! What a decoded picture's samples mean, with FFmpeg's numbering (AVColorSpace, AVColorTransferCharacteristic,
-//! AVColorPrimaries), as framegen/hdr.py's FrameInfo and PyAV's to_ndarray read them; and the colour maths' constants
-//! from hdr.py (PQ, BT.2390, the BT.2020 / BT.709 matrices).
+//! AVColorPrimaries), as framegen/hdr.py's FrameInfo and PyAV's to_ndarray read them. Also the colour maths'
+//! constants from hdr.py for PQ, BT.2390 and the BT.2020 and BT.709 matrices.
 
 use objc2_core_foundation::{CFRetained, CFString};
 use objc2_core_media::CMFormatDescription;
@@ -19,7 +19,7 @@ pub const SPC_BT709: u32 = 1;
 pub const SPC_BT2020_NCL: u32 = 9;
 pub const SPC_BT2020_CL: u32 = 10;
 
-/// A decoded picture's colour tags (FFmpeg's numbers; 2 = unspecified) and range.
+/// A decoded picture's colour tags and range. The tags are FFmpeg's numbers, with 2 for unspecified.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Tags {
     pub matrix: u32,
@@ -41,11 +41,11 @@ fn extension(f: &CMFormatDescription, key: &CFString) -> Option<String> {
 }
 
 impl Tags {
-    /// From a format description made from a stream's parameter sets: its colour description if the stream has one
-    /// (unspecified otherwise, as FFmpeg reports it). VideoToolbox's pictures carry BT.709 attachments even for an
-    /// untagged stream, so those aren't the stream's word.
+    /// From a format description made from a stream's parameter sets. That gives its colour description if the
+    /// stream has one, or unspecified as FFmpeg reports it. VideoToolbox's pictures carry BT.709 attachments even for
+    /// an untagged stream, so those don't tell what the stream says.
     pub fn of_format(f: &CMFormatDescription, full_range: bool) -> Tags {
-        // (the format description's keys are the same strings as the image buffer's)
+        // The format description's keys are the same strings as the image buffer's.
         let (m, t, p) = unsafe {
             (
                 extension(f, kCVImageBufferYCbCrMatrixKey),
@@ -101,8 +101,8 @@ impl Tags {
         Tags { matrix, transfer, primaries, full_range }
     }
 
-    /// The Y'CbCr matrix PyAV's to_ndarray("bgr24") uses for these tags (swscale): BT.709 if tagged so, BT.2020 if
-    /// tagged so, else BT.601 (untagged included). (kr, kb).
+    /// The Y'CbCr matrix, as (kr, kb), that PyAV's to_ndarray("bgr24") uses for these tags through swscale. That's
+    /// BT.709 or BT.2020 if tagged so, else BT.601, untagged included.
     pub fn swscale_kr_kb(&self) -> (f64, f64) {
         match self.matrix {
             SPC_BT709 => (0.2126, 0.0722),
@@ -113,8 +113,8 @@ impl Tags {
     }
 }
 
-/// hdr.py's FrameInfo: what an HDR path's samples mean, with its defaults for untagged streams (10-bit HEVC from a
-/// PS5 in HDR mode is HDR10; untagged 8-bit is BT.709).
+/// hdr.py's FrameInfo, which says what an HDR path's samples mean, with its defaults for untagged streams. 10-bit
+/// HEVC from a PS5 in HDR mode is HDR10, and untagged 8-bit is BT.709.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FrameInfo {
     pub bits: u32,
@@ -152,7 +152,7 @@ impl FrameInfo {
             _ => (0.299, 0.114),
         }
     }
-    /// For the log: "10-bit PQ BT.2020" (StreamConverter.describe).
+    /// For the log, as in "10-bit PQ BT.2020" (StreamConverter.describe).
     pub fn describe(&self) -> String {
         let trc = match self.transfer {
             TRC_PQ => "PQ",
@@ -212,7 +212,7 @@ const BT709_XY: [(f64, f64); 3] = [(0.640, 0.330), (0.300, 0.600), (0.150, 0.060
 const BT2020_XY: [(f64, f64); 3] = [(0.708, 0.292), (0.170, 0.797), (0.131, 0.046)];
 const D65: (f64, f64) = (0.3127, 0.3290);
 
-#[allow(clippy::needless_range_loop)] // (the cofactor formula, as written)
+#[allow(clippy::needless_range_loop)] // the cofactor formula, as written
 fn inv(m: &M3) -> M3 {
     let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
         + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
@@ -237,7 +237,7 @@ fn mul(a: &M3, b: &M3) -> M3 {
     r
 }
 
-/// hdr.py rgb_to_xyz: linear RGB with these primaries to CIE XYZ (Y = 1 for white).
+/// As hdr.py rgb_to_xyz, linear RGB with these primaries to CIE XYZ (Y = 1 for white).
 fn rgb_to_xyz(primaries: &[(f64, f64); 3]) -> M3 {
     let mut m = [[0.0; 3]; 3];
     for (j, &(x, y)) in primaries.iter().enumerate() {
@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn matrices_and_pq() {
         let m = bt2020_to_709();
-        // (numpy's values for hdr.BT2020_TO_709)
+        // numpy's values for hdr.BT2020_TO_709
         assert!((m[0][0] - 1.6605).abs() < 1e-3 && (m[0][1] + 0.5876).abs() < 1e-3 && (m[2][2] - 1.1187).abs() < 1e-3);
         let l = bt2020_luma();
         assert!((l[0] - 0.2627).abs() < 1e-3 && (l[1] - 0.6780).abs() < 1e-3 && (l[2] - 0.0593).abs() < 1e-3);

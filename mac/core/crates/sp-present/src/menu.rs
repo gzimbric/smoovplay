@@ -1,6 +1,7 @@
-//! The in-video settings menu's navigation (framegen/menu.py Menu): a main page with the quick picks and a row for
-//! each section, a page per section; Up/Down select, Left/Right change, Enter opens a section (or changes, or
-//! restarts), Esc/Backspace goes back a page and on the main page closes the menu. The drawing is in [`crate::ui`].
+//! The in-video settings menu's navigation (framegen/menu.py Menu). The main page has the quick picks and a row for
+//! each section, and each section has its own page. Up and Down select, Left and Right change a value, and Enter
+//! opens a section, changes a value or restarts. Esc or Backspace goes back a page, and on the main page it closes
+//! the menu. The drawing is in [`crate::ui`].
 
 use std::collections::BTreeMap;
 
@@ -58,7 +59,8 @@ impl Menu {
         Menu::default()
     }
 
-    /// A page's rows: on the main page the quick picks, then the sections; Restart now when something needs it.
+    /// A page's rows. The main page has the quick picks, then the sections. Restart now comes last when something
+    /// needs it.
     pub fn page_rows(&self, model: &dyn MenuModel, page: Option<&str>) -> Vec<Row> {
         let mut rows: Vec<Row> = model.rows(page).into_iter().map(Row::Setting).collect();
         if page.is_none() {

@@ -1,9 +1,9 @@
 //! Raw deflate as zlib writes it at level 9 (zlib.compressobj(9, zlib.DEFLATED, -15)), inflate, and crc32, for share
 //! codes. The compressor is a line-by-line port of zlib's deflate_slow, longest_match and trees.c (1.2.12 to 1.3.x
 //! give the same output for inputs this small), so a look's code is the same here as from the Python, bit for bit.
-//! Inputs must fit in one window (32 KB); a share code's body is under 3 KB.
+//! Inputs must fit in one window (32 KB). A share code's body is under 3 KB.
 
-// (indexed loops, as in zlib's C, so the two read side by side)
+// Indexed loops, as in zlib's C, so the two read side by side.
 #![allow(clippy::needless_range_loop)]
 
 // ------------------------------------------------------------------------------------------------ crc32
@@ -70,7 +70,7 @@ const EXTRA_DBITS: [u8; D_CODES] =
 const EXTRA_BLBITS: [u8; BL_CODES] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 7];
 const BL_ORDER: [usize; BL_CODES] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 
-/// A tree element: fc is Freq or Code, dl is Dad or Len (C unions, and trees.c relies on the sharing).
+/// A tree element. fc is Freq or Code and dl is Dad or Len, as unions in C, and trees.c relies on the sharing.
 #[derive(Clone, Copy, Default)]
 struct Ct {
     fc: u16,
@@ -247,7 +247,7 @@ impl Deflate {
     }
 
     fn send_bits(&mut self, value: i32, length: i32) {
-        // (in C the shifts happen in int, then the result is cut to 16 bits)
+        // In C the shifts happen in int, then the result is cut to 16 bits.
         let val = value as u16 as u32;
         if self.bi_valid > 16 - length {
             self.bi_buf |= (val << self.bi_valid) as u16;
@@ -718,7 +718,7 @@ impl Deflate {
                 || w[m] != w[scan]
                 || w[m + 1] != w[scan + 1];
             if !skip {
-                // scan[2] and match[2] are equal (same hash, HASH_BITS >= 8); compare from 3, 8 at a time
+                // scan[2] and match[2] are equal (same hash, HASH_BITS >= 8), so compare from 3, 8 at a time
                 let mut s = scan + 2;
                 let mut mm = m + 2;
                 loop {
@@ -759,7 +759,7 @@ impl Deflate {
     }
 
     fn run(&mut self, input_len: usize) {
-        // fill_window: all of the input at once; the bytes after it read as zeros (WIN_INIT)
+        // fill_window takes all of the input at once. The bytes after it read as zeros (WIN_INIT).
         self.lookahead = input_len;
         if self.lookahead >= MIN_MATCH {
             self.ins_h = self.window[0] as usize;
@@ -907,7 +907,8 @@ struct Huff {
     symbol: Vec<u16>,
 }
 
-/// zlib's inftrees rules: over-subscribed sets are errors, and incomplete ones too, except a single code of length 1.
+/// zlib's inftrees rules. Over-subscribed sets are errors, and so are incomplete ones, except a single code of
+/// length 1.
 fn huff(lengths: &[u8], err: &'static str, code_lengths: bool) -> Result<Huff, InflateError> {
     let mut count = [0u16; MAX_BITS + 1];
     for &l in lengths {
@@ -919,7 +920,7 @@ fn huff(lengths: &[u8], err: &'static str, code_lengths: bool) -> Result<Huff, I
     }
     let mut offs = [0u16; MAX_BITS + 2];
     if max == 0 {
-        // no codes: zlib accepts it (a stream that never uses this table)
+        // zlib accepts no codes, for a stream that never uses this table
         return Ok(Huff { count, symbol: Vec::new() });
     }
     let mut left: i32 = 1;
@@ -997,7 +998,7 @@ fn codes(b: &mut Bits, out: &mut Vec<u8>, lit: &Huff, dist: &Huff) -> Result<(),
     }
 }
 
-/// zlib.decompress(data, -15): raw deflate. Anything after the last block is ignored, as Python does.
+/// zlib.decompress(data, -15), raw deflate. Anything after the last block is ignored, as Python does.
 pub fn inflate_raw(data: &[u8]) -> Result<Vec<u8>, InflateError> {
     let mut b = Bits { data, pos: 0, bit: 0, nbits: 0 };
     let mut out = Vec::new();
@@ -1029,7 +1030,7 @@ pub fn inflate_raw(data: &[u8]) -> Result<Vec<u8>, InflateError> {
                 l[256..280].fill(7);
                 l[280..].fill(8);
                 let lit = huff(&l, "invalid literal/lengths set", false)?;
-                let dist = huff(&[5u8; 32], "invalid distances set", false)?; // (30 and 31 exist, and are invalid)
+                let dist = huff(&[5u8; 32], "invalid distances set", false)?; // 30 and 31 exist and are invalid
                 codes(&mut b, &mut out, &lit, &dist)?;
             }
             2 => {

@@ -39,6 +39,11 @@
   <img src="docs/media/smoothness.svg" width="880" alt="Two dots cross the same track. The top one, labelled Your console, moves 30 times a second, like a 30 fps game; the bottom one moves 60, 90 or 120 times a second, as fast as your screen shows SmoovPlay.">
 </p>
 
+> [!NOTE]
+> This is a fork of [smoovplay/smoovplay](https://github.com/smoovplay/smoovplay) that adds a native Mac version, a
+> SwiftUI app and a Rust core that runs on Apple's GPU. It lives in [`mac/`](mac/README.md). Everything else,
+> including the Windows version and its downloads, comes from upstream.
+
 SmoovPlay streams your console to your PC, where your graphics card draws new frames between the ones the game
 sends, live. A 30 fps game plays at **60, 90 or up to 120 fps** to match your screen, sharpened to fit it.
 There's nothing to install on the console, and it's free and open source.
@@ -79,7 +84,7 @@ There's nothing to install on the console, and it's free and open source.
 | **HDR** from a PS5 | *Experimental.* A contributor has played a real PS5 HDR stream with HDR all the way to an HDR monitor. Since 0.3.2, fullscreen keeps Windows' HDR on. |
 | **Xbox and other streaming apps**, by capturing the app's window | *Experimental.* Recognises the current Xbox app since 0.3.1, from a player's report; a real Xbox stream isn't confirmed yet. |
 | **AMD Radeon and Intel Arc**, through DirectML | *Experimental.* The same frames, about 1.7× more slowly. Not on a real card yet. |
-| **A Mac with Apple silicon**, from source | *Experimental.* A native app with a Rust core on Metal, and PS5 Remote Play through a patched chiaki-ng built for macOS: 90 and 120 fps at full motion detail on an M5 Max, with a stand-in PS5 stream. Built from source for now, and not with a real PS5 yet. See [mac/README.md](mac/README.md). |
+| **A Mac with Apple silicon**, built from source | *Experimental.* A native app with a Rust core on Metal, and PS5 Remote Play through a patched chiaki-ng built for macOS. Tested with a real PS5 on an M5 Max, where it held 90 fps at full motion detail. See [mac/README.md](mac/README.md). |
 
 **How it's checked:** each release passes SmoovPlay's automated tests (340 for 0.3.2, with a stand-in PS5 stream,
 stand-in capture cards and stand-in HDR frames) and installs as an update over the previous version before it ships.
@@ -338,7 +343,7 @@ py -3.12 -m venv .venv
 
 **[docs/DEVELOPING.md](docs/DEVELOPING.md)** has the rest: every command and tool, settings and hotkeys, how Instant
 replay and Looks work inside, the scheduler, upscaling, NVIDIA VFG, measured results and known limits, and
-[running it on a Mac](docs/DEVELOPING.md#on-a-mac-experimental).
+[running it on a Mac](mac/README.md).
 
 ## Credits and licences
 

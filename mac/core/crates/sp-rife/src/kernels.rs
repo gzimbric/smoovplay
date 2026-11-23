@@ -1,6 +1,6 @@
-//! The Metal kernels around the convolutions: framegen/metalrife.py's KERNELS, nearly verbatim (the same math, so
-//! the same pixels), reading and writing plain buffers and the frames' textures instead of PyTorch tensors, plus
-//! Steady HUD (framegen/steady.py) as two kernels and a blend folded into the final pass.
+//! The Metal kernels around the convolutions. They're framegen/metalrife.py's KERNELS nearly verbatim, with the same
+//! math and so the same pixels, but they read and write plain buffers and the frames' textures instead of PyTorch
+//! tensors. Steady HUD (framegen/steady.py) adds two kernels and a blend folded into the final pass.
 
 use std::ptr::NonNull;
 
@@ -22,18 +22,20 @@ pub const SOURCE: &str = r#"
 #include <metal_stdlib>
 using namespace metal;
 
-// Where one block's output is and how big. A block ends in ConvTranspose2d(c, 4 * k, 4, 2, 1) and PixelShuffle(2)
-// (k = 13 channels: flow 4, mask 1, features 8; the last block's 5). Here the transposed convolution is a 3x3
-// convolution at a quarter of the block's resolution (graph.rs deconv_as_conv3), each of its pixels making the
-// 4x4 patch of block-resolution pixels above it: sub-pixel q = (y & 3) * 4 + (x & 3)... in the order
+// Where one block's output is and how big. A block ends in ConvTranspose2d(c, 4 * k, 4, 2, 1) and PixelShuffle(2),
+// with k = 13 channels (flow 4, mask 1, features 8), or 5 in the last block. Here the transposed convolution is a
+// 3x3 convolution at a quarter of the block's resolution (graph.rs deconv_as_conv3). Each of its pixels makes the
+// 4x4 patch of block-resolution pixels above it, one sub-pixel for each (y & 3, x & 3), in the order
 // sub = (((y >> 1) & 1) * 2 + ((x >> 1) & 1)) * 4 + (y & 1) * 2 + (x & 1). Its channels are laid out for vector
 // loads (net.rs): flow at sub * 4 (a half4), mask at 64 + sub, features at 80 + sub * 8 (two half4s).
-// (h, w): the block's resolution = full resolution / s. sh, sw: row and pixel strides of the convolution's output.
+// h and w are the block's resolution, full resolution / s. sh and sw are the row and pixel strides of the
+// convolution's output.
 struct BlockOut {
     int s, h, w, pad, sh, sw;
 };
 
-// What the flow kernels take (Rust: kernels::Params). n: blocks run so far; so: the next block's scale.
+// What the flow kernels take (kernels::Params in Rust). n counts the blocks run so far and `so` is the next
+// block's scale.
 struct Params {
     int PH, PW, n, so, H, W, steady, pad0;
     float t, pad1, pad2, pad3;
@@ -141,7 +143,7 @@ inline void up_feat(Tmp t, Taps k, thread float4& lo, thread float4& hi) {
     hi = lerp2(k, ah, bh, eh, fh);
 }
 
-// Flow after blocks 0..n-1 at full-resolution pixel (Y, X): the sum of each block's upsampled flow times its scale.
+// Flow after blocks 0 to n-1 at full-resolution pixel (Y, X), the sum of each block's upsampled flow times its scale.
 inline float4 flow_at(thread const Tmps& T, int n, int Y, int X) {
     float4 fl = float4(0.0f);
     for (int j = 0; j < n; ++j) {
@@ -152,7 +154,7 @@ inline float4 flow_at(thread const Tmps& T, int n, int Y, int X) {
     return fl;
 }
 
-// Bilinear sample of an fp16 [8-channel] frame at (px, py) in pixels; border padding, align_corners=True.
+// Bilinear sample of an fp16 8-channel frame at (px, py) in pixels, with border padding and align_corners=True.
 inline void warp8(device const half4* S, int PH, int PW, float px, float py, thread float4& lo, thread float4& hi) {
     float ix = clamp(px, 0.0f, float(PW - 1)), iy = clamp(py, 0.0f, float(PH - 1));
     int x0 = int(ix), y0 = int(iy);
@@ -177,9 +179,9 @@ inline float3 warp3(device const half4* S, int PH, int PW, float px, float py) {
     return v.xyz;
 }
 
-// Input of block n (NHWC, 16 channels for block 0, 32 after; the last ones are zero):
+// Input of block n, NHWC with 16 channels for block 0 and 32 after, the last ones zero:
 //   [a_img 3, b_img 3, a_feat 4, b_feat 4, t] for block 0, then [mask, feat 8, flow / so 4]
-// where a, b are the frames warped by the flow so far and everything is downsampled by `so` (block n's scale).
+// a and b are the frames warped by the flow so far, and everything is downsampled by `so` (block n's scale).
 // Grid: (PW / so, PH / so).
 kernel void block_input(device half4* xo [[buffer(0)]],
                         device const half4* S0 [[buffer(1)]],
@@ -191,7 +193,7 @@ kernel void block_input(device half4* xo [[buffer(0)]],
     int Wo = PW / so, Ho = PH / so;
     if (int(g.x) >= Wo || int(g.y) >= Ho) return;
     Tmps T = tmps(d0, d1, d2, d3, d4, p);
-    Tmp tl = pick(T, max(n - 1, 0));  // the latest block: its mask and features
+    Tmp tl = pick(T, max(n - 1, 0));  // the latest block, for its mask and features
     int k = so == 1 ? 1 : 2;
     int by = so == 1 ? int(g.y) : int(g.y) * so + so / 2 - 1;
     int bx = so == 1 ? int(g.x) : int(g.x) * so + so / 2 - 1;
@@ -239,10 +241,10 @@ kernel void block_input(device half4* xo [[buffer(0)]],
     xo[o + 4] = half4(f_lo);
     xo[o + 5] = half4(f_hi);
     xo[o + 6] = half4(fl);
-    xo[o + 7] = half4(0.0f);  // (zero, but written: a pixel is one whole 64-byte line, and partial lines cost more)
+    xo[o + 7] = half4(0.0f);  // zero, but written, since a pixel is one whole 64-byte line and partial lines cost more
 }
 
-// The in-between frame at (Y, X): both images warped by the final flow, blended by sigmoid(mask).
+// The in-between frame at (Y, X), from both images warped by the final flow and blended by sigmoid(mask).
 inline float3 final_mid(device const half4* S0, device const half4* S1, thread const Tmps& T, int n,
                         int PH, int PW, int Y, int X) {
     float4 fl = flow_at(T, n, Y, X);
@@ -254,8 +256,8 @@ inline float3 final_mid(device const half4* S0, device const half4* S1, thread c
     return w0 * m + w1 * (1.0f - m);
 }
 
-// The output frame (BGRA8, or RGBA16F for HDR: hdr = 1), H x W. With p.steady, Steady HUD: the real pixels where
-// its mask says, blended at t (framegen/steady.py SteadyHud.blend), before the conversion. Grid: (W, H).
+// The output frame, H x W, in BGRA8 or, with hdr = 1, RGBA16F for HDR. With p.steady, Steady HUD blends in the real
+// pixels where its mask says, at t (framegen/steady.py SteadyHud.blend), before the conversion. Grid: (W, H).
 kernel void final_out(texture2d<float, access::write> out [[texture(0)]],
                       device const half4* S0 [[buffer(1)]],
                       device const half4* S1 [[buffer(2)]],
@@ -276,15 +278,15 @@ kernel void final_out(texture2d<float, access::write> out [[texture(0)]],
     }
     float3 v = clamp(mid, 0.0f, 1.0f);
     if (hdr == 0) {
-        v = rint(v * 255.0f) / 255.0f;  // as framegen's mul(255).round() to uint8; the texture stores it exactly
+        v = rint(v * 255.0f) / 255.0f;  // as framegen's mul(255).round() to uint8, which the texture stores exactly
     } else {
         v = float3(half3(v));
     }
     out.write(float4(v, 1.0f), g);
 }
 
-// A frame -> the encoder's input: (PH, PW, 4) fp16 [r, g, b, 0] 0..1, zero padded. Reads BGRA8 (as r, g, b) or
-// RGBA16F (clamped to 0..1, as framegen's pq16 frames are). Grid: (PW, PH).
+// Turns a frame into the encoder's input, (PH, PW, 4) fp16 [r, g, b, 0] in 0..1, zero padded. Reads BGRA8 (as
+// r, g, b) or RGBA16F (clamped to 0..1, as framegen's pq16 frames are). Grid: (PW, PH).
 kernel void frame_in(device half4* x [[buffer(0)]], texture2d<float, access::read> f [[texture(0)]],
                      constant int4& p [[buffer(1)]], uint2 g [[thread_position_in_grid]]) {
     int H = p.x, W = p.y, PH = p.z, PW = p.w;
@@ -298,8 +300,8 @@ kernel void frame_in(device half4* x [[buffer(0)]], texture2d<float, access::rea
 
 // The encoder's last layer, LeakyReLU then ConvTranspose2d(16, 4, 4, stride 2, padding 1), packed with the image
 // into a frame slot: (PH, PW, 8) fp16 [r, g, b, f0, f1, f2, f3, 0].
-// a: the layer before, (PH/2, PW/2, 16) fp16 before its LeakyReLU. wt: the weights as float4 (4 outputs) per
-// (ky, kx, input channel). b: the bias. p: PH, PW. Grid: (PW, PH).
+// a is the layer before, (PH/2, PW/2, 16) fp16 before its LeakyReLU. wt holds the weights as float4 (4 outputs)
+// per (ky, kx, input channel). b is the bias and p is (PH, PW). Grid: (PW, PH).
 kernel void encode_out(device half4* S [[buffer(0)]], device const half4* x [[buffer(1)]],
                        device const half4* a [[buffer(2)]], device const float4* wt [[buffer(3)]],
                        constant float4& b [[buffer(4)]], constant int2& p [[buffer(5)]],
@@ -334,7 +336,7 @@ kernel void encode_out(device half4* S [[buffer(0)]], device const half4* x [[bu
 }
 
 // Steady HUD (framegen/steady.py), in half precision as there.
-// edges: 1 where the slot's brightness has a step (Sobel L1 above STEADY_HUD_EDGE). Grid: (PW, PH).
+// steady_edges writes 1 where the slot's brightness has a step (Sobel L1 above STEADY_HUD_EDGE). Grid: (PW, PH).
 inline half luma_at(device const half4* S, int PH, int PW, int y, int x) {
     if (y < 0 || x < 0 || y >= PH || x >= PW) return 0.0h;  // conv2d's zero padding
     float3 c = float3(S[(long(y) * PW + x) * 2].xyz);
@@ -355,8 +357,8 @@ kernel void steady_edges(device uchar* e [[buffer(0)]], device const half4* S [[
     e[long(Y) * PW + X] = float(s) > 128.0f / 255.0f ? 1 : 0;
 }
 
-// mask: how much of the real pixel to take between real frames a -> b: 1 below half the threshold, 0 above it,
-// and only within one pixel of an edge in either frame. Grid: (PW, PH).
+// How much of the real pixel to take between real frames a and b (the mask). It's 1 below half the threshold and
+// 0 above it, and only within one pixel of an edge in either frame. Grid: (PW, PH).
 kernel void steady_mask(device half* w [[buffer(0)]], device const half4* Sa [[buffer(1)]],
                         device const half4* Sb [[buffer(2)]], device const uchar* ea [[buffer(3)]],
                         device const uchar* eb [[buffer(4)]], constant int2& p [[buffer(5)]],

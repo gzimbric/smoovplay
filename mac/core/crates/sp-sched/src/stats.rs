@@ -1,6 +1,6 @@
 //! What a session measured, and the two reports made from it (framegen/pipeline.py Stats, GameRate, ShownRate,
-//! rate_advice): summary() for the log, results() for test mode's plain-language report. The text is the Python's,
-//! character for character (tests/parity.rs checks it against the reference).
+//! rate_advice). summary() is for the log and results() for test mode's plain-language report. The text is the
+//! Python's, character for character, and tests/parity.rs checks it against the reference.
 
 use std::collections::{BTreeSet, VecDeque};
 
@@ -9,14 +9,14 @@ use crate::np;
 /// One 60 Hz tick, in seconds.
 pub const TICK: f64 = 1.0 / 60.0;
 
-/// --score's "still areas": pixels within this many levels (of 255) in both real frames, like a HUD or map.
+/// --score's still areas are pixels within this many levels (of 255) in both real frames, like a HUD or map.
 pub const STILL_LEVELS: f32 = 3.0;
-/// --score's HUD-like areas: still in both real frames and the real in-between one, on an edge (Sobel L1 of the
-/// real frame's brightness above HUD_EDGE)...
+/// --score's HUD-like areas are still in both real frames and the real in-between one, and on an edge, where the
+/// Sobel L1 of the real frame's brightness is above this.
 pub const HUD_EDGE: f32 = 128.0;
-/// ...and "visibly off" there when the AI frame misses the real one by more than this.
+/// A HUD-like pixel is visibly off when the AI frame misses the real one by more than this many levels.
 pub const HUD_OFF_LEVELS: f32 = 12.0;
-/// Test mode's quality: the share of a frame's pixels visibly off from the real frame.
+/// Test mode's quality is the share of a frame's pixels that miss the real frame by more than this.
 pub const VISIBLE_LEVELS: f32 = HUD_OFF_LEVELS;
 
 /// How long the game has to stay off the rate that's needed before the overlay says so, and before the message.
@@ -28,13 +28,13 @@ pub fn simulate_off(g: i64) -> String {
     format!("Simulate turned off: this game is at about {g} fps already, and Simulate halved that")
 }
 
-/// 0.062 -> "6.2%", 0.12 -> "12%".
+/// 0.062 gives "6.2%" and 0.12 gives "12%".
 pub fn pct(share: f64) -> String {
     let v = 100.0 * share;
     if v < 10.0 { format!("{}%", np::f(v, 1)) } else { format!("{}%", np::f(v, 0)) }
 }
 
-/// One line for someone whose game isn't at the rate that's needed, or "" when it is (or it isn't known yet).
+/// One line for someone whose game isn't at the rate that's needed, or "" when it is or the rate isn't known yet.
 pub fn rate_advice(game_fps: Option<f64>, test: bool, even: bool) -> String {
     let Some(g) = game_fps else { return String::new() };
     let g = np::round(g);
@@ -56,7 +56,7 @@ pub fn rate_advice(game_fps: Option<f64>, test: bool, even: bool) -> String {
     format!("Game at about {g} fps, not 30: few gaps to fill. Its 30 fps mode (Quality/Fidelity) is smoother")
 }
 
-/// The game's own frame rate: new frames among the last `n` ticks of a 60 Hz stream.
+/// The game's own frame rate, from new frames among the last `n` ticks of a 60 Hz stream.
 #[derive(Clone, Debug)]
 pub struct GameRate {
     new: VecDeque<bool>,
@@ -73,7 +73,8 @@ impl GameRate {
     pub fn new(n: usize) -> Self {
         GameRate { new: VecDeque::with_capacity(n), n }
     }
-    /// One tick: new content (Some(true)) or a repeat; None (the source can't say) is left out.
+    /// One tick, Some(true) for new content and Some(false) for a repeat. None, when the source can't say, is left
+    /// out.
     pub fn add(&mut self, new: Option<bool>) {
         if let Some(v) = new {
             if self.new.len() == self.n {
@@ -142,7 +143,7 @@ impl Counts {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
-    /// Python's repr of the dict: {'current': 3, 'interp': 2}.
+    /// Python's repr of the dict, as in {'current': 3, 'interp': 2}.
     pub fn repr(&self) -> String {
         let items: Vec<String> = self.0.iter().map(|(k, n)| format!("'{k}': {n}")).collect();
         format!("{{{}}}", items.join(", "))
@@ -188,16 +189,16 @@ pub struct Stats {
     pub proc_other_ms: Vec<f64>,
     /// Time spent in display.
     pub sink_ms: Vec<f64>,
-    /// Arrival -> processing starts (backlog).
+    /// From arrival until processing starts (backlog).
     pub queue_ms: Vec<f64>,
     /// Scoring, done after the frame is shown.
     pub score_ms: Vec<f64>,
-    /// Processing + display per tick.
+    /// Processing and display per tick.
     pub busy_ms: Vec<f64>,
-    /// Arrival of each real (new) frame -> it is first presented.
+    /// From the arrival of each real (new) frame until it is first presented.
     pub real_delay_ms: Vec<f64>,
     pub actions: Counts,
-    /// tp/tn/fp/fn against ground truth.
+    /// True and false positives and negatives (tp, tn, fp, fn) against ground truth.
     pub dedup: Counts,
     pub psnr_interp: Vec<f64>,
     pub psnr_repeat: Vec<f64>,
@@ -211,7 +212,7 @@ pub struct Stats {
     pub hud_off: Vec<f64>,
     pub hud_frac: Vec<f64>,
     pub worst: Option<Worst>,
-    /// 90/120 Hz: extra in-between frames shown, and ones skipped because the pipeline was behind.
+    /// At 90 or 120 Hz, the extra in-between frames shown, and ones skipped because the pipeline was behind.
     pub quarter_shown: u64,
     pub quarter_skipped: u64,
     /// Ticks whose frame waited for the pipeline to finish earlier ones (more than 60% of a tick).
@@ -388,7 +389,8 @@ impl Stats {
         lines.join("\n")
     }
 
-    /// Test mode's plain-language report. full_motion: whether motion ran at full resolution (None: unknown).
+    /// Test mode's plain-language report. `full_motion` says whether motion ran at full resolution, or is None when
+    /// unknown.
     pub fn results(&self, full_motion: Option<bool>) -> Vec<String> {
         let budget = TICK * 1000.0;
         let (interp, busy, delay) = (&self.proc_interp_ms, &self.busy_ms, &self.real_delay_ms);

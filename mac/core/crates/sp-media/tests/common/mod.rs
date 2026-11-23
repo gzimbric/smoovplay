@@ -1,4 +1,4 @@
-//! Shared by sp-media's tests: the reference data mac/core/tools/media_fixtures.py makes.
+//! Shared by sp-media's tests, for the reference data mac/core/tools/media_fixtures.py makes.
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
@@ -59,7 +59,7 @@ pub fn half(h: u16) -> f32 {
     f32::from_bits(bits)
 }
 
-/// (max, mean, share over 1) of |a - b| over bytes.
+/// The max, the mean and the share over 1 of |a - b| over bytes.
 pub fn diff(a: &[u8], b: &[u8]) -> (u8, f64, f64) {
     assert_eq!(a.len(), b.len());
     let mut max = 0u8;

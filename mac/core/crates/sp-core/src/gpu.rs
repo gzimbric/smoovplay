@@ -22,7 +22,7 @@ pub struct Gpu {
     pub queue: Retained<Queue>,
 }
 
-// Metal's devices and queues are thread-safe (Apple: "MTLDevice ... can be used from any thread").
+// Metal's devices and queues are thread-safe. Apple's docs say an MTLDevice can be used from any thread.
 unsafe impl Send for Gpu {}
 unsafe impl Sync for Gpu {}
 
@@ -39,7 +39,7 @@ impl Gpu {
         })
     }
 
-    /// The GPU's name, e.g. "Apple M5 Max".
+    /// The GPU's name, such as "Apple M5 Max".
     pub fn name(&self) -> String {
         self.device.name().to_string()
     }

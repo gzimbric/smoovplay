@@ -1,11 +1,11 @@
 //! Frames from chiaki-ng (PS5 Remote Play) through its frame tap, decoded by VideoToolbox, as Ticks
-//! (framegen/chiaki_tap.py ChiakiSource, step for step). Also any other app that writes chiaki-ng's layout
-//! (compressed frames: [`crate::open_tap`]).
+//! (framegen/chiaki_tap.py ChiakiSource, step for step). Also any other app that writes chiaki-ng's layout of
+//! compressed frames, through [`crate::open_tap`].
 //!
-//! Joins the live stream (never replays old frames) and asks for a keyframe whenever it can't decode: at start,
+//! Joins the live stream and never replays old frames. It asks for a keyframe whenever it can't decode: at start,
 //! after falling more than the ring's 32 frames behind, or after a decode error. The reader starts at once, but until
 //! the pipeline asks for frames (the first [`Source::next_event`]) it only watches for the stream's codec header,
-//! which a new stream sends once, as its first packet; it waits at the stream's first picture, leaving it in the
+//! which a new stream sends once, as its first packet. It waits at the stream's first picture, leaving it in the
 //! ring, and starts decoding there when the pipeline is ready. Each frame's facts (size, loss, the size check's
 //! call, decode time) go in the tick's `extra`, and [`ChiakiSource::log_tick`] writes Python's per-tick CSV.
 
@@ -30,7 +30,7 @@ use crate::vt::{DecodeError, VtDecoder};
 /// How to open a ChiakiSource.
 #[derive(Clone)]
 pub struct ChiakiOptions {
-    /// The tap's name (chiaki-ng's: sp_tap::NAME).
+    /// The tap's name. chiaki-ng's is sp_tap::NAME.
     pub tap_name: String,
     /// How long to wait for a stream before giving up, seconds.
     pub wait_s: f64,
@@ -38,7 +38,7 @@ pub struct ChiakiOptions {
     pub log_path: Option<PathBuf>,
     /// "Simulate a 30 fps game", applied as frames are decoded.
     pub test: Option<SharedTestMode>,
-    /// Another app writes chiaki-ng's layout: messages say "[tap]" and "the app".
+    /// Another app writes chiaki-ng's layout, so messages say "[tap]" and "the app".
     pub app: bool,
 }
 
@@ -95,7 +95,7 @@ impl Shared {
         let t = now();
         let mut last = self.last_idr.lock().unwrap();
         if t - *last < 0.5 {
-            return; // chiaki-ng re-asks by itself; don't flood the PS5
+            return; // chiaki-ng re-asks by itself, so don't flood the PS5
         }
         *last = t;
         self.tap.request_idr();
@@ -119,7 +119,7 @@ pub struct ChiakiSource {
     h: usize,
     /// The tap's codec (0 H.264, 1 H.265, 2 H.265 HDR).
     pub codec_id: u32,
-    /// chiaki-ng's H.265 HDR codec: 10-bit HDR10 from the PS5.
+    /// The stream uses chiaki-ng's H.265 HDR codec, 10-bit HDR10 from the PS5.
     pub hdr_stream: bool,
     sh: Arc<Shared>,
     sound: AudioTap,
@@ -247,14 +247,14 @@ impl ChiakiSource {
         })
     }
 
-    /// For another app writing chiaki-ng's layout: its own description.
+    /// Gives another app writing chiaki-ng's layout its own description.
     pub fn set_info(&mut self, info: SourceInfo) {
         self.info = info;
     }
 
-    /// SmoovPlay's HDR setting (framegen/hdr.py), before the frames start: Some(settings) converts an HDR stream
-    /// ("sdr8" tone-mapped to SDR, "pq16" kept HDR10); None leaves it as before (washed out; `why`: the reason, if
-    /// HDR is on but can't be used). Only an HDR stream is converted.
+    /// SmoovPlay's HDR setting (framegen/hdr.py), given before the frames start. Some(settings) converts an HDR
+    /// stream, "sdr8" tone-mapped to SDR or "pq16" kept HDR10. None leaves it washed out as before, and `why` gives
+    /// the reason if HDR is on but can't be used. Only an HDR stream is converted.
     pub fn set_hdr(&mut self, settings: Option<HdrSettings>, why: &str) {
         self.hdr_told = true;
         let Some(s) = settings else {
@@ -291,14 +291,14 @@ impl ChiakiSource {
         );
     }
 
-    // The delay test and the sound delay go through chiaki-ng (frametap.h); a chiaki-ng from an older patch can't.
+    // The delay test and the sound delay go through chiaki-ng (frametap.h). A chiaki-ng from an older patch can't.
     pub fn can_press(&self) -> bool {
         self.sh.tap.features() & FEATURE_PRESS != 0
     }
     pub fn can_delay_audio(&self) -> bool {
         self.sh.tap.features() & FEATURE_AUDIO_DELAY != 0
     }
-    /// Ask chiaki-ng to press `buttons` (a ChiakiControllerButton mask); returns a token for press_sent.
+    /// Ask chiaki-ng to press `buttons` (a ChiakiControllerButton mask). Returns a token for press_sent.
     pub fn press(&self, buttons: u32, hold_ms: u32) -> u32 {
         self.sh.tap.press(buttons, hold_ms)
     }
@@ -306,12 +306,12 @@ impl ChiakiSource {
     pub fn press_sent(&self, token: u32) -> Option<f64> {
         self.sh.tap.press_sent(token, self.sh.tap.header().qpc_freq)
     }
-    /// The game's sound is in the sound ring (instant replay); a chiaki-ng from before it leaves replays silent.
+    /// The game's sound is in the sound ring for instant replay. A chiaki-ng from before it leaves replays silent.
     pub fn has_sound(&self) -> bool {
         self.sh.tap.features() & FEATURE_AUDIO_TAP != 0 && self.sound.live()
     }
 
-    /// Stop decoding while the pipeline restarts (on), and start again from a fresh frame (off).
+    /// With `on`, stop decoding while the pipeline restarts. Without it, start again from a fresh frame.
     pub fn hold(&mut self, on: bool) {
         if on {
             self.sh.go.store(false, Ordering::SeqCst);
@@ -321,12 +321,12 @@ impl ChiakiSource {
         self.sh.go.store(true, Ordering::SeqCst);
     }
 
-    /// What the ring says about a wait for frames: a hint under the window's "No picture" note ("" if none).
+    /// What the ring says about a wait for frames, as a hint under the window's "No picture" note. Empty if none.
     pub fn why(&self) -> String {
         why(&self.sh, self.app)
     }
 
-    /// (decoded frames dropped because the pipeline fell behind, stream frames never decoded, keyframe requests)
+    /// Decoded frames dropped because the pipeline fell behind, stream frames never decoded, and keyframe requests.
     pub fn counts(&self) -> (u64, u64, u64) {
         (
             self.sh.dropped.load(Ordering::Relaxed),
@@ -340,9 +340,9 @@ impl ChiakiSource {
         (self.sh.decode_errors.load(Ordering::Relaxed), self.sh.hardware.load(Ordering::Relaxed))
     }
 
-    /// The per-tick CSV row (Python's columns): stream facts next to the pipeline's decisions. `image_new`,
-    /// `max_diff`, `mean_diff`: the picture check's; `action`: what the pipeline did (its name); `t_start`: when
-    /// the pipeline started on the tick.
+    /// The per-tick CSV row in Python's columns, with stream facts next to the pipeline's decisions. `image_new`,
+    /// `max_diff` and `mean_diff` are the picture check's. `action` names what the pipeline did, and `t_start` is
+    /// when the pipeline started on the tick.
     #[allow(clippy::too_many_arguments)]
     pub fn log_tick(&mut self, tick: &Tick, image_new: bool, max_diff: f64, mean_diff: f64, action: &str, proc_ms: f64, t_start: f64) {
         let Some(f) = self.log.as_mut() else { return };
@@ -421,10 +421,10 @@ impl Source for ChiakiSource {
     fn next_event(&mut self) -> Option<Event> {
         if !self.started {
             if !self.hdr_told {
-                self.set_hdr(None, ""); // nobody said what to do with HDR: as with the setting off
+                self.set_hdr(None, ""); // nobody said what to do with HDR, so act as with the setting off
             }
             self.sh.dropped.store(0, Ordering::Relaxed); // frames dropped while the pipeline was loading don't count
-            self.sh.go.store(true, Ordering::SeqCst); // the pipeline is ready: start decoding
+            self.sh.go.store(true, Ordering::SeqCst); // the pipeline is ready, so start decoding
             self.started = true;
         }
         let (sh, app) = (&self.sh, self.app);
@@ -439,7 +439,7 @@ impl Source for ChiakiSource {
             return Vec::new();
         }
         if Some(h.session) != self.sound_session {
-            self.sound_session = Some(h.session); // a new stream: start from its current sound
+            self.sound_session = Some(h.session); // a new stream, so start from its current sound
             self.sound.reset(false);
         }
         self.sound
@@ -529,7 +529,7 @@ fn reader(sh: Arc<Shared>, mut conv: Converter, cfg: Cfg) {
             late = seq > 0;
             passed = late;
             if late {
-                // joining a running stream: an earlier run may have saved its header
+                // joining a running stream, whose header an earlier run may have saved
                 params = saved::load(&cfg.tap_name, h.session, h.codec);
                 if !params.is_empty() {
                     println!("{tag} joined a running stream, using its saved codec header");
@@ -546,7 +546,7 @@ fn reader(sh: Arc<Shared>, mut conv: Converter, cfg: Cfg) {
             pending = params.clone();
         }
         if going && passed && !params.is_empty() {
-            // Frames went by undecoded: ask the PS5 for a refresh frame and hold what comes out until the picture
+            // Frames went by undecoded. Ask the PS5 for a refresh frame and hold what comes out until the picture
             // is whole again.
             (passed, damaged_left) = (false, 60);
             sh.ask_idr();
@@ -569,7 +569,7 @@ fn reader(sh: Arc<Shared>, mut conv: Converter, cfg: Cfg) {
             continue;
         }
         if h.write_seq - seq > (SLOTS - 4) as u64 {
-            // fell behind: the oldest slots are being overwritten
+            // fell behind, and the oldest slots are being overwritten
             if going {
                 sh.skipped.fetch_add(h.write_seq - seq, Ordering::Relaxed);
                 damaged_left = DAMAGE_HOLD;
@@ -618,9 +618,9 @@ fn reader(sh: Arc<Shared>, mut conv: Converter, cfg: Cfg) {
             continue;
         }
         if !going {
-            // the pipeline isn't ready: only the header was wanted
+            // the pipeline isn't ready, so only the header was wanted
             if !passed {
-                // A picture: leave it in the ring and start decoding there once the pipeline is ready. If that takes
+                // A picture. Leave it in the ring and start decoding there once the pipeline is ready. If that takes
                 // longer than the ring holds, it moves on (passed) and the PS5 is asked for a refresh frame instead.
                 seq = p.seq;
                 held = Some(p.seq);
@@ -646,16 +646,16 @@ fn reader(sh: Arc<Shared>, mut conv: Converter, cfg: Cfg) {
                 pics
             }
             Err(e) => {
-                // Keep the decoder (it holds the header and reference frames) and hold the next few frames; the PS5
-                // answers a keyframe request with a refresh frame.
+                // Keep the decoder, which holds the header and reference frames, and hold the next few frames. The
+                // PS5 answers a keyframe request with a refresh frame.
                 eprintln!("{tag} decode error at frame {}: {e}", p.seq);
                 sh.decode_errors.fetch_add(1, Ordering::Relaxed);
-                // (max: VideoToolbox fails the pictures before the first keyframe after a join, where FFmpeg drops
-                // them silently; those errors mustn't cut the longer hold that the join started)
+                // max, because VideoToolbox fails the pictures before the first keyframe after a join, where FFmpeg
+                // drops them silently. Those errors mustn't cut the longer hold that the join started.
                 damaged_left = damaged_left.max(DAMAGE_HOLD);
                 errors += 1;
                 if errors >= 30 || e == DecodeError::NoParams {
-                    // stuck: start a decoder afresh from the saved header
+                    // stuck, so start a decoder afresh from the saved header
                     dec = Some(VtDecoder::new(codec));
                     (errors, pending) = (0, params.clone());
                 }
@@ -664,7 +664,7 @@ fn reader(sh: Arc<Shared>, mut conv: Converter, cfg: Cfg) {
             }
         };
         if pictures.is_empty() {
-            continue; // (a decoder that holds a frame back, or dropped it)
+            continue; // a decoder that holds a frame back, or dropped it
         }
         decoded = true;
         let size_new = sizes.update(p.data.len() as u64, key);
@@ -690,7 +690,7 @@ fn reader(sh: Arc<Shared>, mut conv: Converter, cfg: Cfg) {
                 }
             };
             let decode_ms = (now() - t) * 1000.0;
-            // Ready = arrival + decode time: what the pipeline's "behind" check has always measured from.
+            // Ready is arrival plus decode time, which the pipeline's behind check has always measured from.
             let mut tick = Tick::new(image, p.t_arrival, 0);
             tick.damaged = damaged;
             tick.t_ready = Some(p.t_arrival + decode_ms / 1000.0);
@@ -701,7 +701,7 @@ fn reader(sh: Arc<Shared>, mut conv: Converter, cfg: Cfg) {
             e.insert("recovered".into(), json!(p.recovered));
             e.insert("keyframe".into(), json!(key));
             e.insert("decode_ms".into(), json!(decode_ms));
-            // the size check's call: for the stream check, test mode and the frame log
+            // the size check's call, for the stream check, test mode and the frame log
             e.insert("size_new".into(), json!(size_new));
             e.insert("size_ref".into(), json!(sizes.r#ref));
             e.insert("big".into(), json!(sizes.big));

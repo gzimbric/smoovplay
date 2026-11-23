@@ -1,6 +1,6 @@
-//! Timing of the Mac's RIFE engine at 1080p (RIFE 4.22.lite, fp16): load + prepare, one in-between frame, and a
-//! whole 60 -> 90 Hz tick (a real frame prepared and two in-between frames), each call waited for (the GPU's work
-//! finished), at full and half motion detail.
+//! Timing of the Mac's RIFE engine at 1080p (RIFE 4.22.lite, fp16), at full and half motion detail. It covers load
+//! and prepare, one in-between frame, and a whole tick from 60 to 90 Hz, which is a real frame prepared and two
+//! in-between frames. Each call is waited for until the GPU's work has finished.
 //!
 //!     cargo run --release -p sp-rife --example bench [-- --n 300 --size 1920x1080 --model 4.22.lite]
 //!

@@ -16,8 +16,8 @@ SDR clip by framegen.hdr.expand_sdr (SDR white at 203 nits, highlights up to --p
 
 On a Mac it's the same with .venv/bin/python. The tap is POSIX shared memory there, so --tap NAME (and run.py's
 --chiaki-tap NAME) can have at most 24 characters after any Local\\, leaving room for the sound ring's "-audio".
-Without NVENC it encodes with libx264/libx265, which keep up at 1080p60 on Apple's chips, except --hdr, whose 10 bits
-go through VideoToolbox's encoder.
+Without NVENC it encodes with libx264 or libx265, which keep up at 1080p60 on Apple's chips. The exception is --hdr,
+whose 10 bits go through VideoToolbox's encoder.
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def sound_of(path: str, start: float, seconds: float) -> np.ndarray:
 
 def encoder(codec: str, w: int, h: int, mbps: float, sw: bool = False, hdr: bool = False):
     names = {"h264": ["h264_nvenc", "libx264"], "hevc": ["hevc_nvenc", "libx265"]}[codec]
-    if hdr and sys.platform == "darwin":  # libx265's 10 bits take about 35 ms a 1080p frame here: too slow for 60 Hz
+    if hdr and sys.platform == "darwin":  # libx265's 10 bits take about 35 ms a 1080p frame here, too slow for 60 Hz
         names.insert(-1, "hevc_videotoolbox")
     if sw:
         names = names[-1:]
@@ -90,8 +90,8 @@ def encoder(codec: str, w: int, h: int, mbps: float, sw: bool = False, hdr: bool
             ctx.options = {"preset": "p4", "tune": "ull", "zerolatency": "1", "rc": "cbr", "forced-idr": "1",
                            "delay": "0", **({"profile": "main10"} if hdr else {})}
         elif "videotoolbox" in name:
-            # low_delay: Apple's low-latency rate control, which puts out each frame's packet right away (without it
-            # packets come a few frames late, two at a time), so loss/keyframe flags land on the right frame
+            # low_delay turns on Apple's low-latency rate control, which puts out each frame's packet right away, so
+            # loss and keyframe flags land on the right frame. Without it packets come a few frames late, two at a time.
             ctx.flags |= av.codec.context.Flags.low_delay
             ctx.options = {"realtime": "1", "prio_speed": "1", **({"profile": "main10"} if hdr else {})}
         elif name == "libx264":
@@ -101,8 +101,8 @@ def encoder(codec: str, w: int, h: int, mbps: float, sw: bool = False, hdr: bool
                 ":colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited:hdr10=1" if hdr else "")}
             if sys.platform == "darwin":
                 # A Mac has no NVENC, so --loss goes through libx265, whose forced intra frame is otherwise a TRAIL
-                # picture that still lists the lost frame as a reference: FFmpeg skips every frame after it until the
-                # next IRAP. An IDR repairs the stream, as NVENC's forced-idr does on Windows.
+                # picture that still lists the lost frame as a reference, so FFmpeg skips every frame after it until
+                # the next IRAP. An IDR repairs the stream, as NVENC's forced-idr does on Windows.
                 ctx.options["forced-idr"] = "1"
         try:
             ctx.open()
@@ -113,8 +113,8 @@ def encoder(codec: str, w: int, h: int, mbps: float, sw: bool = False, hdr: bool
 
 
 def make_hdr(enc, w: int, h: int, peak: float, sw: bool):
-    """fn(SDR frame) -> the same picture as an HDR10 frame for `enc` (framegen.hdr.expand_sdr, on the GPU unless sw:
-    CUDA, or Apple's on a Mac, where the CPU is three times too slow for a 1080p stream)."""
+    """fn(SDR frame) -> the same picture as an HDR10 frame for `enc` (framegen.hdr.expand_sdr). It runs on the GPU
+    unless sw, so on CUDA, or on Apple's GPU on a Mac, where the CPU is three times too slow for a 1080p stream."""
     import torch
 
     from framegen import gpu

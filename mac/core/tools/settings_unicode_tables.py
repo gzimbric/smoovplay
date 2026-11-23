@@ -1,6 +1,6 @@
-"""Writes crates/sp-settings/src/pyuni.rs: the few Unicode tables sp-settings needs to act exactly like CPython
-(str.split/strip whitespace, \\d and float()/int() digits, str.isdigit, str.isprintable for repr(), and the extra
-characters re's IGNORECASE lets into [A-Za-z0-9_-]).
+"""Writes crates/sp-settings/src/pyuni.rs, the few Unicode tables sp-settings needs to act exactly like CPython. They
+cover the whitespace str.split() and str.strip() take off, the digits \\d, float() and int() read, str.isdigit,
+str.isprintable for repr(), and the extra characters re's IGNORECASE lets into [A-Za-z0-9_-].
 
     .venv/bin/python mac/core/tools/settings_unicode_tables.py
 

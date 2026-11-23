@@ -1,19 +1,19 @@
 //! A capture card's sound, played in step with the picture (framegen/audio.py).
 //!
-//! [`DelayLine`] is the part that matters and needs no sound device: PCM goes in as it arrives and comes out at the
-//! output's pace, with the queue kept at the delay the pipeline asks for. Near it the sound plays half a percent
+//! [`DelayLine`] is the part that matters, and it needs no sound device. PCM goes in as it arrives and comes out at
+//! the output's pace, with the queue kept at the delay the pipeline asks for. Near it the sound plays half a percent
 //! faster or slower until it's back, which nobody hears, so the card's clock and the output's can drift apart
-//! without the delay creeping; further off one percent; only far off (over [`JUMP_S`]) it jumps: silence until it has
-//! filled, or the oldest sound skipped. Wherever the sound doesn't follow on it's eased over [`FADE_S`], as a step is
-//! heard as a click. The queue never goes below the longest recent packet, or the longest recent wait between
-//! packets, plus [`CUSHION_S`] (issue 17: with less queued than the wait for the next packet, the output ran dry
-//! every packet or so).
+//! without the delay creeping. Further off it's one percent. Only far off, over [`JUMP_S`], does it jump, to
+//! silence until it has filled or by skipping the oldest sound. Wherever the sound doesn't follow on it's eased over
+//! [`FADE_S`], because a step is heard as a click. The queue never goes below the longest recent packet, or the
+//! longest recent wait between packets, plus [`CUSHION_S`]. In issue 17, with less queued than the wait for the
+//! next packet, the output ran dry every packet or so.
 //!
 //! The maths is audio.py's step for step, numpy's float32 and float64 included, so the same pushes and pulls give
 //! the same bytes (tests/delay_line.rs checks that against the Python).
 //!
-//! [`PlayerCore`] is the output's side ([`crate::Player`] plays it through Core Audio): the delay less the output's own
-//! latency, and the counts for the log. [`sound_report`] turns them into its line.
+//! [`PlayerCore`] is the output's side, which [`crate::Player`] plays through Core Audio. It keeps the delay less the
+//! output's own latency, and the counts for the log. [`sound_report`] turns them into its line.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -21,10 +21,10 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 
-pub const JUMP_S: f64 = 0.120; // further than this from the delay: jump to it
-pub const NUDGE_S: f64 = 0.004; // further than this: half a percent faster or slower until it's back
+pub const JUMP_S: f64 = 0.120; // further than this from the delay, jump to it
+pub const NUDGE_S: f64 = 0.004; // further than this, play half a percent faster or slower until it's back
 pub const NUDGE: f64 = 0.005;
-pub const FAR_S: f64 = 0.020; // further than this: one percent (100 ms takes 10 s)
+pub const FAR_S: f64 = 0.020; // further than this, one percent (100 ms takes 10 s)
 pub const FAR_NUDGE: f64 = 0.01;
 pub const MAX_S: f64 = 1.5; // never queue more than this
 pub const CUSHION_S: f64 = 0.010; // always queued on top of the longest recent packet or wait
@@ -42,30 +42,30 @@ fn py_round(x: f64) -> i64 {
     x.round_ties_even() as i64
 }
 
-/// numpy's linspace(1.0, 0.0, k, endpoint=False, dtype=float32)[i]: worked out in float64, then made float32.
+/// numpy's linspace(1.0, 0.0, k, endpoint=False, dtype=float32)[i], worked out in float64, then made float32.
 fn ramp(i: usize, k: usize) -> f32 {
     (i as f64 * (-1.0 / k as f64) + 1.0) as f32
 }
 
-/// PCM in as it arrives, out at the output's pace, held back by the delay asked for. Not thread-safe by itself:
-/// [`PlayerCore`] holds it behind a lock (push from the reader's thread, pull from the output's). All sizes are in
-/// samples (i16), where audio.py counts bytes; a sample frame is `channels` samples.
+/// PCM in as it arrives, out at the output's pace, held back by the delay asked for. It isn't thread-safe by itself,
+/// so [`PlayerCore`] holds it behind a lock, with push from the reader's thread and pull from the output's. All sizes
+/// are in samples (i16), where audio.py counts bytes. A sample frame is `channels` samples.
 pub struct DelayLine {
     pub rate: u32,
     pub channels: usize,
     buf: VecDeque<i16>,
-    /// Samples to keep queued (asked for: see `keep`).
+    /// Samples to keep queued, as asked for. See `keep`.
     target: usize,
     /// The last packets' sizes, in samples (a second of a card's).
     packets: VecDeque<usize>,
-    /// (time, wait since the packet before), falling: the first is the longest.
+    /// (time, wait since the packet before), falling, so the first is the longest.
     waits: VecDeque<(f64, f64)>,
     last_in: Option<f64>,
-    /// Times it ran dry (a gap, eased): nothing had arrived.
+    /// Times it ran dry because nothing had arrived. Each is a gap, eased.
     pub underruns: u64,
-    /// Far too much queued: the oldest sound skipped.
+    /// Times far too much was queued, so the oldest sound was skipped.
     pub skips: u64,
-    /// Far too little (a long hold-up, or a longer delay): silent until it's back.
+    /// Times far too little was queued (a long hold-up, or a longer delay), so it went silent until it was back.
     pub refills: u64,
     /// Waits of over STOP_S between packets.
     pub stops: u64,
@@ -76,7 +76,7 @@ pub struct DelayLine {
     /// The last sample frame played.
     last: Vec<f32>,
     fade: usize,
-    // (reused between pulls, so the output's thread doesn't allocate once they've grown)
+    // reused between pulls, so the output's thread doesn't allocate once they've grown
     chunk: Vec<i16>,
     a: Vec<f32>,
     stretched: Vec<f64>,
@@ -111,7 +111,7 @@ impl DelayLine {
         self.skips + self.refills
     }
 
-    /// audio.py `_bytes`, in samples: whole sample frames.
+    /// audio.py `_bytes` in samples, as whole sample frames.
     fn samples(&self, seconds: f64) -> usize {
         py_round(seconds * self.rate as f64).max(0) as usize * self.channels
     }
@@ -129,8 +129,8 @@ impl DelayLine {
         self.buf.len() as f64 / self.channels as f64 / self.rate as f64
     }
 
-    /// Samples to keep queued: the delay asked for, but never less than the longest recent packet or wait between
-    /// packets, and a cushion.
+    /// Samples to keep queued. That's the delay asked for, but never less than the longest recent packet or wait
+    /// between packets, plus a cushion.
     fn keep(&self) -> usize {
         let packet = (self.packets.iter().copied().max().unwrap_or(0) + self.samples(CUSHION_S)).min(self.samples(MAX_S / 2.0));
         let wait = match self.waits.front() {
@@ -150,7 +150,7 @@ impl DelayLine {
         self.push_at(sp_core::clock::now(), pcm)
     }
 
-    /// A packet that arrived at `now` (seconds on any clock that only moves forward; tests simulate one).
+    /// A packet that arrived at `now`, in seconds on any clock that only moves forward. Tests simulate one.
     pub fn push_at(&mut self, now: f64, pcm: &[i16]) {
         if let Some(last) = self.last_in {
             let wait = now - last;
@@ -159,7 +159,7 @@ impl DelayLine {
             } else {
                 self.longest_wait_s = self.longest_wait_s.max(wait);
                 while self.waits.back().is_some_and(|w| w.1 <= wait) {
-                    self.waits.pop_back(); // (a shorter, older wait never counts again)
+                    self.waits.pop_back(); // a shorter, older wait never counts again
                 }
                 self.waits.push_back((now, wait));
             }
@@ -175,7 +175,7 @@ impl DelayLine {
         self.buf.extend(pcm.iter().copied());
         let over = self.buf.len() as i64 - self.samples(MAX_S) as i64;
         if over > 0 {
-            let n = over + (-over).rem_euclid(self.channels as i64); // (whole sample frames)
+            let n = over + (-over).rem_euclid(self.channels as i64); // whole sample frames
             self.buf.drain(..(n as usize).min(self.buf.len()));
         }
     }
@@ -198,7 +198,7 @@ impl DelayLine {
         let mut err = self.buf.len() as i64 - self.keep() as i64; // how far ahead of the delay the queue is
         let jump = self.samples(JUMP_S) as i64;
         if err < -jump && !self.filling {
-            // too little queued (a long hold-up, or a longer delay): refill
+            // too little queued (a long hold-up, or a longer delay), so refill
             self.filling = true;
             self.refills += 1;
         }
@@ -211,7 +211,7 @@ impl DelayLine {
             self.seam = true;
         }
         if err > jump {
-            // too much: skip the oldest sound
+            // too much, so skip the oldest sound
             self.buf.drain(..err as usize);
             self.skips += 1;
             self.seam = true;
@@ -237,15 +237,15 @@ impl DelayLine {
         self.chunk.clear();
         self.chunk.extend(self.buf.drain(..n));
         if n < take * ch {
-            // ran dry: one gap, then silent until it's back to the delay (as it was, playing on from almost nothing
-            // ran dry again and again)
+            // Ran dry. One gap, then silent until it's back to the delay. Playing on from almost nothing, as it used
+            // to, ran dry again and again.
             self.underruns += 1;
             self.filling = true;
         }
         let seam = std::mem::replace(&mut self.seam, false);
         let got = n / ch;
         if got == take && take == nf && !seam {
-            // (nearly always)
+            // nearly always
             out.copy_from_slice(&self.chunk);
             for c in 0..ch {
                 self.last[c] = self.chunk[(nf - 1) * ch + c] as f32;
@@ -267,7 +267,7 @@ impl DelayLine {
             }
         }
         if got < take {
-            // ran dry: eased down into silence (and up from it when the sound's back: seam)
+            // ran dry, so ease down into silence, and up from it when the sound's back (seam)
             let from: Vec<f32> = if got > 0 { a[(got - 1) * ch..got * ch].to_vec() } else { self.last.clone() };
             let k = self.fade.min(take - got);
             for i in 0..take - got {
@@ -277,7 +277,7 @@ impl DelayLine {
             }
         }
         if take != nf {
-            // played a little faster (more in than out) or slower: stretched to nf frames (np.interp on float64)
+            // played a little faster (more in than out) or slower, stretched to nf frames with np.interp on float64
             let s = &mut self.stretched;
             s.clear();
             let step = if nf > 1 { (take - 1) as f64 / (nf - 1) as f64 } else { 0.0 };
@@ -350,7 +350,8 @@ impl DelayLine {
     }
 }
 
-/// How the sound played, for the log: audio.py stats() (DelayLine's, and the Player's three when it's a Player).
+/// How the sound played, for the log, as audio.py stats() gives it. That's DelayLine's, and the Player's three when
+/// it's a Player.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct SoundStats {
     pub ran_dry: u64,
@@ -372,7 +373,8 @@ impl SoundStats {
     }
 }
 
-/// A line for the log from the stats: all of it (since None), or what happened after `since`, None if nothing.
+/// A line for the log from the stats. It covers all of it when `since` is None, or what happened after `since`.
+/// None if nothing happened.
 pub fn sound_report(stats: &SoundStats, since: Option<&SoundStats>) -> Option<String> {
     let base = since.cloned().unwrap_or_default().counts();
     let now = stats.counts();
@@ -398,8 +400,8 @@ pub fn sound_report(stats: &SoundStats, since: Option<&SoundStats>) -> Option<St
     Some(out)
 }
 
-/// The output's side of audio.py's Player, without the device: a DelayLine behind a lock, the delay less the
-/// output's latency, and the calls counted. [`crate::Player`] hands its callback to Core Audio; tests call
+/// The output's side of audio.py's Player, without the device. It has a DelayLine behind a lock, the delay less the
+/// output's latency, and the calls counted. [`crate::Player`] hands its callback to Core Audio. Tests call
 /// [`PlayerCore::render`] themselves.
 pub struct PlayerCore {
     pub line: Mutex<DelayLine>,
@@ -411,7 +413,7 @@ pub struct PlayerCore {
 }
 
 impl PlayerCore {
-    /// latency: the output's own delay in seconds, which set_delay takes off so the total is what was asked for.
+    /// `latency` is the output's own delay in seconds, which set_delay takes off so the total is what was asked for.
     pub fn new(rate: u32, channels: usize, latency: f64) -> PlayerCore {
         PlayerCore {
             line: Mutex::new(DelayLine::new(rate, channels)),
@@ -431,9 +433,9 @@ impl PlayerCore {
         self.latency_bits.store(seconds.to_bits(), Ordering::Relaxed);
     }
 
-    /// The output asks for `out` (whole sample frames). `flagged`: the output says it ran short.
+    /// The output asks for `out` (whole sample frames). `flagged` means the output says it ran short.
     pub fn render(&self, out: &mut [i16], flagged: bool) {
-        // A late call counts too: a flag isn't always given (audio.py found WASAPI's never came).
+        // A late call counts too, because a flag isn't always given. audio.py found WASAPI's never came.
         let now = sp_core::clock::now_ns().max(1);
         let prev = self.called_ns.swap(now, Ordering::Relaxed);
         let mut late = false;

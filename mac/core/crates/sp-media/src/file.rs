@@ -1,6 +1,7 @@
 //! Video files as sources (framegen/io.py FileSource and Ps5SimSource), decoded by AVAssetReader (VideoToolbox
-//! underneath) on a thread of their own into NV12 pictures, converted like the stream's ([`Converter::sdr`]: the
-//! file's own colour tags; BT.601 when it has none, as FFmpeg's converter takes an untagged picture).
+//! underneath) on a thread of their own into NV12 pictures. They're converted like the stream's with
+//! [`Converter::sdr`], by the file's own colour tags, or BT.601 when it has none, as FFmpeg's converter takes an
+//! untagged picture.
 
 use std::collections::VecDeque;
 use std::path::Path;
@@ -36,7 +37,7 @@ const TICK: f64 = 1.0 / 60.0;
 pub struct VideoFile {
     pub width: usize,
     pub height: usize,
-    /// Frames a second (the track's nominal rate; 60 if it doesn't say).
+    /// Frames a second, the track's nominal rate, or 60 if it doesn't say.
     pub fps: f64,
     rx: Receiver<Option<Frame>>,
     thread: Option<JoinHandle<()>>,
@@ -99,7 +100,7 @@ impl Drop for VideoFile {
     }
 }
 
-#[allow(deprecated)] // (tracksWithMediaType: the async loader needs a run loop; this thread has none)
+#[allow(deprecated)] // tracksWithMediaType, because the async loader needs a run loop and this thread has none
 fn decode_file(
     path: &Path,
     meta: &std::sync::mpsc::SyncSender<Result<Meta, String>>,
@@ -115,7 +116,7 @@ fn decode_file(
         let size = track.naturalSize();
         let fps = track.nominalFrameRate() as f64;
         let fps = if fps > 0.0 { fps } else { 60.0 };
-        // The file's own colour tags (its format description); its pictures' attachments carry defaults.
+        // The file's own colour tags, from its format description. Its pictures' attachments carry defaults.
         let descs = track.formatDescriptions();
         let first = descs.firstObject();
         let format: Option<&CMFormatDescription> = first.as_ref().map(|o| &*(Retained::as_ptr(o) as *const CMFormatDescription));
@@ -131,7 +132,7 @@ fn decode_file(
             (kCVPixelBufferMetalCompatibilityKey, cf::yes()),
             (kCVPixelBufferIOSurfacePropertiesKey, &empty),
         ]);
-        // (CFDictionary and NSDictionary are toll-free bridged)
+        // CFDictionary and NSDictionary are toll-free bridged
         let settings: &NSDictionary<NSString, AnyObject> = &*(CFRetained::as_ptr(&settings).as_ptr() as *const _);
         let output = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(&track, Some(settings));
         output.setAlwaysCopiesSampleData(false);
@@ -225,21 +226,21 @@ impl Source for FileSource {
 /// Options for [`Ps5SimSource`].
 #[derive(Clone, Debug, Default)]
 pub struct SimOptions {
-    /// Deliver ticks at 60 Hz (latency measured from the scheduled arrival); else as fast as they're taken.
+    /// Deliver ticks at 60 Hz, with latency measured from the scheduled arrival. Otherwise as fast as they're taken.
     pub realtime: bool,
     /// The chance a game frame stays up three ticks instead of two (a dropped game frame).
     pub hitch: f64,
-    /// Noise added to each tick's picture, sd in levels (0: none).
+    /// Noise added to each tick's picture, sd in levels. 0 for none.
     pub noise: f64,
     pub max_ticks: Option<u64>,
-    /// Python's random.Random seed: the same hitches as framegen/io.py for the same seed.
+    /// Python's random.Random seed. The same seed gives the same hitches as framegen/io.py.
     pub seed: u64,
 }
 
-/// A native 60 fps recording played as what a PS5 sends for a 30 fps game: source frames 0, 2, 4... are the game's,
-/// each shown for two ticks (three with probability `hitch`); the odd frames are never shown and serve as ground
-/// truth for the generated midpoints ([`Source::ground_truth`]). A ~30 fps file is used frame for frame instead
-/// (every frame a game frame, no ground truth).
+/// A native 60 fps recording played as what a PS5 sends for a 30 fps game. Source frames 0, 2, 4 and so on are the
+/// game's, each shown for two ticks (three with probability `hitch`). The odd frames are never shown and serve as
+/// ground truth for the generated midpoints ([`Source::ground_truth`]). A file of about 30 fps is used frame for
+/// frame instead, with every frame a game frame and no ground truth.
 pub struct Ps5SimSource {
     info: SourceInfo,
     dec: VideoFile,
@@ -308,7 +309,7 @@ impl Source for Ps5SimSource {
                 self.history.pop_front();
             }
             if self.i % self.step as i64 != 0 {
-                continue; // odd frames of a 60 fps source: the game "never rendered" these
+                continue; // odd frames of a 60 fps source, standing for frames the game never rendered
             }
             self.reps_left = if self.rng.random() < self.opts.hitch { 3 } else { 2 };
             self.rep = 0;

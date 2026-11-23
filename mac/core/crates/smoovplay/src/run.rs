@@ -1,7 +1,7 @@
-//! `smoovplay [run.py's flags]`: run.py main() on the macOS core. The source is opened and RIFE built on the main
-//! thread; with --display the window opens there too, the pipeline moves to a thread of its own (QoS
-//! user-interactive) and the main thread runs AppKit's event loop until the window closes (sp-present's layout for
-//! a pipeline off the main thread). Headless runs stay on the main thread.
+//! `smoovplay [run.py's flags]` is run.py main() on the macOS core. The source is opened and RIFE built on the main
+//! thread. With --display the window opens there too, the pipeline moves to a thread of its own (QoS
+//! user-interactive), and the main thread runs AppKit's event loop until the window closes. That's sp-present's
+//! layout for a pipeline off the main thread. Headless runs stay on the main thread.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -31,15 +31,15 @@ use crate::sources::{self, Limit, Opened};
 use crate::system;
 use crate::win::{self, Control, Window};
 
-/// What showing each frame costs on top of RIFE's time (ms), for Auto motion detail and Auto-detect (the Python
-/// core's MAC_PRESENT_MS is 3.0, for its copy through the CPU to OpenGL). Measured through the real window on an M5
-/// Max with a 6016x3384 display: write() takes 0.08 ms of CPU (p50), and FSR 1 0.45 ms of GPU into the 3200x1800
-/// window, 1.17 ms fullscreen. recommend() already counts about 0.24 ms of FSR there, so 1.0 ms covers fullscreen.
+/// What showing each frame costs on top of RIFE's time, in ms, for Auto motion detail and Auto-detect. The Python
+/// core's MAC_PRESENT_MS is 3.0, for its copy through the CPU to OpenGL. Measured through the real window on an M5
+/// Max with a 6016x3384 display, write() takes 0.08 ms of CPU (p50). FSR 1 takes 0.45 ms of GPU into the 3200x1800
+/// window and 1.17 ms fullscreen. recommend() already counts about 0.24 ms of FSR there, so 1.0 ms covers fullscreen.
 pub const PRESENT_MS: f64 = 1.0;
 
-/// The video loop stuck this long while playing: the log gets where each thread is.
+/// When the video loop is stuck this long while playing, the log gets where each thread is.
 const WATCHDOG_S: f64 = 4.0;
-/// No picture from the source this long: the same, once per stall.
+/// The same when no picture has come from the source for this long, once per stall.
 const STARVED_S: f64 = 8.0;
 
 /// The finished sessions and the one playing, for the reports written while it plays (one lock for both, so a
@@ -60,7 +60,7 @@ fn upscaler_name(settings: &Settings) -> String {
     settings.get("scaler").map_or(String::new(), |v| sp.name(v, settings.look_choices()))
 }
 
-/// run.py results_now(): test mode's report, from the finished sessions and the one playing.
+/// Test mode's report from the finished sessions and the one playing, as run.py results_now() writes it.
 fn results_now(path: &Path, reports: &Mutex<Reports>, settings: &SharedSettings, size: &str, gpu: &str) -> bool {
     let sessions: Vec<(SessionInfo, Stats)> = {
         let r = lock_any(reports);
@@ -70,13 +70,13 @@ fn results_now(path: &Path, reports: &Mutex<Reports>, settings: &SharedSettings,
         }
         v
     };
-    let upscaler = upscaler_name(&lock(settings)); // (after the stats: the pipeline takes the settings under them)
+    let upscaler = upscaler_name(&lock(settings)); // after the stats, as the pipeline takes the settings under them
     let header = ReportHeader { stamp: system::strftime("%Y-%m-%d %H:%M"), size: size.into(), gpu: gpu.into(), upscaler };
     let refs: Vec<(SessionInfo, &Stats)> = sessions.iter().map(|(i, s)| (i.clone(), s)).collect();
     report::write_results(path, &header, &refs)
 }
 
-/// The watchdog's "where each thread is": macOS's sample tool on this process, its call graph trimmed.
+/// The watchdog's "where each thread is". It runs macOS's sample tool on this process and trims the call graph.
 fn where_threads(headline: &str) {
     let mut lines = vec![format!("{headline} Where each thread is:")];
     let out = std::process::Command::new("/usr/bin/sample")
@@ -155,7 +155,7 @@ fn watchdog(reports: Arc<Mutex<Reports>>, stop: Arc<AtomicBool>) {
     }
 }
 
-/// run.py write_stream_check(): how well the size check read this game, into the log and beside the results.
+/// How well the size check read this game, written to the log and beside the results (run.py write_stream_check()).
 fn write_stream_check(check: &StreamCheck, results: Option<&str>) {
     let lines = check.report();
     if lines.is_empty() {
@@ -177,7 +177,8 @@ fn write_stream_check(check: &StreamCheck, results: Option<&str>) {
     }
 }
 
-/// --save-worst: previous real | RIFE / actual in-between | next real, at half size, labelled.
+/// --save-worst. The previous real frame and RIFE's go on top, the actual in-between and the next real frame below,
+/// each at half size and labelled.
 fn save_worst(path: &str, st: &Stats) {
     let Some(w) = &st.worst else { return };
     if w.images.len() != 4 {
@@ -209,12 +210,12 @@ fn build(w: usize, h: usize, cfg: &Cfg, hdr: bool) -> Result<RifeInterpolator, S
         .map_err(|e| e.to_string())
 }
 
-/// How far an HDR display can go above SDR white right now (1: not at all), on the main display.
+/// How far the main display can go above SDR white right now (1 for not at all).
 fn edr_potential(mtm: MainThreadMarker) -> f64 {
     objc2_app_kit::NSScreen::mainScreen(mtm).map_or(1.0, |s| s.maximumPotentialExtendedDynamicRangeColorComponentValue())
 }
 
-/// Everything a run plays with once it's set up: moved to the pipeline's thread with --display.
+/// Everything a run plays with once it's set up. With --display it moves to the pipeline's thread.
 struct Play {
     a: Args,
     opened: Opened,
@@ -230,13 +231,13 @@ struct Play {
     replay: Option<Arc<sp_replay::Recorder>>,
 }
 
-/// What instant replay's "on" message says about keys: the Mac app holds Control-Option-R and B from anywhere.
+/// What instant replay's "on" message says about keys. The Mac app holds Control-Option-R and B from anywhere.
 fn play_hotkeys(a: &Args) -> Option<String> {
     a.control.then(|| "Control-Option-R and Control-Option-B from anywhere".to_string())
 }
 
-/// "Looks in clips": the look the window shows, drawn again at the stream's size on the clip's frames (io.py
-/// baked()), by a renderer of its own on the pipeline's thread (the window's is busy drawing the screen).
+/// "Looks in clips". The look the window shows is drawn again at the stream's size on the clip's frames (io.py
+/// baked()), by a renderer of its own on the pipeline's thread, because the window's is busy drawing the screen.
 struct ClipLook {
     r: sp_present::renderer::Renderer,
     luts: Arc<sp_present::looks::LutStore>,
@@ -244,7 +245,7 @@ struct ClipLook {
     n: u64,
 }
 
-// Metal objects are thread-safe; it's used from one thread at a time (the pipeline's, through the recorder).
+// Metal objects are thread-safe, and it's used from one thread at a time (the pipeline's, through the recorder).
 unsafe impl Send for ClipLook {}
 
 fn clip_look(look: Arc<Mutex<Option<Arc<sp_present::looks::Look>>>>, _w: usize, _h: usize) -> Option<sp_replay::recorder::LookFn> {
@@ -260,7 +261,7 @@ fn clip_look(look: Arc<Mutex<Option<Arc<sp_present::looks::Look>>>>, _w: usize, 
     let mut c = ClipLook { r, luts, look, n: 0 };
     Some(Box::new(move |f: &Frame| -> Result<Frame, String> {
         use objc2_metal::{MTLCommandBuffer, MTLCommandQueue};
-        let c = &mut c; // (the whole ClipLook, which is Send, not its fields one by one)
+        let c = &mut c; // the whole ClipLook, which is Send, not its fields one by one
         let Some(look) = lock_any(&c.look).clone() else { return Ok(f.clone()) };
         if f.kind != sp_core::PixelKind::Bgra8 {
             return Ok(f.clone());
@@ -294,7 +295,7 @@ pub fn main(argv: &[String]) -> i32 {
     }
     let gpu = Gpu::shared().name();
     println!("[run] RIFE runs on Apple's GPU (Metal and MPSGraph), {gpu}");
-    a.chiaki_decoder = "videotoolbox".into(); // (cuda, d3d11va, sw: VideoToolbox here)
+    a.chiaki_decoder = "videotoolbox".into(); // cuda, d3d11va and sw all mean VideoToolbox here
     if a.out.is_some() {
         args::error("--out (writing the result to a video file) isn't in the Mac core yet");
     }
@@ -345,7 +346,7 @@ pub fn main(argv: &[String]) -> i32 {
         }
     };
     if picked == "tap" && !opened.info.test_mode {
-        test = None; // an app that sends only new pictures: no test mode
+        test = None; // no test mode for an app that sends only new pictures
     }
     let kind = opened.kind.clone();
     if let Some(m) = a.max_ticks
@@ -356,7 +357,8 @@ pub fn main(argv: &[String]) -> i32 {
     }
     println!("[run] source: {}", opened.info.name);
 
-    // The looks library: the "Which look" setting's choices (the user's looks too), the window's looks and LUTs.
+    // The looks library gives the "Which look" setting's choices (the user's looks too) and the window's looks and
+    // LUTs.
     let library = if a.display { Some(Library::open_default()) } else { None };
     let choices = library.as_ref().map_or_else(LookChoices::builtin, |l| l.choices());
     let settings_path = a.settings_path();
@@ -388,7 +390,7 @@ pub fn main(argv: &[String]) -> i32 {
             args::error(&e.to_string());
         }
     }
-    // --model: one of the settings' choices, or another RIFE version for testing
+    // --model is one of the settings' choices, or another RIFE version for testing
     let model_choices = spec("model").unwrap().choices(settings.look_choices());
     let test_model = a.model.clone().filter(|m| !Value::from(m.as_str()).py_in(&model_choices));
     if let Some(m) = &a.model
@@ -412,8 +414,8 @@ pub fn main(argv: &[String]) -> i32 {
         let _ = settings.override_value("hz", 60i64);
     }
 
-    // HDR (settings "hdr"): only for a PS5 Remote Play stream in HDR, with the setting on. "sdr8": tone-mapped to SDR;
-    // "pq16": kept HDR10 for the window (EDR), when the display can show it.
+    // HDR (the "hdr" setting) is only for a PS5 Remote Play stream in HDR, with the setting on. "sdr8" is tone-mapped
+    // to SDR. "pq16" keeps HDR10 for the window (EDR), when the display can show it.
     let mtm = MainThreadMarker::new();
     let mut hdr_out: Option<&'static str> = None;
     if kind == "chiaki" && settings.get_str("hdr") != "off" && opened.hdr_stream {
@@ -435,7 +437,7 @@ pub fn main(argv: &[String]) -> i32 {
     if settings.get_str("engine") == "trt" {
         println!("[run] TensorRT is NVIDIA's; RIFE runs on Apple's GPU (Metal)");
     }
-    let vfg_why = "No NVIDIA graphics card was found.".to_string(); // (framegen/vfg.py vfg_unavailable() on a Mac)
+    let vfg_why = "No NVIDIA graphics card was found.".to_string(); // framegen/vfg.py vfg_unavailable() on a Mac
     let rife = crate::adapt::default_model();
     if settings.get_str("model") == "vfg" {
         let name = spec("model").unwrap().name(&Value::from(rife.as_str()), settings.look_choices());
@@ -512,7 +514,7 @@ pub fn main(argv: &[String]) -> i32 {
         lock_any(c).set_hdr(s, "");
     }
 
-    // Every change bumps the window's revision (its menu and display settings are read again).
+    // Every change bumps the window's revision, so its menu and display settings are read again.
     let rev = Arc::new(AtomicU64::new(0));
     {
         let r = rev.clone();
@@ -554,8 +556,8 @@ pub fn main(argv: &[String]) -> i32 {
         shared = Arc::new(Mutex::new(settings));
     }
 
-    // Instant replay (sp-replay, framegen/replay.py): only while playing on screen. It lasts across restarts, so a
-    // restart for a setting doesn't lose what's held.
+    // Instant replay (sp-replay, framegen/replay.py) runs only while playing on screen. It lasts across restarts, so
+    // a restart for a setting doesn't lose what's held.
     let replay = window.as_ref().map(|wd| {
         let st = lock(&shared);
         let toasts = wd.toasts.clone();
@@ -755,7 +757,7 @@ fn run_sessions(play: Play) -> i32 {
         }
     }
 
-    // The video window goes at once; then the rest of stopping.
+    // The video window goes at once, then the rest of stopping.
     if let Some(wd) = window.as_mut() {
         wd.p.hide();
     }
@@ -764,7 +766,7 @@ fn run_sessions(play: Play) -> i32 {
         sp_core::Source::set_audio_delay(&mut *lock_any(c), 0.0); // chiaki-ng's sound back on time
     }
     if let Some(r) = &replay {
-        r.close(30.0); // a clip being saved is finished first; a before & after carries on alone
+        r.close(30.0); // a clip being saved is finished first. A before & after carries on alone.
     }
     if let Some(mut wd) = window.take() {
         wd.close();

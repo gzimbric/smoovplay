@@ -1,4 +1,4 @@
-// The Settings page (SettingsPage.cs, AutoDetect.cs, FillPreview.cs): drawn from SettingsModel, which is built
+// The Settings page (SettingsPage.cs, AutoDetect.cs, FillPreview.cs), drawn from SettingsModel. That model is built
 // from the pipeline's own list of settings and the core's live state.
 import SmoovPlayKit
 import SwiftUI
@@ -50,7 +50,7 @@ struct SettingsPage: View {
                         ForEach(shown) { sec in SectionCard(section: sec) }
                     }
                 } else {
-                    Small(m.specsError.map { "Couldn't load the settings: \($0)." } ?? (m.paths.runtimeReady ? "Loading..." : "There's no pipeline at \(m.paths.repo.path): make the repo's .venv first."),
+                    Small(m.specsError.map { "Couldn't load the settings: \($0)." } ?? (m.paths.runtimeReady ? "Loading..." : "There's no pipeline at \(m.paths.repo.path). Make the repo's .venv first."),
                           color: m.specsError == nil ? .text2 : .bad)
                 }
             }
@@ -303,9 +303,9 @@ struct DetectCard: View {
     }
 }
 
-/// Fill the screen: what the picked choice does with the console's 16:9 picture on this Mac's widest screen (an
-/// example 21:9 one if none is wider than 16:9). fill.py's maths: Zoom fills the width and cuts the top and bottom,
-/// Panorama bends the picture across the screen with u = atan(t*x) / atan(t).
+/// The Fill the screen preview. It shows what the picked choice does with the console's 16:9 picture on this Mac's
+/// widest screen, or on an example 21:9 one if none is wider than 16:9. The maths is fill.py's. Zoom fills the width
+/// and cuts the top and bottom, and Panorama bends the picture across the screen with u = atan(t*x) / atan(t).
 struct FillPreview: View {
     var mode: String
     let screenH: CGFloat = 46
@@ -363,7 +363,7 @@ struct FillPreview: View {
         ctx.stroke(Path(frame), with: .color(.text2), lineWidth: 1)
     }
 
-    /// fill.py's panorama_t: the curve's t, so the middle is 15% of the extra width wider than true.
+    /// fill.py's panorama_t, the curve's t that makes the middle 15% of the extra width wider than true.
     static func panoramaT(_ k: Double) -> Double {
         let goal = (1.0 + 0.15 * (k - 1.0)) / k
         var lo = 1e-6, hi = 1e3

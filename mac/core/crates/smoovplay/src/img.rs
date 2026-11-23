@@ -1,6 +1,6 @@
-//! Picture files for --save-worst and the looks preview (framegen/imagefile.py read_image / write_image): any format
-//! ImageIO reads, written by the extension (BMP here, PNG and JPEG through ImageIO; PNG without one). Pictures are
-//! packed BGR, rows top first, as OpenCV's.
+//! Picture files for --save-worst and the looks preview (framegen/imagefile.py read_image and write_image). It reads
+//! any format ImageIO reads. It writes the format the extension names, BMP here and PNG and JPEG through ImageIO,
+//! and PNG when there's no extension. Pictures are packed BGR, rows top first, as OpenCV's.
 
 use std::ffi::{CString, c_char, c_void};
 use std::path::Path;
@@ -51,7 +51,7 @@ unsafe extern "C" {
 const ALPHA_SKIP_FIRST: u32 = 6; // kCGImageAlphaNoneSkipFirst
 const ORDER_32_LITTLE: u32 = 2 << 12; // kCGBitmapByteOrder32Little: B, G, R, X in memory
 
-/// A picture: packed BGR.
+/// A picture, packed BGR.
 #[derive(Clone, Debug)]
 pub struct Image {
     pub w: usize,
@@ -70,7 +70,7 @@ fn release(r: Ref) {
     }
 }
 
-/// read_image(): None when the file is missing or isn't a picture.
+/// read_image(). None when the file is missing or isn't a picture.
 pub fn read(path: &Path) -> Option<Image> {
     if !path.is_file() {
         return None;
@@ -123,7 +123,7 @@ fn bmp(img: &Image) -> Vec<u8> {
     out
 }
 
-/// write_image(): the format the extension names (PNG without one). False if it couldn't be written.
+/// write_image(), in the format the extension names (PNG without one). False if it couldn't be written.
 pub fn write(path: &Path, img: &Image) -> bool {
     let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     if ext == "bmp" || ext == "dib" {
@@ -174,14 +174,14 @@ pub fn write(path: &Path, img: &Image) -> bool {
     }
 }
 
-/// Each output pixel's (first source pixel, weights) along one axis: the source span it covers, as OpenCV's
-/// INTER_AREA when shrinking (bilinear-like when enlarging).
+/// Each output pixel's first source pixel and weights along one axis. When shrinking they cover the source span it
+/// covers, as OpenCV's INTER_AREA does. Enlarging is close to bilinear.
 fn area_weights(src: usize, dst: usize) -> Vec<(usize, Vec<f32>)> {
     let scale = src as f64 / dst as f64;
     (0..dst)
         .map(|i| {
             if scale <= 1.0 {
-                // enlarging: linear between the two nearest
+                // enlarging, linear between the two nearest
                 let f = ((i as f64 + 0.5) * scale - 0.5).max(0.0);
                 let x0 = (f.floor() as usize).min(src - 1);
                 let x1 = (x0 + 1).min(src - 1);

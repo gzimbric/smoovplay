@@ -1,11 +1,11 @@
-//! The video window as the pipeline's presenter: sp-present's VideoPresenter with the launcher's link polled on the
-//! window's thread before each frame and wait (io.py GLWindowSink polls framegen/remote.py in its events), so its
-//! changes act exactly like the menu's. Besides the Python's commands, the Mac app's:
+//! The video window as the pipeline's presenter. It's sp-present's VideoPresenter, with the launcher's link polled on
+//! the window's thread before each frame and wait (io.py GLWindowSink polls framegen/remote.py in its events), so the
+//! launcher's changes act exactly like the menu's. Besides the Python's commands, it takes the Mac app's:
 //!
-//! - `key <name>`: a key as if pressed in the window (M, F, I, S, U, Z, K, J, L, R, B, Q; Up, Down, Left, Right,
-//!   Enter, Esc, Backspace, Tab; a letter is the same in either case, "Shift+J" is the previous look); `key` alone
-//!   does nothing (the app's probe).
-//! - `overlay <x> <y> <w> <h>` / `overlay none`: sit over the copied app window, or be a normal window again.
+//! - `key <name>`: a key as if pressed in the window. The keys are M, F, I, S, U, Z, K, J, L, R, B and Q, and Up,
+//!   Down, Left, Right, Enter, Esc, Backspace and Tab. A letter is the same in either case, and "Shift+J" is the
+//!   previous look. `key` alone does nothing (the app's probe).
+//! - `overlay <x> <y> <w> <h>` or `overlay none`: sit over the copied app window, or be a normal window again.
 //! - "menu_open" in the state, published again whenever the menu opens or closes.
 
 use std::io::{BufRead, BufReader, Read};
@@ -51,7 +51,7 @@ pub fn key_of(name: &str) -> Result<Option<(Key, bool)>, String> {
     Ok(Some((key, shift)))
 }
 
-/// `overlay x y w h` / `overlay none`.
+/// `overlay x y w h` or `overlay none`.
 pub fn overlay_of(text: &str) -> Result<Option<(f64, f64, f64, f64)>, String> {
     let t = text.trim();
     if t.eq_ignore_ascii_case("none") {
@@ -64,11 +64,11 @@ pub fn overlay_of(text: &str) -> Result<Option<(f64, f64, f64, f64)>, String> {
     }
 }
 
-/// The launcher's link: the Remote, and what its handlers left for the window.
+/// The launcher's link. It holds the Remote and what its handlers left for the window.
 pub struct Control {
     pub remote: Remote,
     pub cmds: Arc<Mutex<Vec<Cmd>>>,
-    /// looks-reload: publish again once the settings are free (the new list of looks).
+    /// Set by looks-reload, to publish the new list of looks once the settings are free.
     pub republish: Arc<AtomicBool>,
 }
 
@@ -118,8 +118,8 @@ impl Control {
     }
 }
 
-/// Reads the launcher's lines from `input` (stdin) on a thread; when it closes (the app went), asks to quit, so the
-/// core never outlives the app.
+/// Reads the launcher's lines from `input` (stdin) on a thread. When it closes because the app went, it asks to quit,
+/// so the core never outlives the app.
 pub fn read_commands(tx: LineSender, input: impl Read + Send + 'static) {
     let _ = std::thread::Builder::new().name("remote".into()).spawn(move || {
         let mut r = BufReader::new(input);
@@ -149,7 +149,7 @@ pub struct Window {
 }
 
 impl Window {
-    /// The state line (session start, as run.py's remote.publish()).
+    /// Prints the state line, as run.py's remote.publish() does at session start.
     pub fn publish(&self) {
         if let Some(c) = &self.control {
             c.remote.publish(&lock(&self.settings));
@@ -180,7 +180,7 @@ impl Window {
         req
     }
 
-    /// The menu opened or closed: say so (menu_open).
+    /// Says so (menu_open) when the menu opened or closed.
     fn after(&mut self) {
         let open = self.p.menu_open();
         if open != self.menu_open.swap(open, Ordering::SeqCst) {
@@ -195,7 +195,8 @@ impl Window {
     }
 }
 
-/// The launcher's request with the window's reply: quit first, then what the window said, then a restart.
+/// Combines the launcher's request with the window's reply. Quit comes first, then what the window said, then a
+/// restart.
 fn combine(req: Option<Request>, reply: SinkReply) -> SinkReply {
     match (req, reply) {
         (Some(Request::Quit), _) => SinkReply::Quit,

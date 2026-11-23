@@ -1,8 +1,8 @@
-//! --score and test mode's quality measures (framegen/pipeline.py _score, hud_mask, psnr): each generated frame
-//! against the real one it stood in for, the last real frame repeated, and a 50/50 blend, over the whole picture,
-//! still areas and HUD-like areas. A probe ([`crate::probe`]) adds up the per-pixel numbers (on the GPU, or on the CPU
-//! from `Frame::to_bgr` with [`score_sums_bgr`]); [`add_scores`] turns the sums into Stats' figures with the same
-//! float32 / float64 steps as the torch code, so the reports read the same.
+//! --score and test mode's quality measures (framegen/pipeline.py _score, hud_mask, psnr). Each generated frame is
+//! compared with the real one it stood in for, as are the last real frame repeated and a 50/50 blend, over the whole
+//! picture, still areas and HUD-like areas. A probe ([`crate::probe`]) adds up the per-pixel numbers, on the GPU or
+//! on the CPU from `Frame::to_bgr` with [`score_sums_bgr`]. [`add_scores`] turns the sums into Stats' figures with
+//! the same float32 and float64 steps as the torch code, so the reports read the same.
 
 use crate::stats::{HUD_EDGE, STILL_LEVELS, Stats, VISIBLE_LEVELS};
 
@@ -19,7 +19,7 @@ pub fn pq_of_nits(nits: f64) -> f64 {
     ((C1 + C2 * p) / (1.0 + C3 * p)).powf(M2)
 }
 
-/// hdr.py LEVEL8_SCALE: a PQ value times this is in 8-bit levels (SDR white at 255).
+/// hdr.py LEVEL8_SCALE. A PQ value times this is in 8-bit levels, with SDR white at 255.
 pub fn level8_scale() -> f64 {
     255.0 / pq_of_nits(SDR_WHITE_NITS)
 }
@@ -27,7 +27,7 @@ pub fn level8_scale() -> f64 {
 /// The per-pixel numbers of one scored frame, added up over the picture. Pixels are in 8-bit levels.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ScoreSums {
-    /// Squared error, summed over pixels and colours: AI frame, last frame repeated, 50/50 blend.
+    /// Squared error summed over pixels and colours, for the AI frame, the last frame repeated and the 50/50 blend.
     pub se_out: f64,
     pub se_rep: f64,
     pub se_blend: f64,
@@ -35,10 +35,11 @@ pub struct ScoreSums {
     pub n_still: f64,
     pub se_out_still: f64,
     pub se_rep_still: f64,
-    /// Pixels more than VISIBLE_LEVELS off in any colour: AI frame, last frame repeated.
+    /// Pixels more than VISIBLE_LEVELS off in any colour, in the AI frame and in the last frame repeated.
     pub n_off: f64,
     pub n_off_rep: f64,
-    /// HUD-like pixels (still in a, gt and b, on an edge of gt), the AI frame's squared error and visibly-off ones there.
+    /// HUD-like pixels (still in a, gt and b, and on an edge of gt), then the AI frame's squared error and its
+    /// visibly-off pixels there.
     pub n_hud: f64,
     pub se_out_hud: f64,
     pub n_off_hud: f64,
@@ -101,8 +102,9 @@ fn max_abs(a: [f32; 3], b: [f32; 3]) -> f32 {
     (a[0] - b[0]).abs().max((a[1] - b[1]).abs()).max((a[2] - b[2]).abs())
 }
 
-/// HUD-like pixels for scoring: unchanged within STILL_LEVELS across the real frames a, gt (the real in-between one)
-/// and b, and on an edge of gt's brightness. Images are BGR levels (0..255), one [f32; 3] per pixel.
+/// HUD-like pixels for scoring. These are unchanged within STILL_LEVELS across the real frames a, gt (the real
+/// in-between one) and b, and on an edge of gt's brightness. Images are BGR levels from 0 to 255, one [f32; 3] per
+/// pixel.
 pub fn hud_mask(a: &[[f32; 3]], b: &[[f32; 3]], gt: &[[f32; 3]], w: usize, h: usize) -> Vec<bool> {
     let e = edges(gt, w, h);
     (0..w * h).map(|i| max_abs(b[i], a[i]) <= STILL_LEVELS && max_abs(gt[i], a[i]) <= STILL_LEVELS && e[i]).collect()
@@ -112,8 +114,8 @@ fn px(bgr: &[u8]) -> Vec<[f32; 3]> {
     bgr.as_chunks::<3>().0.iter().map(|p| [p[0] as f32, p[1] as f32, p[2] as f32]).collect()
 }
 
-/// The sums from packed 8-bit BGR: a the previous real frame, b the next one, out the AI frame, gt the real one it
-/// stood in for. The CPU route, and the reference for the GPU's.
+/// The sums from packed 8-bit BGR. `a` is the previous real frame, `b` the next one, `out` the AI frame and `gt` the
+/// real one it stood in for. This is the CPU route and the reference for the GPU's.
 pub fn score_sums_bgr(a: &[u8], b: &[u8], out: &[u8], gt: &[u8], w: usize, h: usize) -> ScoreSums {
     score_sums_levels(&px(a), &px(b), &px(out), &px(gt), w, h)
 }
@@ -157,8 +159,8 @@ fn f32div(a: f64, b: f64) -> f64 {
     (a as f32 / b as f32) as f64
 }
 
-/// The figures one scored frame adds to Stats, from its sums (pipeline.py _score's arithmetic: torch's float32
-/// means, then Python floats). Returns the frame's PSNR.
+/// The figures one scored frame adds to Stats, from its sums. The arithmetic is pipeline.py _score's, with torch's
+/// float32 means and then Python floats. Returns the frame's PSNR.
 pub fn add_scores(st: &mut Stats, s: &ScoreSums) -> f64 {
     let n = s.pixels * 3.0;
     let mse = [f32div(s.se_out, n), f32div(s.se_rep, n), f32div(s.se_blend, n)];

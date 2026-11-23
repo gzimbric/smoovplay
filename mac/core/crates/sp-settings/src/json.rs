@@ -24,7 +24,7 @@ pub enum Value {
     Dict(Map),
 }
 
-/// A dict: keys in insertion order. Setting a key that's there keeps its place, as in Python.
+/// A dict, with keys in insertion order. Setting a key that's there keeps its place, as in Python.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Map(Vec<(String, Value)>);
 
@@ -199,7 +199,7 @@ impl Value {
             _ => None,
         }
     }
-    /// dict.get(key) on a dict; None for anything else.
+    /// dict.get(key) on a dict, and None for anything else.
     pub fn get(&self, key: &str) -> Option<&Value> {
         self.as_dict().and_then(|m| m.get(key))
     }
@@ -415,7 +415,7 @@ impl fmt::Display for Value {
 #[derive(Clone, Debug, PartialEq)]
 pub struct JsonError {
     pub msg: String,
-    /// Where, in characters; None for an error without a position.
+    /// Where, in characters. None for an error without a position.
     pub pos: Option<usize>,
     lineno: usize,
     colno: usize,
@@ -627,7 +627,7 @@ impl Parser<'_> {
                         end -= 6;
                     }
                 }
-                // (a lone surrogate, which a Python str can hold and a Rust one can't, reads as U+FFFD)
+                // A lone surrogate, which a Python str can hold and a Rust one can't, reads as U+FFFD.
                 char::from_u32(code).unwrap_or('\u{FFFD}')
             };
             out.push(ch);

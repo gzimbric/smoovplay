@@ -1,19 +1,20 @@
 //! Decoded pictures to sp_core frames on the GPU.
 //!
-//! A decoder's CVPixelBuffer (IOSurface-backed NV12 or P010) is seen by Metal through a CVMetalTextureCache, without
-//! a copy: plane 0 as R8Uint / R16Uint, plane 1 as RG8Uint / RG16Uint. One compute pass makes the frame:
+//! Metal reads a decoder's CVPixelBuffer (IOSurface-backed NV12 or P010) through a CVMetalTextureCache, without a
+//! copy. Plane 0 is seen as R8Uint or R16Uint and plane 1 as RG8Uint or RG16Uint. One compute pass makes the frame:
 //!
-//! - SDR ([`Converter::sdr`]): what framegen/chiaki_tap.py's VideoToolbox path hands on, PyAV's
-//!   `to_ndarray("bgr24")` (swscale): chroma taken as is for each 2x2 block (no interpolation), the matrix from the
-//!   stream's tags (BT.709 if tagged so, BT.2020 if tagged so, else BT.601), limited range unless tagged full.
-//! - HDR ([`Converter::hdr`]): framegen/hdr.py's maths per pixel (chroma bilinear, as F.interpolate with
-//!   align_corners=False; PQ or HLG to light; BT.2390's roll-off; BT.2020 to BT.709; SDR gamma), to "sdr8" (BGRA8) or
-//!   "pq16" (RGBA16F, PQ BT.2020). Python runs the same maths through a 3D LUT; this is the exact version of it.
+//! - SDR ([`Converter::sdr`]): what framegen/chiaki_tap.py's VideoToolbox path hands on, which is PyAV's
+//!   `to_ndarray("bgr24")` through swscale. Chroma is taken as is for each 2x2 block, with no interpolation. The
+//!   matrix comes from the stream's tags (BT.709 or BT.2020 if tagged so, else BT.601), and the range is limited
+//!   unless tagged full.
+//! - HDR ([`Converter::hdr`]): framegen/hdr.py's maths per pixel, to "sdr8" (BGRA8) or "pq16" (RGBA16F, PQ BT.2020).
+//!   Chroma is bilinear, as F.interpolate with align_corners=False. Then PQ or HLG to light, BT.2390's roll-off,
+//!   BT.2020 to BT.709 and SDR gamma. Python runs the same maths through a 3D LUT. This is the exact version.
 //! - Decoded frames from the tap ([`Converter::nv12_bytes`], [`Converter::bgra_bytes`]): framegen/capture.py
-//!   raw_to_bgr (bilinear chroma, the header's colours).
+//!   raw_to_bgr, with bilinear chroma and the header's colours.
 //!
-//! Each call waits for its GPU work, so the frame is complete when it's returned. Frames come from a pool: one is
-//! reused once nothing else holds it (keep the Frame, not just its texture, while using it).
+//! Each call waits for its GPU work, so the frame is complete when it's returned. Frames come from a pool, and one
+//! is reused once nothing else holds it. Keep the Frame, not only its texture, while using it.
 
 use std::ffi::c_void;
 use std::ptr::NonNull;
@@ -44,8 +45,8 @@ using namespace metal;
 struct Sdr {
     float y_lo, y_mul, c_mid, c_mul;   // lum = (Y - y_lo) * y_mul, c = (C - c_mid) * c_mul, both on 0..255
     float kr, kb, pad0, pad1;
-    uint shift, bilinear, cw, ch;      // P010: >> 6; chroma interpolated or not; chroma plane size
-    uint width, height, pad2, pad3;    // (for frames in a buffer)
+    uint shift, bilinear, cw, ch;      // 6 for P010, chroma interpolated or not, chroma plane size
+    uint width, height, pad2, pad3;    // for frames in a buffer
 };
 
 static float3 ycc_rgb(float y, float u, float v, constant Sdr &p) {
@@ -58,8 +59,8 @@ static float3 ycc_rgb(float y, float u, float v, constant Sdr &p) {
     return clamp(rint(float3(r, g, b)), 0.0f, 255.0f) / 255.0f;
 }
 
-// Chroma for pixel p, bilinear as torch's F.interpolate(scale 2, align_corners=False): source position
-// (p + 0.5) / 2 - 0.5, clamped at 0, the next sample clamped at the edge.
+// Chroma for pixel p, bilinear as torch's F.interpolate(scale 2, align_corners=False). The source position is
+// (p + 0.5) / 2 - 0.5 clamped at 0, and the next sample is clamped at the edge.
 struct Bilinear { uint2 a, b; float2 f; };
 static Bilinear bilinear(uint2 p, uint cw, uint ch) {
     float sx = max((float(p.x) + 0.5f) * 0.5f - 0.5f, 0.0f), sy = max((float(p.y) + 0.5f) * 0.5f - 0.5f, 0.0f);
@@ -128,12 +129,12 @@ constant float C1 = 3424.0f / 4096.0f, C2 = 2413.0f / 4096.0f * 32.0f, C3 = 2392
 constant float HLG_A = 0.17883277f, HLG_B = 0.28466892f, HLG_C = 0.55991073f;
 
 struct Hdr {
-    float4 m0, m1, m2;                   // matrix rows (linear light): BT.2020 to 709 (sdr8) or 709 to 2020 (pq16)
+    float4 m0, m1, m2;                   // matrix rows in linear light, BT.2020 to 709 (sdr8) or 709 to 2020 (pq16)
     float4 luma;                         // BT.2020's luma weights, for HLG
     float lo, ys, cs, mid;               // code values: lum = (Y - lo) / ys, c = (C - mid) / cs
     float kr, kb, src_pq, max_lum;       // BT.2390 roll-off from src_pq (PQ of the source peak) to max_lum of it
     float ks, dst_nits, sdr_nits, hlg_nits;
-    uint transfer, out, mode, shift;     // transfer 0 SDR gamma, 1 PQ, 2 HLG; out 0 sdr8, 1 pq16;
+    uint transfer, out, mode, shift;     // transfer 0 SDR gamma, 1 PQ, 2 HLG. out 0 sdr8, 1 pq16.
                                          // mode 0 the maths, 1 HDR10 kept as is (pq16), 2 SDR in 10 bits (sdr8)
     uint use_matrix, tonemap, cw, ch;    // tonemap 0 none, 1 clamp to dst_nits, 2 roll off to dst_nits
 };
@@ -163,7 +164,7 @@ static float eetf(float e, constant Hdr &p) {
     return (x < p.ks ? x : (x >= 1.0f ? p.max_lum : q)) * p.src_pq;
 }
 
-// tone_map_nits: the brightest channel rolled off, all three scaled alike
+// As tone_map_nits, the brightest channel rolled off and all three scaled alike
 static float3 tone_map(float3 rgb, constant Hdr &p) {
     if (p.tonemap == 1) return clamp(rgb, 0.0f, p.dst_nits);
     float m = max(max(max(rgb.r, rgb.g), rgb.b), 1e-6f);
@@ -215,8 +216,9 @@ kernel void hdr_planes(texture2d<uint, access::read> yp [[texture(0)]],
     }
 }
 
-// An HDR10 frame (pq16: PQ BT.2020 R'G'B') as 8 bits: mode 0 hdr.py's level8 / to_u8 (SDR white's PQ value to
-// 255, one multiply, truncated: the checks tuned on SDR frames), mode 1 pq16_to_sdr8 (the same picture "sdr8" makes).
+// An HDR10 frame (pq16, PQ BT.2020 R'G'B') as 8 bits. Mode 0 is hdr.py's level8 and to_u8, for the checks tuned on
+// SDR frames. It puts SDR white's PQ value at 255 with one multiply, truncated. Mode 1 is pq16_to_sdr8, the same
+// picture "sdr8" makes.
 kernel void pq16_to_8(texture2d<float, access::read> src [[texture(0)]],
                       texture2d<float, access::write> out [[texture(1)]],
                       constant Hdr &p [[buffer(0)]],
@@ -239,7 +241,7 @@ static uint hash(uint x) {
 }
 
 // One of a few fixed noise planes (`plane`), normal with sd `sigma` in 0..255 levels, truncated towards 0 and
-// added with saturation (Ps5SimSource: cv2.subtract(cv2.add(f, pos), neg)).
+// added with saturation, as Ps5SimSource does with cv2.subtract(cv2.add(f, pos), neg).
 kernel void add_noise(texture2d<float, access::read> src [[texture(0)]],
                       texture2d<float, access::write> out [[texture(1)]],
                       constant float &sigma [[buffer(0)]],
@@ -307,12 +309,12 @@ struct HdrParams {
     ch: u32,
 }
 
-/// SmoovPlay's HDR setting for an HDR stream (framegen/hdr.py StreamConverter): what frames to make.
+/// SmoovPlay's HDR setting for an HDR stream (framegen/hdr.py StreamConverter), which picks what frames to make.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HdrOut {
     /// Tone-mapped to 8-bit SDR (BGRA8).
     Sdr8,
-    /// Kept HDR10: PQ BT.2020 half floats (RGBA16F).
+    /// Kept HDR10, as PQ BT.2020 half floats (RGBA16F).
     Pq16,
 }
 
@@ -331,7 +333,7 @@ pub struct HdrSettings {
     pub out: HdrOut,
     /// The game's brightest highlights, nits (hdr.py SOURCE_PEAK_NITS).
     pub src_peak: f64,
-    /// pq16: roll highlights off to this (a dimmer HDR display); None: as they are.
+    /// For pq16, roll highlights off to this for a dimmer HDR display. None leaves them as they are.
     pub display_peak: Option<f64>,
     /// SDR white, nits (BT.2408's 203).
     pub sdr_nits: f64,
@@ -343,7 +345,8 @@ impl HdrSettings {
     }
 }
 
-/// Frames reused once nothing else holds them (their `owner` is the pool's mark: a count of 1 means only the pool).
+/// Frames reused once nothing else holds them. Their `owner` is the pool's mark, and a count of 1 means only the
+/// pool holds one.
 struct Pool {
     frames: Vec<Frame>,
     max: usize,
@@ -410,7 +413,7 @@ pub struct Converter {
     staging: Option<Retained<Buffer>>,
 }
 
-// Metal objects and the texture cache are thread-safe; a Converter is used from one thread at a time.
+// Metal objects and the texture cache are thread-safe, and a Converter is used from one thread at a time.
 unsafe impl Send for Converter {}
 
 fn err(what: &str) -> sp_core::Error {
@@ -420,7 +423,7 @@ fn err(what: &str) -> sp_core::Error {
 impl Converter {
     pub fn new() -> sp_core::Result<Converter> {
         let gpu = Gpu::shared();
-        // (precise maths where it matters is asked for in the source; the rest may be fast)
+        // The shader source asks for precise maths where it matters. The rest may be fast.
         let k = pipelines()?;
         let queue = gpu.device.newCommandQueue().ok_or_else(|| err("no command queue"))?;
         queue.setLabel(Some(&NSString::from_str("sp-media convert")));
@@ -438,7 +441,7 @@ impl Converter {
         })
     }
 
-    /// A plane of the decoder's picture as a texture (no copy); the CVMetalTexture keeps it valid.
+    /// A plane of the decoder's picture as a texture, without a copy. The CVMetalTexture keeps it valid.
     fn plane(&self, d: &Decoded, index: usize, format: MTLPixelFormat) -> sp_core::Result<(CFRetained<CVMetalTexture>, Retained<Texture>)> {
         let w = CVPixelBufferGetWidthOfPlane(&d.buffer, index);
         let h = CVPixelBufferGetHeightOfPlane(&d.buffer, index);
@@ -531,7 +534,8 @@ impl Converter {
         Ok(out)
     }
 
-    /// An HDR stream's picture as the HDR setting asks (hdr.py StreamConverter): (frame, what the samples meant).
+    /// An HDR stream's picture as the HDR setting asks (hdr.py StreamConverter). Returns the frame and what its
+    /// samples meant.
     pub fn hdr(&mut self, d: &Decoded, s: &HdrSettings) -> sp_core::Result<(Frame, FrameInfo)> {
         let info = FrameInfo::of(&d.tags, d.bits());
         let p = hdr_params(&info, s, d.width, d.height);
@@ -544,7 +548,8 @@ impl Converter {
         Ok((out, info))
     }
 
-    /// A buffer the next nv12_bytes/bgra_bytes call reads from: copy a frame into it (the tap's slot), then call.
+    /// A buffer the next nv12_staged or bgra_staged call reads from. Copy a frame into it from the tap's slot, then
+    /// call.
     pub fn staging(&mut self, len: usize) -> &mut [u8] {
         let have = self.staging.as_ref().map(|b| b.length()).unwrap_or(0);
         if have < len {
@@ -554,8 +559,8 @@ impl Converter {
         unsafe { std::slice::from_raw_parts_mut(b.contents().as_ptr() as *mut u8, len) }
     }
 
-    /// The NV12 frame in the staging buffer (tightly packed) as BGRA8: capture.py raw_to_bgr's maths (bilinear
-    /// chroma), BT.709 or BT.601, limited or full range.
+    /// The NV12 frame in the staging buffer (tightly packed) as BGRA8, by capture.py raw_to_bgr's maths with
+    /// bilinear chroma. BT.709 or BT.601, limited or full range.
     pub fn nv12_staged(&mut self, w: usize, h: usize, bt709: bool, full_range: bool) -> Frame {
         let (kr, kb) = if bt709 { (0.2126, 0.0722) } else { (0.299, 0.114) };
         let (y_lo, y_mul, c_mul) = if full_range { (0.0, 1.0, 1.0) } else { (16.0, 255.0 / 219.0, 255.0 / 224.0) };
@@ -600,10 +605,10 @@ impl Converter {
         self.bgra_staged(w, h)
     }
 
-    /// An HDR10 frame (Rgba16f, PQ BT.2020) as BGRA8. `exact` false: hdr.py's level8 / to_u8, the 8-bit stand-in the
-    /// repeat and cut checks, the delay test and test mode's scores take (SDR white's PQ value to 255, highlights all
-    /// 255; one multiply). `exact` true: pq16_to_sdr8, the picture "sdr8" would have made (instant replay's clips
-    /// while the window shows HDR). An SDR frame comes back as it is.
+    /// An HDR10 frame (Rgba16f, PQ BT.2020) as BGRA8. With `exact` false it's hdr.py's level8 and to_u8, the 8-bit
+    /// stand-in that the repeat and cut checks, the delay test and test mode's scores take. That is one multiply that
+    /// puts SDR white's PQ value at 255 and every highlight at 255. With `exact` true it's pq16_to_sdr8, the picture
+    /// "sdr8" would have made, for instant replay's clips while the window shows HDR. An SDR frame comes back as it is.
     pub fn pq16_to_8(&mut self, src: &Frame, exact: bool, s: &HdrSettings) -> Frame {
         if src.kind == PixelKind::Bgra8 {
             return src.clone();
@@ -695,7 +700,7 @@ fn hdr_params(info: &FrameInfo, s: &HdrSettings, w: usize, h: usize) -> HdrParam
                 && info.primaries == PRI_BT2020
                 && s.display_peak.is_none_or(|d| d >= s.src_peak)
             {
-                p.mode = 1; // already HDR10: nothing to change but the layout
+                p.mode = 1; // already HDR10, so only the layout changes
             }
             p.use_matrix = (info.primaries != PRI_BT2020) as u32;
             let tm = s.display_peak.filter(|d| *d < s.src_peak);
@@ -704,7 +709,7 @@ fn hdr_params(info: &FrameInfo, s: &HdrSettings, w: usize, h: usize) -> HdrParam
         }
         HdrOut::Sdr8 => {
             if !info.hdr() && info.primaries != PRI_BT2020 {
-                p.mode = 2; // SDR in a 10-bit stream: just 8 bits
+                p.mode = 2; // SDR in a 10-bit stream, taken to 8 bits
             }
             p.use_matrix = (info.primaries == PRI_BT2020) as u32;
             p.tonemap = if s.sdr_nits >= s.src_peak { 1 } else { 2 };

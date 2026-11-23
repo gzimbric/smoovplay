@@ -1,6 +1,6 @@
 //! Looks (framegen/looks.py): optional effects on the final picture, stacked like the nodes of a color grading app.
 //!
-//! A look is a name and a list of nodes, applied in order. Each node is one effect with an on/off switch, an amount
+//! A look is a name and a list of nodes, applied in order. Each node is one effect with an on-off switch, an amount
 //! ("mix") and its own settings. As JSON (the saved files, and what the launcher sends):
 //!
 //! ```json
@@ -8,9 +8,9 @@
 //! ```
 //!
 //! - [`types`]: the node types and their settings. A type's `code` and its settings' order are part of the share-code
-//!   format: never change or reuse them, only add.
+//!   format, so never change or reuse them, only add.
 //! - [`builtin`]: the looks SmoovPlay comes with. [`Library`]: those plus the user's own, and their .cube LUTs.
-//! - [`encode`] / [`decode`]: SPL1 share codes, bit for bit as the Python writes them.
+//! - [`encode`] and [`decode`]: SPL1 share codes, bit for bit as the Python writes them.
 //! - [`stages`] and [`uniforms`]: the passes and shader inputs a renderer draws (the Metal one must match
 //!   framegen/looks_gl.py).
 //! - [`cli`]: `python -m framegen.looks schema|encode|decode|import|save|delete|add-lut` as functions.
@@ -37,7 +37,7 @@ pub const MAX_NAME: usize = 48;
 pub const W709: [f64; 3] = [0.2126, 0.7152, 0.0722];
 pub const DEFAULT_LOOK: &str = generated::DEFAULT_LOOK;
 
-/// A setting's default: a number, or (the LUT's file) text.
+/// A setting's default, a number or, for the LUT's file, text.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PDefault {
     Num(f64),
@@ -51,12 +51,12 @@ pub struct Param {
     pub label: &'static str,
     pub lo: f64,
     pub hi: f64,
-    /// lo and hi are ints in the Python (the LUT's file): the schema shows them as 0, not 0.0.
+    /// lo and hi are ints in the Python (the LUT's file), so the schema shows them as 0, not 0.0.
     pub(crate) int_range: bool,
     pub default: PDefault,
     pub step: f64,
     pub unit: &'static str,
-    /// A choice: the names of lo, lo + 1, ...
+    /// A choice, with a name for each value from lo up.
     pub names: &'static [&'static str],
     /// A file name (the LUT's), not a number.
     pub text: bool,
@@ -96,10 +96,10 @@ pub enum LookError {
     /// ValueError("not a look").
     #[error("not a look")]
     NotALook,
-    /// A TypeError in the Python (a node's "type" that's a list or an object): it isn't caught there either.
+    /// A TypeError in the Python (a node's "type" that's a list or an object). It isn't caught there either.
     #[error("{0}")]
     Type(String),
-    /// An OverflowError in the Python (a number too big for a float): it isn't caught there either.
+    /// An OverflowError in the Python (a number too big for a float). It isn't caught there either.
     #[error("int too large to convert to float")]
     Overflow,
 }
@@ -171,7 +171,8 @@ pub struct NodeType {
     /// Its number in share codes.
     pub code: u32,
     pub label: &'static str,
-    /// "point": only its own pixel; "glow", "blur", "clarity": a blurred copy; "ca", "sharpen": neighbours.
+    /// What it reads. A "point" node reads only its own pixel, "glow", "blur" and "clarity" read a blurred copy, and
+    /// "ca" and "sharpen" read neighbours.
     pub kind: &'static str,
     pub help: &'static str,
     pub params: &'static [Param],
@@ -193,7 +194,7 @@ impl NodeType {
     }
 }
 
-/// The amount: how much of a node's result replaces what came in.
+/// The amount, how much of a node's result replaces what came in.
 pub fn mix_param() -> &'static Param {
     &generated::MIX
 }
@@ -213,12 +214,12 @@ pub fn type_by_code(code: u128) -> Option<&'static NodeType> {
     generated::TYPES.iter().find(|t| t.code as u128 == code)
 }
 
-/// One node of a normalized look: every setting present, in range and on its step.
+/// One node of a normalized look, with every setting present, in range and on its step.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Node {
     pub ty: &'static NodeType,
     pub on: bool,
-    /// One per field: mix first, then the type's params.
+    /// One per field, mix first and then the type's params.
     pub values: Vec<FieldValue>,
 }
 
@@ -267,8 +268,9 @@ impl Look {
     }
 }
 
-/// A LUT's file name, without folders (a share code or a file can't point anywhere else): str(v or ""), Windows'
-/// folder separators taken off on every system (PureWindowsPath(...).name), stripped; "" unless it ends in .cube.
+/// A LUT's file name without folders, so a share code or a file can't point anywhere else. It's str(v or "") with
+/// Windows' folder separators taken off on every system (PureWindowsPath(p).name), stripped, and "" unless it ends
+/// in .cube.
 pub fn lut_name(v: &Value) -> String {
     let text = if v.truthy() { v.py_str() } else { String::new() };
     let name = py::strip(windows_name(&text));
@@ -304,8 +306,8 @@ fn windows_name(p: &str) -> &str {
     rel.split(['\\', '/']).rfind(|x| !x.is_empty() && *x != ".").unwrap_or("")
 }
 
-/// A clean copy: known types only, every setting present, in range and on its step. Err(NotALook) if it isn't a look
-/// at all.
+/// A clean copy, with known types only and every setting present, in range and on its step. Err(NotALook) if it isn't
+/// a look at all.
 pub fn normalize(look: &Value) -> Result<Look, LookError> {
     let Value::Dict(m) = look else { return Err(LookError::NotALook) };
     let empty = Value::List(Vec::new());
@@ -392,16 +394,16 @@ pub fn active_nodes<'a>(look: &'a Look, has_lut: &dyn Fn(&str) -> bool) -> Vec<&
         .collect()
 }
 
-/// One pass: a node that reads other pixels of the pass before (None: the first pass), then nodes that need only
-/// their own pixel.
+/// One pass. It's a node that reads other pixels of the pass before (None for the first pass), then nodes that need
+/// only their own pixel.
 #[derive(Debug, PartialEq)]
 pub struct Stage<'a> {
     pub start: Option<&'a Node>,
     pub nodes: Vec<&'a Node>,
 }
 
-/// The passes that draw a look; empty if it does nothing. The first never starts with a node that reads other
-/// pixels: it brings the picture to the output's size, so every later pass reads an image of exactly that size.
+/// The passes that draw a look, or none if it does nothing. The first never starts with a node that reads other
+/// pixels. It brings the picture to the output's size, so every later pass reads an image of exactly that size.
 pub fn stages<'a>(look: &'a Look, has_lut: &dyn Fn(&str) -> bool) -> Vec<Stage<'a>> {
     let nodes = active_nodes(look, has_lut);
     if nodes.is_empty() {
@@ -426,7 +428,7 @@ pub fn stages<'a>(look: &'a Look, has_lut: &dyn Fn(&str) -> bool) -> Vec<Stage<'
 }
 
 // ------------------------------------------------------------------------------------------------ shader inputs
-/// A shader input: a float, or a vector (3: vec3; 9: mat3, row-major).
+/// A shader input, a float or a vector (3 for a vec3, 9 for a row-major mat3).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Uniform {
     F(f64),
@@ -442,7 +444,7 @@ impl Uniform {
     }
 }
 
-/// 2 ** x, through the C library's pow as Python's float ** does (black_box: the compiler mustn't turn it into exp2).
+/// 2 ** x, through the C library's pow as Python's float ** does. black_box stops the compiler turning it into exp2.
 fn pow2(x: f64) -> f64 {
     std::hint::black_box(2.0f64).powf(x)
 }
@@ -472,7 +474,7 @@ fn first_max(v: impl IntoIterator<Item = f64>) -> f64 {
     m
 }
 
-/// A push toward a hue that leaves brightness (luma) alone; its largest part is 1.
+/// A push toward a hue that leaves brightness (luma) alone. Its largest part is 1.
 pub fn hue_vec(deg: f64) -> [f64; 3] {
     let rgb = hsv(deg);
     let y = py::sum(rgb.iter().zip(W709).map(|(c, w)| c * w));
@@ -501,7 +503,8 @@ const SHIFT: [[[f64; 3]; 3]; 3] = [
     [[1.0, 0.0, 0.7], [0.0, 1.0, 0.7], [0.0, 0.0, 0.0]],
 ];
 
-/// Color-blind assist (Machado et al. 2009, severity 1; Fidaner's daltonization): row-major 3x3, linear RGB: I + E(I - S).
+/// Color-blind assist (Machado et al. 2009 at severity 1, with Fidaner's daltonization). A row-major 3x3 for linear
+/// RGB, I + E(I - S).
 pub fn assist_matrix(kind: usize) -> [f64; 9] {
     let (s, e) = (CVD[kind.min(2)], SHIFT[kind.min(2)]);
     let id = |i: usize, j: usize| if i == j { 1.0 } else { 0.0 };
@@ -520,7 +523,7 @@ pub fn assist_matrix(kind: usize) -> [f64; 9] {
     out
 }
 
-/// A node's shader inputs, in the order its shader function takes them. lut: its LUT, for a LUT node.
+/// A node's shader inputs, in the order its shader function takes them. `lut` is its LUT, for a LUT node.
 pub fn uniforms(n: &Node, lut: Option<&Lut>) -> Vec<(&'static str, Uniform)> {
     use Uniform::{F, V};
     let one = [1.0, 1.0, 1.0];
@@ -602,12 +605,12 @@ pub fn uniforms(n: &Node, lut: Option<&Lut>) -> Vec<(&'static str, Uniform)> {
         "scanlines" => vec![("a", F(0.6 * n.n("amount"))), ("size", F(n.n("size")))],
         "letterbox" => vec![("aspect", F(n.n("aspect")))],
         "assist" => vec![("m", V(assist_matrix(n.n("kind") as usize).to_vec()))],
-        _ => Vec::new(), // blur: everything is in its blurred copy
+        _ => Vec::new(), // blur has everything in its blurred copy
     }
 }
 
-/// For a node that uses a blurred copy: (its bright-pass threshold, or None for a plain blur; how much the wider levels
-/// count).
+/// For a node that uses a blurred copy, its bright-pass threshold (None for a plain blur) and how much the wider
+/// levels count.
 pub fn glow(n: &Node) -> (Option<f64>, f64) {
     let thr = (n.ty.kind == "glow").then(|| n.n("threshold"));
     (thr, 0.15 + 0.8 * n.n("size"))

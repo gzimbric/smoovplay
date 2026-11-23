@@ -251,12 +251,12 @@ void frametap_end(void)
 }
 
 #elif defined(__APPLE__)
-// macOS: the same layout in POSIX shared memory. The Windows name maps to a POSIX one by what follows its
-// last backslash ("Local\chiaki-frametap" is "/chiaki-frametap"), as framegen/chiaki_tap.py's posix_name does; macOS
-// allows 31 characters with the "/". There's no event: the reader polls the header while it waits. Times are
-// nanoseconds of the clock Python's time.monotonic_ns() reads (on macOS mach_absolute_time, which is
-// CLOCK_UPTIME_RAW: macOS's CLOCK_MONOTONIC also counts time asleep), so the header's qpc_freq is 1e9. The barriers
-// are where the Windows code has MemoryBarrier and Interlocked calls, which are full barriers.
+// macOS: the same layout in POSIX shared memory. The POSIX name is "/" and what follows the Windows name's last
+// backslash, so "Local\chiaki-frametap" becomes "/chiaki-frametap", as in framegen/chiaki_tap.py's posix_name. macOS
+// allows 31 characters with the "/". There's no event, so the reader polls the header while it waits. Times are
+// nanoseconds of CLOCK_UPTIME_RAW, the clock Python's time.monotonic_ns() reads on macOS (mach_absolute_time).
+// macOS's CLOCK_MONOTONIC won't do, because it also counts time asleep. The header's qpc_freq is 1e9. The barriers
+// stand where the Windows code has MemoryBarrier and Interlocked calls, which are full barriers.
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -296,8 +296,8 @@ bool frametap_enabled(void)
 	return g_enabled == 1;
 }
 
-// "/" + what follows the name's last backslash, leading slashes dropped, + suffix. False if that's empty, has a "/"
-// in it or is too long.
+// "/", then what follows the name's last backslash without its leading slashes, then suffix. False if that part is
+// empty or has a "/" in it, or the whole is too long.
 static bool shm_name(const char *name, const char *suffix, char *out, size_t cap)
 {
 	const char *base = strrchr(name, '\\');
@@ -310,9 +310,9 @@ static bool shm_name(const char *name, const char *suffix, char *out, size_t cap
 	return n > 0 && (size_t)n < cap && n <= SHM_NAME_MAX;
 }
 
-// `size` bytes of the shared memory `path`, created if it isn't there. Either side may come first: macOS sets a
+// `size` bytes of the shared memory `path`, created if it isn't there. Either side may come first. macOS sets a
 // shared-memory object's size only once, while it's still empty, so the second side to try gets EINVAL and finds it
-// already sized. Never unlinked: a reader may still have it open, and the next one opens the same memory.
+// already sized. It's never unlinked, because a reader may still have it open and the next one opens the same memory.
 static uint8_t *map_shared(const char *path, size_t size)
 {
 	int fd = shm_open(path, O_RDWR | O_CREAT, 0600);
@@ -325,14 +325,14 @@ static uint8_t *map_shared(const char *path, size_t size)
 	if(fstat(fd, &st) == 0 && st.st_size == 0 && ftruncate(fd, (off_t)size) != 0 && errno != EINVAL)
 		fprintf(stderr, "frametap: ftruncate %s: %s\n", path, strerror(errno));
 	// When both sides size it at once, the one that gets EINVAL can still see 0 bytes for a moment, until the
-	// other's ftruncate shows (about 1 in 600 simultaneous opens): give that up to 200 ms.
+	// other's ftruncate shows. That happens in about 1 in 600 simultaneous opens, so wait up to 200 ms for it.
 	for(int i = 0; i < 1000 && fstat(fd, &st) == 0 && st.st_size == 0; i++)
 	{
 		struct timespec pause = {0, 200000};
 		nanosleep(&pause, NULL);
 	}
 	void *p = MAP_FAILED;
-	if(fstat(fd, &st) != 0 || (uint64_t)st.st_size < size) // (macOS rounds the size up to whole pages)
+	if(fstat(fd, &st) != 0 || (uint64_t)st.st_size < size) // macOS rounds the size up to whole pages
 		fprintf(stderr, "frametap: %s is %lld bytes, too small for the frame tap (%zu)\n", path,
 			(long long)st.st_size, size);
 	else
@@ -351,8 +351,8 @@ static bool open_shared(void)
 	char path[256], audio_path[256];
 	if(!shm_name(name, "", path, sizeof(path)) || !shm_name(name, FRAMETAP_AUDIO_SUFFIX, audio_path, sizeof(audio_path)))
 	{
-		fprintf(stderr, "frametap: the name %s doesn't fit this system's shared memory: at most %d characters after "
-			"any Local\\, and no \"/\" (\"/\" + the name + \"%s\" has to fit %d)\n", name,
+		fprintf(stderr, "frametap: the name %s doesn't fit this system's shared memory. It can have at most %d "
+			"characters after any Local\\ and no \"/\", since \"/\", the name and \"%s\" have to fit in %d\n", name,
 			SHM_NAME_MAX - 1 - (int)strlen(FRAMETAP_AUDIO_SUFFIX), FRAMETAP_AUDIO_SUFFIX, SHM_NAME_MAX);
 		return false;
 	}
@@ -521,7 +521,7 @@ void frametap_end(void)
 {
 	if(!g_base)
 		return;
-	// Keep the memory mapped (the reader may still hold it); just mark the stream as stopped.
+	// Keep the memory mapped, since the reader may still hold it, and only mark the stream as stopped.
 	XCHG(H32(0), 0u);
 	if(g_abase)
 		XCHG(A32(0), 0u);

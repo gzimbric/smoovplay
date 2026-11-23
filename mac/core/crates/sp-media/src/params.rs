@@ -1,5 +1,5 @@
-//! What the decoder needs from a stream's sequence parameter set before VideoToolbox starts: the bit depth (8 or 10:
-//! the pixel format to ask for). Everything else VideoToolbox reads itself.
+//! What the decoder needs from a stream's sequence parameter set before VideoToolbox starts. That's the bit depth, 8
+//! or 10, which sets the pixel format to ask for. VideoToolbox reads everything else itself.
 
 use sp_tap::Codec;
 
@@ -49,7 +49,7 @@ impl Bits<'_> {
     }
 }
 
-/// Luma bit depth from a sequence parameter set (the unit without its start code, header byte(s) included).
+/// Luma bit depth from a sequence parameter set (the unit without its start code, header bytes included).
 pub fn bit_depth(sps: &[u8], codec: Codec) -> Option<u32> {
     let d = rbsp(sps);
     match codec {

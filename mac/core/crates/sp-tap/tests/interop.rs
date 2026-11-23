@@ -1,9 +1,9 @@
-//! sp-tap against the other two implementations of the frame tap: framegen/chiaki_tap.py (through
-//! mac/core/tools/media_tap_peer.py) and chiaki_tap/frametap.c (the writer inside chiaki-ng, built with clang as
-//! chiaki_tap/selftest.py builds it). Each test uses a tap name of its own and removes it afterwards.
+//! sp-tap against the other two implementations of the frame tap. One is framegen/chiaki_tap.py, run through
+//! mac/core/tools/media_tap_peer.py. The other is chiaki_tap/frametap.c, the writer inside chiaki-ng, built with
+//! clang as chiaki_tap/selftest.py builds it. Each test uses a tap name of its own and removes it afterwards.
 //!
-//! Needs the repo's Python environment (.venv) for the Python tests and clang for the C one; a test skips (passes
-//! with a note) when its tool is missing.
+//! The Python tests need the repo's Python environment (.venv) and the C one needs clang. A test whose tool is
+//! missing skips, passing with a note.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -121,7 +121,8 @@ fn python_writer_rust_reader() {
     unlink(&n);
 }
 
-/// chiaki_tap/frametap.c (built as chiaki_tap/selftest.py builds it) to this reader: the checks selftest.py makes.
+/// chiaki_tap/frametap.c, built as chiaki_tap/selftest.py builds it, writing to this reader. Makes the checks
+/// selftest.py makes.
 #[test]
 fn c_writer_rust_reader() {
     let clang = ["/usr/bin/clang", "/usr/bin/cc"].into_iter().find(|p| Path::new(p).exists());
@@ -207,7 +208,7 @@ fn c_writer_rust_reader() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// Either side may create the memory first, or both at once: both always see the same memory.
+/// Either side may create the memory first, or both at once, and both always see the same memory.
 #[test]
 fn create_race() {
     // Threads in this process opening a fresh name at the same moment
@@ -232,7 +233,7 @@ fn create_race() {
         unlink(&n);
     }
     let Some(py) = python() else { return eprintln!("skipped the Python part: no .venv") };
-    // Rust first, then Python; Python first, then Rust; both at once (a few times)
+    // Rust first then Python, Python first then Rust, and both at once a few times
     for (k, mode) in ["rust-first", "python-first", "same", "same", "same", "same"].iter().enumerate() {
         let n = name(&format!("x{k}-"));
         unlink(&n);

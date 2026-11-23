@@ -20,7 +20,7 @@ def tap():
     t = FrameTap("Local\\chiaki-frametap-test", "Local\\chiaki-frametap-test-frame")
     yield t
     t.close()
-    unlink("Local\\chiaki-frametap-test")  # (POSIX: shared memory lasts until it's removed)
+    unlink("Local\\chiaki-frametap-test")  # POSIX shared memory lasts until it's removed
 
 
 def test_roundtrip(tap):
@@ -134,7 +134,7 @@ def test_sound_ring_roundtrip_split_and_times():
 def test_posix_names():
     assert posix_name("Local\\chiaki-frametap") == "/chiaki-frametap"  # chiaki-ng's, from frametap.h's FRAMETAP_NAME
     assert posix_name("Local\\smoovplay-tap") == posix_name("/smoovplay-tap") == posix_name("smoovplay-tap")
-    check_name("Local\\chiaki-frametap-selftest")  # the self-test's: its sound ring is exactly 31 on macOS
+    check_name("Local\\chiaki-frametap-selftest")  # the self-test's name, whose sound ring is exactly 31 on macOS
     room = SHM_NAME_MAX - 1 - len("-audio")
     check_name("x" * room)
     with pytest.raises(ValueError, match="sound ring"):
@@ -152,7 +152,7 @@ def test_posix_either_side_first_sees_the_same_memory():
     unlink(name)
     try:
         reader = FrameTap(name)  # made it (and sized it)
-        writer = FrameTap(name)  # found it sized: macOS refuses a second ftruncate, which is fine
+        writer = FrameTap(name)  # found it sized (macOS refuses a second ftruncate, which is fine)
         writer.begin(1, 64, 64, 60)
         writer.push(b"\x00\x00\x01x")
         h = reader.header()
@@ -165,14 +165,14 @@ def test_posix_either_side_first_sees_the_same_memory():
         unlink(name)
 
 
-@pytest.mark.skipif(WINDOWS, reason="POSIX: the reader polls instead of an event")
+@pytest.mark.skipif(WINDOWS, reason="POSIX, where the reader polls instead of waiting on an event")
 def test_posix_wait_wakes_on_a_frame_and_times_out(tap):
     tap.begin(1, 64, 64, 60)
     writer = FrameTap("Local\\chiaki-frametap-test")
     try:
         tap.header()
         t0 = time.perf_counter()
-        tap.wait(0.05)  # nothing comes: the timeout
+        tap.wait(0.05)  # nothing comes, so it times out
         assert 0.045 < time.perf_counter() - t0 < 0.2
         timer = threading.Timer(0.05, writer.push, (b"frame",))
         timer.start()
@@ -182,7 +182,7 @@ def test_posix_wait_wakes_on_a_frame_and_times_out(tap):
         waited = time.perf_counter() - t0
         timer.join()
         assert tap.header().write_seq == 1 and waited < 0.5  # woken by the frame, not the timeout
-        writer.push(b"another")  # a frame since this thread's last header(): wait() returns at once
+        writer.push(b"another")  # a frame since this thread's last header(), so wait() returns at once
         t0 = time.perf_counter()
         tap.wait(2.0)
         assert time.perf_counter() - t0 < 0.05
@@ -191,7 +191,7 @@ def test_posix_wait_wakes_on_a_frame_and_times_out(tap):
 
 
 @pytest.mark.skipif(sys.platform != "darwin" or not (shutil.which("clang") or shutil.which("cc")),
-                    reason="builds with clang on macOS; on Windows run chiaki_tap/selftest.py with MSYS2's gcc")
+                    reason="builds with clang on macOS. On Windows run chiaki_tap/selftest.py with MSYS2's gcc")
 def test_c_writer_selftest():
     """chiaki_tap/frametap.c, built with clang, against this reader byte for byte (chiaki_tap/selftest.py)."""
     r = subprocess.run([sys.executable, str(ROOT / "chiaki_tap" / "selftest.py")], capture_output=True, text=True,

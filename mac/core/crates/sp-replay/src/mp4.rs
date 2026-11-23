@@ -1,9 +1,10 @@
-//! MP4 files of what instant replay keeps (H.264 with its avcC, AAC with its AudioSpecificConfig): written moov first
-//! (replay.py's `movflags +faststart`), and read back (the before & after process reads the tracks it's given).
+//! MP4 files of what instant replay keeps, which is H.264 with its avcC and AAC with its AudioSpecificConfig. They're
+//! written moov first (replay.py's `movflags +faststart`) and read back, since the before & after process reads the
+//! tracks it's given.
 //!
-//! Two ways to write: [`write_file`] when every sample is in memory (a saved clip: the moov is worked out first, so
-//! it goes before the data), and [`Mp4Stream`] for a video being encoded (the before & after: room for the moov is
-//! kept at the front and filled in at the end, the rest left as a `free` box).
+//! There are two ways to write. [`write_file`] is for when every sample is in memory, as in a saved clip. The moov is
+//! worked out first, so it goes before the data. [`Mp4Stream`] is for a video being encoded, such as the before &
+//! after. Room for the moov is kept at the front and filled in at the end, and the rest is left as a `free` box.
 //!
 //! A track can start later than the movie (an empty edit) or earlier (its first part edited out), so tracks cut
 //! from one timeline keep their places on it.
@@ -14,7 +15,7 @@ use std::path::Path;
 
 use crate::track::Format;
 
-/// The movie's timescale (mvhd, tkhd and edit lists): the replay's 90 kHz clock.
+/// The movie's timescale (mvhd, tkhd and edit lists), which is the replay's 90 kHz clock.
 pub const MOVIE_TIMESCALE: u32 = 90_000;
 
 /// A track to write.
@@ -23,14 +24,14 @@ pub struct TrackSpec {
     pub format: Format,
     /// Ticks a second of its timestamps (90 000 for video, the sample rate for sound).
     pub timescale: u32,
-    /// Where its first sample is shown on the movie's timeline, in its timescale: positive, after an empty edit;
-    /// negative, that much of its start edited out.
+    /// Where its first sample is shown on the movie's timeline, in its timescale. A positive start comes after an
+    /// empty edit. A negative one means that much of its start is edited out.
     pub start: i64,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Sample {
-    /// Decode time, in the track's timescale (any origin: the first sample's is the track's zero).
+    /// Decode time, in the track's timescale. Any origin works, because the first sample's is the track's zero.
     pub dts: i64,
     /// Composition offset (pts - dts).
     pub cto: i32,
@@ -104,7 +105,8 @@ fn rescale(v: i64, from: u32, to: u32) -> i64 {
 }
 
 impl Build {
-    /// The track's samples' durations: to the next one's dts, the last as the one before (or `fallback`).
+    /// The track's samples' durations. Each runs to the next one's dts, and the last is the same as the one before
+    /// (or `fallback`).
     fn durations(&self) -> Vec<u32> {
         let n = self.samples.len();
         let mut d: Vec<u32> = (0..n.saturating_sub(1))
@@ -124,7 +126,7 @@ impl Build {
         self.durations().iter().map(|&d| d as i64).sum()
     }
 
-    /// On the movie's timeline: (empty edit, shown duration), in the movie's timescale.
+    /// (empty edit, shown duration) on the movie's timeline, in the movie's timescale.
     fn edit(&self) -> (i64, i64) {
         let ts = self.spec.timescale;
         let media = self.media_duration();
@@ -200,7 +202,7 @@ fn sample_entry(w: &mut W, format: &Format) {
             w.u16(0);
             w.u32(rate << 16);
             w.full(b"esds", 0, 0, |w| {
-                let mut dc = vec![0x40, 0x15, 0, 0x18, 0]; // MPEG-4 audio, audio stream; 6 KB buffer
+                let mut dc = vec![0x40, 0x15, 0, 0x18, 0]; // MPEG-4 audio, audio stream, 6 KB buffer
                 dc.extend_from_slice(&(bitrate * 3 / 2).to_be_bytes());
                 dc.extend_from_slice(&bitrate.to_be_bytes());
                 dc.extend_from_slice(&descriptor(0x05, asc));
@@ -425,10 +427,10 @@ fn normalise(samples: &mut [Sample]) {
 /// A track and its samples (each with its bytes), in decode order.
 pub type TrackSamples<'a> = (TrackSpec, Vec<(Sample, &'a [u8])>);
 
-/// Writes an MP4 of these tracks, moov first, the tracks interleaved by time. Writes `path` directly; returns its
+/// Writes an MP4 of these tracks to `path` directly, moov first, with the tracks interleaved by time. Returns its
 /// size.
 pub fn write_file(path: &Path, tracks: Vec<TrackSamples>) -> io::Result<u64> {
-    // Interleave by time: each sample's dts on the movie's timeline, in seconds
+    // Interleave by time, using each sample's dts on the movie's timeline in seconds
     let at = |t: &TrackSpec, s: &Sample, first: i64| (s.dts - first + t.start) as f64 / t.timescale as f64;
     let mut idx = vec![0usize; tracks.len()];
     let firsts: Vec<i64> = tracks.iter().map(|(_, s)| s.first().map(|x| x.0.dts).unwrap_or(0)).collect();
@@ -484,7 +486,7 @@ pub fn write_file(path: &Path, tracks: Vec<TrackSamples>) -> io::Result<u64> {
     Ok(data_at + off)
 }
 
-/// An MP4 written as its samples come (the before & after video): the moov goes in room kept at the front.
+/// An MP4 written as its samples come, for the before & after video. The moov goes in room kept at the front.
 pub struct Mp4Stream {
     f: BufWriter<File>,
     builds: Vec<Build>,
@@ -496,7 +498,7 @@ pub struct Mp4Stream {
 }
 
 impl Mp4Stream {
-    /// Room for the moov: enough for this many samples (every one its own chunk, no two durations alike).
+    /// Room for the moov, enough for this many samples with every one its own chunk and no two durations alike.
     pub fn moov_bound(tracks: &[TrackSpec], samples: usize) -> u64 {
         let per_track: u64 = tracks
             .iter()
@@ -551,7 +553,7 @@ impl Mp4Stream {
         Ok(())
     }
 
-    /// Fills in the moov (at the front if it fits, else at the end) and closes the file.
+    /// Fills in the moov (at the front if it fits, or else at the end) and closes the file.
     pub fn finish(mut self) -> io::Result<()> {
         for b in &mut self.builds {
             normalise(&mut b.samples);
@@ -591,8 +593,8 @@ pub struct ReadTrack {
     pub format: Format,
     pub timescale: u32,
     pub samples: Vec<ReadSample>,
-    /// Added to a sample's pts gives when it's shown on the movie's timeline (the edit list), in the track's
-    /// timescale.
+    /// Added to a sample's pts, it gives when the sample is shown on the movie's timeline (the edit list), in the
+    /// track's timescale.
     pub shift: i64,
 }
 
@@ -654,7 +656,7 @@ impl<'a> R<'a> {
     }
 }
 
-/// The boxes in `b`: (type, payload).
+/// The boxes in `b`, as (type, payload).
 fn boxes(b: &[u8]) -> io::Result<Vec<([u8; 4], &[u8])>> {
     let mut out = Vec::new();
     let mut r = R::new(b);
@@ -821,7 +823,7 @@ fn read_track(trak: &[u8], movie_ts: u32) -> io::Result<Option<ReadTrack>> {
             si += 1;
         }
     }
-    // The edit list: empty edits put it later; the first real one's media time edits its start out
+    // The edit list. Empty edits put it later, and the first real one's media time edits its start out.
     let mut shift = 0i64;
     if let Some(edts) = child(trak, b"edts")?
         && let Some(elst) = child(edts, b"elst")? {
@@ -977,7 +979,7 @@ mod tests {
         assert_eq!(f.read(&at.samples[3]).unwrap(), data[23]);
         assert_eq!(f.read(&vt.samples[7]).unwrap(), data[7]);
 
-        // The streaming writer, its moov at the front
+        // The streaming writer, with its moov at the front
         let path2 = dir.join("s.mp4");
         let mut s = Mp4Stream::create(&path2, vec![v], Mp4Stream::moov_bound(&[], 20)).unwrap();
         for (i, d) in data.iter().take(20).enumerate() {

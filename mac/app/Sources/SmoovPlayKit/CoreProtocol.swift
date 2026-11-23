@@ -8,24 +8,31 @@
 //   look-show <look JSON>     show this look (the Looks page is editing it)
 //   look-hide                 back to the Look settings' look
 //   looks-reload              the user's looks changed on disk
-// and, not in the core yet (the app sends them, and stops when the core says "[remote] unknown command"):
-//   key <name>                a video-window key, as if pressed there (M, F, Q, S, I, U, Z, K, J, L, R, B; Up,
-//                             Down, Left, Right, Enter, Esc, Backspace for the menu): the instant replay keys and
-//                             App window mode's shortcuts, which come from other apps on a Mac. "key" alone does
-//                             nothing: the app sends it once the video is up, to learn whether the core takes keys
-//   overlay <x> <y> <w> <h>   App window mode: sit over the captured window (points, from the main display's top
-//                             left), borderless, on top and click-through; "overlay none" while it's minimised
+// The app also sends these, which aren't in the core yet, and stops once the core says "[remote] unknown command":
+//   key <name>                a video-window key, as if pressed there: M, F, Q, S, I, U, Z, K, J, L, R or B, or
+//                             Up, Down, Left, Right, Enter, Esc or Backspace for the menu. These are the instant
+//                             replay keys and App window mode's shortcuts, which come from other apps on a Mac.
+//                             "key" alone does nothing. The app sends it once the video is up, to learn whether
+//                             the core takes keys.
+//   overlay <x> <y> <w> <h>   in App window mode, sit over the captured window (points, from the main display's
+//                             top left), borderless, on top and click-through. "overlay none" while it's minimised.
 //
-// Lines the app reads (the Windows launcher's Session.Line):
-//   [settings-state] {json}   values, choices, disabled, restart (SettingsState)
-//   [chiaki] waiting for chiaki-ng ...   [tap] waiting for an app ...       -> Waiting (chiaki-ng is opened)
-//   [chiaki] stream: ...      [tap] frames: ...                             -> Found
-//   [trt] building ...        [run] restarting for <what>: ...              -> Building
-//   [run] playing                                                           -> Playing (also after a restart)
-//   [chiaki] stream ended     [tap] the app stopped sending frames          -> the stream ended (exit 0: Ended)
-//   [chiaki|tap] this stream was already running ...  [chiaki|tap] WARNING: ...   -> a note on the Play page
-//   [window-keys] {json}      the shortcuts the video window got
-//   [remote] unknown command: ...   [remote] can't set <key>: <why>
+// Lines the app reads (the Windows launcher's Session.Line), and what each one means:
+//   [settings-state] {json}                            values, choices, disabled, restart (SettingsState)
+//   [chiaki] waiting for chiaki-ng ...                 Waiting, and the app opens chiaki-ng
+//   [tap] waiting for an app ...                       Waiting
+//   [chiaki] stream: ...                               Found
+//   [tap] frames: ...                                  Found
+//   [trt] building ...                                 Building
+//   [run] restarting for <what>: ...                   Building
+//   [run] playing                                      Playing, also after a restart
+//   [chiaki] stream ended                              the stream ended (Ended, if the core then exits with 0)
+//   [tap] the app stopped sending frames               the stream ended, as above
+//   [chiaki|tap] this stream was already running ...   a note on the Play page
+//   [chiaki|tap] WARNING: ...                          a note on the Play page
+//   [window-keys] {json}                               the shortcuts the video window got
+//   [remote] unknown command: ...                      a command the core doesn't know
+//   [remote] can't set <key>: <why>                    a setting the core refused
 import Foundation
 
 public enum PlayState: Equatable, Sendable {
@@ -38,7 +45,7 @@ public enum PlayState: Equatable, Sendable {
         }
     }
 
-    /// Starting or playing: the session is up (Play turns into Stop).
+    /// Starting or playing. The session is up, and Play has turned into Stop.
     public var running: Bool { busy || self == .playing }
 
     public var over: Bool {
@@ -125,7 +132,7 @@ public enum CoreLine {
         String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
     }
 
-    /// "set <key> <json>": the command for a setting.
+    /// The command for a setting, "set <key> <json>".
     public static func set(_ key: String, _ value: JSON) -> String { "set \(key) \(value.serialized())" }
 }
 
@@ -147,7 +154,7 @@ public struct SettingsState: Equatable, Sendable {
         restart = (j["restart"]?.array ?? []).compactMap(\.string)
     }
 
-    /// The video window's menu is open (not in the core yet: a "menu_open" field would let the app take the
-    /// menu's arrow keys in App window mode).
+    /// The video window's menu is open. The core doesn't send this yet. A "menu_open" field would let the app take
+    /// the menu's arrow keys in App window mode.
     public var menuOpen: Bool { raw["menu_open"]?.bool ?? false }
 }

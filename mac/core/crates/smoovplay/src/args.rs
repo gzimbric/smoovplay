@@ -1,5 +1,5 @@
-//! run.py's command line (argparse's rules: `--flag value` or `--flag=value`, unique prefixes of long options,
-//! `--no-x` for the on/off ones, errors as "usage: ...\nsmoovplay: error: ..." with exit code 2).
+//! run.py's command line, by argparse's rules: `--flag value` or `--flag=value`, unique prefixes of long options and
+//! `--no-x` for the on-off ones. Errors print `usage: ...\nsmoovplay: error: ...` and exit with code 2.
 
 use std::path::PathBuf;
 
@@ -101,7 +101,7 @@ pub struct Args {
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
     Flag,
-    /// BooleanOptionalAction: --x / --no-x
+    /// BooleanOptionalAction (--x or --no-x).
     OnOff,
     Str,
     Int,
@@ -201,7 +201,7 @@ pub fn usage() -> String {
     format!("usage: {PROG} [-h] [options] [video]")
 }
 
-/// argparse's error: usage, the message, exit code 2.
+/// argparse's error. Prints the usage and the message, then exits with code 2.
 pub fn error(msg: &str) -> ! {
     eprintln!("{}\n{PROG}: error: {msg}", usage());
     std::process::exit(2);
@@ -416,7 +416,7 @@ pub fn parse(argv: &[String]) -> Args {
 }
 
 impl Args {
-    /// --settings none: the defaults, never saved.
+    /// None for --settings none, which means the defaults, never saved.
     pub fn settings_path(&self) -> Option<PathBuf> {
         if self.settings.eq_ignore_ascii_case("none") { None } else { Some(PathBuf::from(&self.settings)) }
     }

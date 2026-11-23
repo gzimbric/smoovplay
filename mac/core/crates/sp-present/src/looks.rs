@@ -1,8 +1,9 @@
-//! Looks (framegen/looks.py): optional effects on the final picture, stacked like the nodes of a colour grading app.
-//! This module is the data side, ported as it is: the node types and their settings ([`TYPES`]), cleaning a look up
-//! from JSON ([`normalize`]), the built-in looks ([`builtin`]), splitting a look into passes ([`stages`]), what each
-//! node's shader gets ([`uniforms`]), .cube LUTs ([`load_cube`]) and the user's looks on disk ([`Library`]). The GPU
-//! side is [`crate::looks_gpu`]. Share codes stay with the launcher (looks.py encode/decode).
+//! Looks (framegen/looks.py) are optional effects on the final picture, stacked like the nodes of a colour grading
+//! app. This module is the data side, ported as it is. It has the node types and their settings ([`TYPES`]), cleaning
+//! a look up from JSON ([`normalize`]), the built-in looks ([`builtin`]), splitting a look into passes ([`stages`]),
+//! what each node's shader gets ([`uniforms`]), .cube LUTs ([`load_cube`]) and the user's looks on disk
+//! ([`Library`]). The GPU side is [`crate::looks_gpu`]. Share codes stay with the launcher (looks.py encode and
+//! decode).
 //!
 //! A type's settings' order and `code` are part of the share-code format, so they follow looks.py exactly.
 
@@ -31,7 +32,7 @@ pub struct Param {
     pub default: f64,
     pub step: f64,
     pub unit: &'static str,
-    /// A choice: the names of lo, lo + 1, ...
+    /// For a choice, the names of lo, lo + 1 and so on.
     pub names: &'static [&'static str],
     /// A file name (the LUT's), not a number.
     pub text: bool,
@@ -58,7 +59,7 @@ const fn hue(key: &'static str, label: &'static str, default: f64) -> Param {
     Param { key, label, lo: 0.0, hi: 360.0, default, step: 1.0, unit: "°", names: &[], text: false }
 }
 
-/// "Amount": how much of a node's result replaces what came in.
+/// The Amount setting, which is how much of a node's result replaces what came in.
 pub const MIX: Param = p("mix", "Amount", 0.0, 1.0, 1.0);
 
 /// What a node reads: only its own pixel, a blurred copy, or neighbours.
@@ -169,7 +170,8 @@ pub fn node_type(key: &str) -> Option<&'static NodeType> {
     TYPES.iter().find(|t| t.key == key)
 }
 
-/// One node of a look: its type, on/off, its amount and its settings (in the type's order; a LUT's file in `file`).
+/// One node of a look: its type, whether it's on, its amount and its settings in the type's order. A LUT's file is in
+/// `file`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Node {
     pub ty: &'static NodeType,
@@ -191,7 +193,7 @@ impl Node {
         self.ty.params.iter().position(|p| p.key == key).map_or(f64::NAN, |i| self.values[i])
     }
 
-    /// Sets a setting by key (cleaned to its range and step); `with` for chaining.
+    /// Sets a setting by key, cleaned to its range and step. It returns the node, for chaining.
     pub fn with(mut self, key: &str, v: f64) -> Node {
         if key == "mix" {
             self.mix = MIX.clean(v);
@@ -230,14 +232,14 @@ impl Look {
     }
 }
 
-/// A LUT's file name, without folders (looks.py _lut_name): a look can't point anywhere else.
+/// A LUT's file name without folders (looks.py _lut_name), so a look can't point anywhere else.
 pub fn lut_name(v: &str) -> String {
     let name = v.rsplit(['/', '\\']).next().unwrap_or("").trim();
     if name.to_lowercase().ends_with(".cube") { name.chars().take(120).collect() } else { String::new() }
 }
 
-/// A clean copy (looks.py normalize): known types only, every setting present, in range and on its step. Err if it
-/// isn't a look at all.
+/// A clean copy (looks.py normalize) with known types only and every setting present, in range and on its step. Err
+/// if it isn't a look at all.
 pub fn normalize(look: &Value) -> Result<Look, String> {
     let obj = look.as_object().ok_or("not a look")?;
     let nodes_v = match obj.get("nodes") {
@@ -309,7 +311,7 @@ fn truthy(v: &Value) -> bool {
     }
 }
 
-/// The nodes that do something: on, with an amount above zero, and for a LUT, a file that's there.
+/// The nodes that do something. They're on with an amount above zero, and a LUT node also needs a file that's there.
 pub fn active_nodes<'a>(look: &'a Look, has_lut: &dyn Fn(&str) -> bool) -> Vec<&'a Node> {
     look.nodes
         .iter()
@@ -317,8 +319,8 @@ pub fn active_nodes<'a>(look: &'a Look, has_lut: &dyn Fn(&str) -> bool) -> Vec<&
         .collect()
 }
 
-/// One pass: a node that reads other pixels of the pass before (None: the first pass), then nodes that need only
-/// their own pixel.
+/// One pass. It starts with a node that reads other pixels of the pass before (None in the first pass), then has
+/// nodes that need only their own pixel.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stage {
     pub start: Option<Node>,
@@ -326,14 +328,14 @@ pub struct Stage {
 }
 
 impl Stage {
-    /// Its nodes in shader order: the start node first.
+    /// Its nodes in shader order, start node first.
     pub fn all(&self) -> impl Iterator<Item = &Node> {
         self.start.iter().chain(self.nodes.iter())
     }
 }
 
-/// The passes that draw a look; empty if it does nothing. The first never starts with a node that reads other
-/// pixels: it brings the picture to the output's size.
+/// The passes that draw a look, or none if it does nothing. The first never starts with a node that reads other
+/// pixels, because it brings the picture to the output's size.
 pub fn stages(look: &Look, has_lut: &dyn Fn(&str) -> bool) -> Vec<Stage> {
     let nodes = active_nodes(look, has_lut);
     if nodes.is_empty() {
@@ -363,7 +365,7 @@ fn hsv(deg: f64) -> [f64; 3] {
     [[1.0, x, 0.0], [x, 1.0, 0.0], [0.0, 1.0, x], [0.0, x, 1.0], [x, 0.0, 1.0], [1.0, 0.0, x]][(h as usize) % 6]
 }
 
-/// A push toward a hue that leaves brightness (luma) alone; its largest part is 1.
+/// A push toward a hue that leaves brightness (luma) alone. Its largest part is 1.
 pub fn hue_vec(deg: f64) -> [f64; 3] {
     let rgb = hsv(deg);
     let y: f64 = rgb.iter().zip(W709).map(|(c, w)| c * w).sum();
@@ -391,7 +393,7 @@ const SHIFT: [[[f64; 3]; 3]; 3] = [
     [[1.0, 0.0, 0.7], [0.0, 1.0, 0.7], [0.0, 0.0, 0.0]],
 ];
 
-/// Row-major 3x3, linear RGB: I + E (I - S) (Machado et al. 2009, Fidaner et al.'s daltonization).
+/// I + E (I - S) as a row-major 3x3 in linear RGB, from Machado et al. 2009 and Fidaner et al.'s daltonization.
 pub fn assist_matrix(kind: usize) -> [f64; 9] {
     let (s, e) = (&CVD[kind.min(2)], &SHIFT[kind.min(2)]);
     let id = |i: usize, j: usize| if i == j { 1.0 } else { 0.0 };
@@ -404,8 +406,8 @@ pub fn assist_matrix(kind: usize) -> [f64; 9] {
     out
 }
 
-/// A node's shader inputs, in the order its shader function takes them: (name, 1, 3 or 9 floats). `lut`: its Lut,
-/// for a LUT node.
+/// A node's shader inputs as (name, 1, 3 or 9 floats), in the order its shader function takes them. `lut` is the
+/// node's Lut, for a LUT node.
 pub fn uniforms(n: &Node, lut: Option<&Lut>) -> Vec<(&'static str, Vec<f64>)> {
     let g = |k: &str| n.get(k);
     match n.ty.key {
@@ -461,18 +463,18 @@ pub fn uniforms(n: &Node, lut: Option<&Lut>) -> Vec<(&'static str, Vec<f64>)> {
         "scanlines" => vec![("a", vec![0.6 * g("amount")]), ("size", vec![g("size")])],
         "letterbox" => vec![("aspect", vec![g("aspect")])],
         "assist" => vec![("m", assist_matrix(g("kind") as usize).to_vec())],
-        _ => Vec::new(), // blur: everything is in its blurred copy
+        _ => Vec::new(), // blur keeps everything in its blurred copy
     }
 }
 
-/// For a node that uses a blurred copy: (its bright-pass threshold, or None for a plain blur; how much the wider
-/// levels count).
+/// For a node that uses a blurred copy, its bright-pass threshold (None for a plain blur) and how much the wider
+/// levels count.
 pub fn glow(n: &Node) -> (Option<f64>, f64) {
     let thr = (n.ty.kind == Kind::Glow).then(|| n.get("threshold"));
     (thr, 0.15 + 0.8 * n.get("size"))
 }
 
-/// The blur levels' sizes for an image w x h: halvings, at most LEVELS.
+/// The blur levels' sizes for an image w x h. Each one halves the last, up to LEVELS of them.
 pub fn pyramid_sizes(mut w: usize, mut h: usize) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     while out.len() < LEVELS && w >= 2 && h >= 2 {
@@ -563,7 +565,7 @@ pub fn builtin() -> &'static [(&'static str, Look)] {
 }
 
 // ------------------------------------------------------------------------------------------------ LUT files
-/// A 3D LUT: `table` is size^3 RGB triples, indexed [b][g][r] (red fastest), as in a .cube file.
+/// A 3D LUT. `table` is size^3 RGB triples, indexed [b][g][r] (red fastest) as in a .cube file.
 #[derive(Debug, PartialEq)]
 pub struct Lut {
     pub size: usize,
@@ -573,7 +575,7 @@ pub struct Lut {
     pub title: String,
 }
 
-/// A 3D .cube LUT (Adobe/Resolve format). Err with a message for the user.
+/// A 3D .cube LUT in the Adobe and Resolve format. Err holds a message for the user.
 pub fn load_cube(path: &Path) -> Result<Lut, String> {
     let text = std::fs::read(path).map_err(|e| format!("couldn't read it ({e})"))?;
     parse_cube(&String::from_utf8_lossy(&text))
@@ -617,7 +619,7 @@ pub fn parse_cube(text: &str) -> Result<Lut, String> {
     Ok(Lut { size, table: rows, dmin, dmax, title })
 }
 
-/// LUT files by name from a folder, read once (and again when a file changes); None if missing or broken.
+/// LUT files by name from a folder, read once and again when a file changes. None if missing or broken.
 #[derive(Debug, Default)]
 pub struct LutStore {
     pub folder: Option<PathBuf>,
@@ -669,9 +671,9 @@ impl LutStore {
     }
 }
 
-/// The built-in looks and the user's (a folder of .json looks, ids "my:<file name>", and its luts/ folder), as
-/// looks.py's Library. The order of [`Library::ids`] is the "Which look" setting's: built-in ones, then the user's by
-/// name.
+/// The built-in looks and the user's, as looks.py's Library. The user's are a folder of .json looks with ids
+/// "my:<file name>", plus its luts/ folder. [`Library::ids`] is in the order of the "Which look" setting, built-in ones
+/// first and then the user's by name.
 #[derive(Debug)]
 pub struct Library {
     pub folder: Option<PathBuf>,
@@ -680,7 +682,7 @@ pub struct Library {
 }
 
 impl Library {
-    /// `folder`: where the user's looks are (None: built-in ones only). LUTs are in its "luts" folder.
+    /// `folder` is where the user's looks are, or None for built-in ones only. LUTs are in its "luts" folder.
     pub fn new(folder: Option<PathBuf>) -> Library {
         let luts = LutStore::new(folder.as_ref().map(|f| f.join("luts")));
         let mut lib = Library { folder, luts, user: Vec::new() };
@@ -688,7 +690,7 @@ impl Library {
         lib
     }
 
-    /// Reads the user's looks again (a broken file is skipped, and said so).
+    /// Reads the user's looks again. A broken file is skipped with a message.
     pub fn reload(&mut self) {
         let mut user = Vec::new();
         if let Some(dir) = self.folder.as_ref().and_then(|f| std::fs::read_dir(f).ok()) {
@@ -796,7 +798,7 @@ mod tests {
         assert!((v.iter().zip(W709).map(|(c, w)| c * w).sum::<f64>()).abs() < 1e-12);
         assert!((v.iter().fold(0.0f64, |a, c| a.max(c.abs())) - 1.0).abs() < 1e-12);
         let m = assist_matrix(1);
-        // gray stays gray: each row sums to 1
+        // Gray stays gray, so each row sums to 1.
         for i in 0..3 {
             assert!((m[i * 3] + m[i * 3 + 1] + m[i * 3 + 2] - 1.0).abs() < 1e-3);
         }

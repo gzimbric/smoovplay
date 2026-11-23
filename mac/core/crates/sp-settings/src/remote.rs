@@ -8,7 +8,7 @@
 //! restart                   apply restart-only settings now (the menu's "Restart now")
 //! quit                      stop, as Esc in the video window does
 //! state                     print the current state again
-//! look-show <look JSON>     show this look (handlers: the caller's)
+//! look-show <look JSON>     show this look (the caller handles it)
 //! look-hide                 back to the Look settings' look
 //! looks-reload              the user's looks changed on disk
 //! ```
@@ -27,8 +27,8 @@ use crate::settings::{Settings, WatchId, spec, specs};
 
 pub const PREFIX: &str = "[settings-state] ";
 
-/// The window's rules, the same ones as its menu. The Python passes three callables; these take the settings too, as
-/// a Rust closure can't reach into them while they're being changed.
+/// The window's rules, the same ones as its menu. The Python passes three callables. These take the settings too,
+/// because a Rust closure can't reach into them while they're being changed.
 pub trait Rules: Send {
     /// Whether this choice can be picked right now.
     fn allowed(&self, _settings: &Settings, _key: &str, _value: &Value) -> bool {
@@ -84,7 +84,7 @@ pub enum Request {
     Restart,
 }
 
-/// A command handler: gets the settings and the rest of the line. An Err is reported, never raised (a bad command
+/// A command handler. It gets the settings and the rest of the line. An Err is reported, never raised (a bad command
 /// must never take the video down).
 pub type Handler = Box<dyn FnMut(&mut Settings, &str) -> Result<(), String> + Send>;
 
@@ -149,7 +149,8 @@ impl Shared {
 pub struct LineSender(Sender<String>);
 
 impl LineSender {
-    /// One line as read from the launcher: whitespace and a leading byte-order mark taken off; blank lines dropped.
+    /// One line as read from the launcher, with whitespace and a leading byte-order mark taken off. Blank lines are
+    /// dropped.
     pub fn send(&self, line: &str) {
         for part in line.split(['\n', '\r']) {
             let part = crate::py::strip(part).trim_start_matches('\u{feff}');
@@ -169,7 +170,7 @@ pub struct Remote {
 }
 
 impl Remote {
-    /// Watches `settings` (each change publishes a state line to `out`) and waits for lines: from
+    /// Watches `settings`, so each change publishes a state line to `out`, and waits for lines from
     /// [`Remote::read_from`] (the launcher's pipe, stdin), [`Remote::sender`] or [`Remote::push_line`].
     pub fn new(settings: &mut Settings, rules: impl Rules + 'static, out: impl Write + Send + 'static) -> Remote {
         let (tx, rx) = channel();
@@ -179,12 +180,13 @@ impl Remote {
         Remote { tx, rx, shared, handlers: Vec::new(), watch: Some(watch) }
     }
 
-    /// Where "[remote] ..." messages go (by default, `out`, as the Python prints them to the same stdout).
+    /// Where `[remote]` messages go. By default that's `out`, as the Python prints them to the same stdout.
     pub fn set_log(&mut self, f: impl FnMut(&str) + Send + 'static) {
         self.lock().log = Some(Box::new(f));
     }
 
-    /// More commands: name -> fn(settings, the rest of the line), e.g. the looks' look-show, look-hide, looks-reload.
+    /// Adds a command by name. Its handler gets the settings and the rest of the line. The looks' look-show, look-hide
+    /// and looks-reload are added this way.
     pub fn add_handler(
         &mut self,
         name: &str,
@@ -204,7 +206,7 @@ impl Remote {
     }
 
     /// Reads lines from `input` on a thread until it closes (the launcher closed our stdin, or exited). Universal
-    /// newlines, as Python's text-mode stdin reads them; bytes that aren't UTF-8 are replaced.
+    /// newlines, as Python's text-mode stdin reads them. Bytes that aren't UTF-8 are replaced.
     pub fn read_from(&self, input: impl Read + Send + 'static) -> std::thread::JoinHandle<()> {
         let tx = self.sender();
         std::thread::Builder::new()
@@ -284,11 +286,11 @@ impl Remote {
             return;
         }
         let s = sp.expect("known");
-        let value = s.canonical(&value, &looks).expect("a choice"); // the spec's own type (JSON 1 -> 1.0)
+        let value = s.canonical(&value, &looks).expect("a choice"); // the spec's own type (JSON 1 becomes 1.0)
         if settings.get(key).is_some_and(|cur| value.py_eq(cur)) {
             self.publish(settings); // nothing changes, so no watcher would answer
         } else {
-            let _ = settings.set(key, value); // saved; the watchers apply it and publish
+            let _ = settings.set(key, value); // saved, and the watchers apply it and publish
         }
     }
 

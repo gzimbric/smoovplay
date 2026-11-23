@@ -1,6 +1,6 @@
-"""MetalIFNet (framegen/metalrife.py), the Mac's RIFE engine: it must draw what eager FastIFNet draws on Apple's GPU,
-for RIFE 4.22's four blocks and 4.25/4.26's five, at each motion detail it takes, with Steady HUD, HDR frames and
-timesteps other than the midpoint. Needs Apple's GPU (MPS); skipped elsewhere."""
+"""MetalIFNet (framegen/metalrife.py), the Mac's RIFE engine, must draw what eager FastIFNet draws on Apple's GPU.
+That goes for RIFE 4.22's four blocks and the five of 4.25 and 4.26, at each motion detail it takes, with Steady HUD,
+HDR frames and timesteps other than the midpoint. Needs Apple's GPU (MPS) and is skipped elsewhere."""
 from __future__ import annotations
 
 import importlib
@@ -42,7 +42,7 @@ def two_frames(w: int, h: int, shift: int = 3) -> tuple[torch.Tensor, torch.Tens
 
 
 def eager_frame(fast: FastIFNet, encode, frames, pad, h: int, w: int, t: float) -> torch.Tensor:
-    """FastIFNet's forward as RifeInterpolator runs it eagerly: HxWx3 uint8 BGR."""
+    """FastIFNet's forward as RifeInterpolator runs it eagerly, as HxWx3 uint8 BGR."""
     src = []
     for f in frames:
         x = F.pad(f.permute(2, 0, 1).flip(0).unsqueeze(0).half() / 255.0, pad)
@@ -92,7 +92,7 @@ def test_rife_interpolator_uses_it_on_mps(scale):
         it.load(b)
         it.prepare(1)
         outs[metal] = [it.interpolate(1, t).clone() for t in (0.5, 1 / 3)]
-        it.set_steady(0.02)  # Steady HUD: the metal engine's fp32 path, with the real frames from its slots
+        it.set_steady(0.02)  # Steady HUD takes the metal engine's fp32 path, with the real frames from its slots
         outs[metal].append(it.interpolate(1, 0.5).clone())
         rgb[metal] = it._rgb(0)
     for e, m in zip(outs[False], outs[True]):
@@ -102,7 +102,7 @@ def test_rife_interpolator_uses_it_on_mps(scale):
 
 @needs_weights
 def test_load_is_safe_to_overwrite_on_mps():
-    """The pipeline reuses one CPU buffer for every frame (even timing loads two in a row): what load() was given
+    """The pipeline reuses one CPU buffer for every frame, and even timing loads two in a row. What load() was given
     must be what prepare() encodes, even if the buffer is written again before the GPU gets to it."""
     w, h = 320, 180
     a, b = (f.cpu() for f in two_frames(w, h))
@@ -112,7 +112,7 @@ def test_load_is_safe_to_overwrite_on_mps():
     for _ in range(8):  # keep the GPU busy, so an asynchronous copy would still be waiting
         big = big @ big * 1e-3
     it.load(buf)
-    buf.copy_(b)  # (CPU only: nothing here waits for the GPU)
+    buf.copy_(b)  # CPU only, so nothing here waits for the GPU
     assert torch.equal(it.inp.cpu(), a)
 
 
@@ -135,7 +135,7 @@ def test_hdr_frames():
 
 def test_whole_number_scales_only():
     assert metalrife.supported([8, 4, 2, 1]) and metalrife.supported([32.0, 16.0, 8.0, 4.0, 1.0])
-    assert not metalrife.supported([4, 2, 1, 0.5])  # motion detail 2.0: eager FastIFNet
+    assert not metalrife.supported([4, 2, 1, 0.5])  # motion detail 2.0 runs eager FastIFNet
 
 
 @needs_weights
@@ -151,4 +151,4 @@ def test_falls_back_to_eager_when_it_cant_run(monkeypatch, capsys):
     it.load(b)
     it.prepare(1)
     assert it.interpolate(1).shape == (180, 320, 3)
-    assert RifeInterpolator(320, 180, MODEL, 2.0).metal is None  # motion detail 2.0: half-pixel scales
+    assert RifeInterpolator(320, 180, MODEL, 2.0).metal is None  # motion detail 2.0 has half-pixel scales

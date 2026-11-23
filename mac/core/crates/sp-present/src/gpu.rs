@@ -34,7 +34,7 @@ pub fn floats_bytes(v: &[f32]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, std::mem::size_of_val(v)) }
 }
 
-/// Blending for a pass: none (it replaces), or premultiplied alpha over what's there.
+/// Blending for a pass, either none (it replaces) or premultiplied alpha over what's there.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Blend {
     Replace,
@@ -95,7 +95,7 @@ impl Pipelines {
         Ok(p)
     }
 
-    /// Drops the pipelines made from library `lib_id` (a look's passes being remade).
+    /// Drops the pipelines made from library `lib_id`, for when a look's passes are remade.
     pub fn forget(&mut self, lib_id: usize) {
         self.cache.retain(|k, _| k.0 != lib_id);
     }
@@ -120,7 +120,7 @@ pub fn texture_with(w: usize, h: usize, format: MTLPixelFormat, storage: MTLStor
     }
 }
 
-/// A 3D RGBA16F texture from RGB floats (a LUT: `n`^3 triples, red fastest).
+/// A 3D RGBA16F texture from RGB floats, for a LUT of `n`^3 triples with red fastest.
 pub fn texture_3d(n: usize, rgb: &[[f32; 3]]) -> Retained<Tex> {
     let mut halves: Vec<u16> = Vec::with_capacity(n * n * n * 4);
     for c in rgb {
@@ -160,8 +160,8 @@ pub enum Load {
     DontCare,
 }
 
-/// Encodes one pass: `pipeline` over `viewport` of `target`, with fragment textures by index and fragment buffers
-/// (bytes, index).
+/// Encodes one pass of `pipeline` over `viewport` of `target`, with fragment textures by index and fragment buffers
+/// as (bytes, index).
 pub fn pass(cmd: &Cmd, target: &Tex, load: Load, pipeline: &Rps, viewport: Rect, textures: &[(&Tex, usize)],
             buffers: &[(&[u8], usize)]) {
     let rp = MTLRenderPassDescriptor::new();

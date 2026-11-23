@@ -20,7 +20,7 @@ struct Dialog: Identifiable {
     let id = UUID()
     var title: String
     var text: String
-    var buttons: [String]  // the first is the default; the last cancels
+    var buttons: [String]  // the first is the default and the last cancels
     var done: (Int) -> Void
 }
 
@@ -87,7 +87,7 @@ final class AppModel: ObservableObject {
         let p = LookPreview(paths: paths)
         p.onPicture = { [weak self] url, sample in
             Task { @MainActor in
-                // (read now: the file is written again two pictures later)
+                // read it now, because the file is written again two pictures later
                 guard let self, let d = try? Data(contentsOf: url), let img = NSImage(data: d) else { return }
                 let first = self.previewImage == nil
                 self.previewImage = img
@@ -140,7 +140,7 @@ final class AppModel: ObservableObject {
 
     init(options: LaunchOptions) {
         self.options = options
-        // Nothing picked on the Help page yet: the Rust core once it's built, else run.py (AppPaths.detect decides)
+        // With nothing picked on the Help page yet, AppPaths.detect picks the Rust core once it's built, else run.py
         let choice = UserDefaults.standard.string(forKey: "core") ?? AppPaths.detect().coreKind.rawValue
         coreChoice = choice
         paths = AppPaths.detect(coreChoice: choice)
@@ -149,7 +149,7 @@ final class AppModel: ObservableObject {
         fileValues = settingsFile.read()
         if let p = options.page.flatMap(Page.init(rawValue:)) { page = p }
         else if options.play { page = .play }
-        else { page = prefs.has("guide-done") ? .play : .guide }  // first run: the PS5 guide
+        else { page = prefs.has("guide-done") ? .play : .guide }  // the PS5 guide on the first run
         chiaki.log = { [weak self] l in self?.addLog(l); self?.session?.write(l) }
         capture.log = { [weak self] l in Task { @MainActor in self?.addLog(l); self?.session?.write(l) } }
         capture.onStop = { [weak self] why in
@@ -190,7 +190,7 @@ final class AppModel: ObservableObject {
         dialog = Dialog(title: title, text: text, buttons: buttons, done: done)
     }
 
-    /// A launcher line: on the Play page and in the session's log.
+    /// A launcher line, shown on the Play page and written to the session's log.
     func launcherLog(_ line: String) {
         addLog(line)
         session?.write(line)
@@ -258,7 +258,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// The window picked on the Play page: the same window if it's still there, else the same app's biggest.
+    /// The window picked on the Play page. That's the same window if it's still there, else the same app's biggest.
     var chosenWindow: CaptureWindow? {
         if let id = prefs.value("window-id:").flatMap(UInt32.init), let w = windows.first(where: { $0.id == id }) { return w }
         if let app = prefs.value("window-app:"), let w = windows.first(where: { $0.bundleID == app }) { return w }
@@ -436,10 +436,12 @@ final class AppModel: ObservableObject {
         if changed { Snapshots.later("play-" + st.name) }
     }
 
-    /// The video is up (once per session): the Mac kept awake, chiaki-ng hidden, keys taken, this window out of the way.
+    /// Runs once per session, when the video is up. It keeps the Mac awake, hides chiaki-ng, takes the keys and moves
+    /// this window out of the way.
     private func startedPlaying() {
         awake.hold(true)
-        session?.send("key")  // does the core take keys? (an empty one does nothing; an older core says "unknown command")
+        // asks whether the core takes keys. An empty key does nothing, and an older core says "unknown command".
+        session?.send("key")
         if source.kind == "chiaki", settingValue("minimize_chiaki")?.bool != false { chiaki.hideForPlay() }
         takeKeys()
         if source.kind == "window" { startOverlay() }
@@ -482,7 +484,7 @@ final class AppModel: ObservableObject {
     }
 
     func autoPlay() {
-        // --play: once the window list (App window) or nothing else is needed
+        // --play presses Play once the window list is in for App window, and straight away for the other sources
         if source.kind == "window" {
             Task {
                 for _ in 0..<40 where !windowsLoaded { try? await Task.sleep(nanoseconds: 100_000_000) }
@@ -543,9 +545,9 @@ final class AppModel: ObservableObject {
         navKeys = []
     }
 
-    /// App window mode: while the video window's menu is open, its keys (arrows, Return, Esc, Delete) are taken
-    /// plain, from any app, and given back when it closes (framegen/hotkeys.py set_nav). Needs the core to say when
-    /// the menu is open ("menu_open" in the state).
+    /// In App window mode, while the video window's menu is open, its keys (arrows, Return, Esc, Delete) are taken
+    /// plain from any app, and given back when it closes (framegen/hotkeys.py set_nav). This needs the core to say
+    /// when the menu is open ("menu_open" in the state).
     private func navKeysFollowMenu(_ s: CoreSession) {
         let want = source.kind == "window" && (liveState?.menuOpen ?? false) && s.supports("key")
         if want == !navKeys.isEmpty { return }
@@ -559,7 +561,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// After every state line: instant replay's keys follow its setting, and chiaki-ng follows "Hide chiaki-ng".
+    /// After every state line, instant replay's keys follow its setting, and the menu's own keys follow the menu.
     private func afterStateChange() {
         guard playState == .playing, let s = session else { return }
         let replayOn = (settingValue("replay")?.double ?? 0) > 0
@@ -585,7 +587,7 @@ final class AppModel: ObservableObject {
         case "quit": stop()
         case "fullscreen" where !s.supports("key"):  // the same with today's commands
             s.send(CoreLine.set("fullscreen", .bool(!(settingValue("fullscreen")?.bool ?? false))))
-        case "stats" where !s.supports("key"):  // Off, Minimal, Detailed, Off...
+        case "stats" where !s.supports("key"):  // Off, Minimal, Detailed, then Off again
             if settingValue("overlay")?.bool != true { s.send(CoreLine.set("overlay_style", "minimal")); s.send(CoreLine.set("overlay", true)) }
             else if settingValue("overlay_style")?.string == "minimal" { s.send(CoreLine.set("overlay_style", "detailed")) }
             else { s.send(CoreLine.set("overlay", false)) }
@@ -593,7 +595,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// What App window mode's keys get on this Mac now (not while playing: then it's what was taken).
+    /// What App window mode's keys get on this Mac now. It does nothing while playing, when the keys are what was
+    /// taken.
     func resolveKeys() {
         guard !running else { return }
         let (got, taken) = WindowKeys.resolve(prefs, free: { Hotkeys.shared.free($0) })
@@ -690,7 +693,7 @@ final class AppModel: ObservableObject {
         return m
     }
 
-    /// A setting's value: the running session's, else the file's, else its default.
+    /// A setting's value, from the running session, else the file, else its default.
     func settingValue(_ key: String) -> JSON? {
         if let v = liveState?.values[key] { return v }
         if let m = settingsModel { return m.value(key) }
@@ -900,7 +903,8 @@ final class AppModel: ObservableObject {
         preview.request(look: e.look, sample: s.id, width: previewPixels.0, height: previewPixels.1)
     }
 
-    /// A change to the picked look: saved (yours, after half a second), sent to the video (playing), redrawn.
+    /// Makes a change to the picked look. A look of yours is saved half a second later, the video gets the change
+    /// while playing, and the preview is redrawn.
     func editLook(_ edit: (inout LooksLibrary, Int) -> Void) {
         guard var lib = looks, let i = pickedIndex else { return }
         edit(&lib, i)
@@ -958,7 +962,8 @@ final class AppModel: ObservableObject {
         lookShownTo = nil
     }
 
-    /// A state line, or the session started or ended: the preview goes again (a restart forgets it).
+    /// After a state line, or when the session starts or ends, the preview is sent again, because a restart forgets
+    /// it.
     private func onLooksState() {
         guard page == .looks else { return }
         if lookShownTo !== session { lookShownTo = nil }
@@ -1086,7 +1091,7 @@ final class AppModel: ObservableObject {
         flushLookSave()
         let paths = paths
         Task.detached {
-            let r = PyTool.run(paths, module: "framegen.looks", ["import", code], timeout: 30)  // (letters, digits, - and _ only)
+            let r = PyTool.run(paths, module: "framegen.looks", ["import", code], timeout: 30)  // letters, digits, - and _ only
             let j = PyTool.json(r)
             await MainActor.run {
                 guard let id = j?["id"]?.string else {
@@ -1122,9 +1127,9 @@ final class AppModel: ObservableObject {
     }
 
     // MARK: - quitting
-    /// Quitting: the session is asked to stop as Stop does, and waited for (up to 8 s, then it's ended outright),
-    /// here on the main thread: AppKit's quit can come from inside a main-queue block (the SIGTERM handler), where
-    /// nothing else on the main queue would run until it returns.
+    /// Quitting. The session is asked to stop as Stop does, and waited for up to 8 s before it's ended outright. The
+    /// wait is here on the main thread, because AppKit's quit can come from inside a main-queue block (the SIGTERM
+    /// handler), where nothing else on the main queue would run until it returns.
     func shutdown() {
         preview.stop()
         flushLookSave()
@@ -1147,8 +1152,8 @@ final class AppModel: ObservableObject {
 /// Command-line switches, for testing and scripting (the Windows launcher's --page and SMOOVPLAY_* switches):
 ///   --page play|guide|check|settings|looks|help    open on a page
 ///   --source chiaki|window|capture|tap|file        play from this source
-///   --window <app, bundle id or title words>       App window: this app's window
-///   --play                                         press Play once ready (--test: Test with a 60 fps game)
+///   --window <app, bundle id or title words>       for App window, this app's window
+///   --play                                         press Play once ready (--test presses Test with a 60 fps game)
 ///   --stop-after <seconds>                         press Stop this long after the video is up
 ///   --quit-after-stop                              quit once the session is over
 ///   --keep-window                                  don't put the window in the Dock while the video plays

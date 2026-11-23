@@ -9,8 +9,8 @@ unsafe extern "C" {
 
 const QOS_CLASS_USER_INTERACTIVE: u32 = 0x21;
 
-/// The calling thread at QoS user-interactive (the scheduler keeps it on the performance cores and ahead of other
-/// work), as winutil.boost_thread does on a Mac. True if it took.
+/// Puts the calling thread at QoS user-interactive, as winutil.boost_thread does on a Mac. The scheduler keeps it on
+/// the performance cores and ahead of other work. True if it took.
 pub fn boost_thread() -> bool {
     unsafe { pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0) == 0 }
 }

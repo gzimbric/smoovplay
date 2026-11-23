@@ -1,7 +1,7 @@
-"""Reference data for sp-present's looks: framegen/looks.py's NumPy render() of the built-in looks, each node type
-alone at random settings, and random looks, on tests/test_looks.py's test picture (the same cases and seed as its
-test_the_shaders_draw_what_the_reference_does). crates/sp-present/tests/shaders.rs draws them with Metal and holds them
-to the same tolerances.
+"""Reference data for sp-present's looks. framegen/looks.py's NumPy render() draws the built-in looks, each node type
+alone at random settings, and random looks on tests/test_looks.py's test picture. The cases and seed are the same as
+in its test_the_shaders_draw_what_the_reference_does. crates/sp-present/tests/shaders.rs draws them with Metal and
+holds them to the same tolerances.
 
     .venv/bin/python mac/core/tools/present_looks.py   (from the repository root)
 

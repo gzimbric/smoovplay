@@ -1,10 +1,10 @@
-//! Decode time per frame at 1080p: VideoToolbox, then the conversion to a frame, for the fixture streams
-//! (mac/core/tools/media_fixtures.py: H.264, HEVC 8-bit, HEVC 10-bit HDR10).
+//! Decode time per frame at 1080p for VideoToolbox, then the conversion to a frame, on the fixture streams from
+//! mac/core/tools/media_fixtures.py (H.264, HEVC 8-bit, HEVC 10-bit HDR10).
 //!
 //!     cargo run --release -p sp-media --example decode_bench [-- --rounds 3]
 //!
-//! Each stream is decoded `rounds` times (a new session each round; its first frame, which starts the session, is
-//! left out of the times and shown on its own). Frames are fed one at a time, as the tap delivers them, so these are
+//! Each stream is decoded `rounds` times, with a new session each round. Its first frame, which starts the session,
+//! is left out of the times and shown on its own. Frames are fed one at a time, as the tap delivers them, so these are
 //! latencies, not throughput.
 
 use std::path::Path;

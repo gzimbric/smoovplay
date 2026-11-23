@@ -1,10 +1,11 @@
-//! A real clip through the recorder at 60 and 90 Hz with sound (the plan in tools/replay_fixtures.py, which also has
-//! the Python recorder save the same): the saved MP4 checked with ffprobe (durations, frame rate, keyframes, the
-//! sound's length and its sync with the picture, within a frame), then against the Python's clip (same cut, same
-//! frame count; PSNR of matching frames, each against the source too). Results go to fixtures/replay/results_<hz>.json.
+//! Runs a real clip through the recorder at 60 and 90 Hz with sound. The plan is in tools/replay_fixtures.py, which
+//! also has the Python recorder save the same. The saved MP4 is checked with ffprobe for durations, frame rate,
+//! keyframes, the sound's length and its sync with the picture to within a frame. Then it's compared with the
+//! Python's clip, which should have the same cut and frame count, by the PSNR of matching frames and of each against
+//! the source. Results go to fixtures/replay/results_<hz>.json.
 //!
-//! Needs the fixtures (`.venv/bin/python mac/core/tools/replay_fixtures.py`); skipped without them. Faster with
-//! --release (the PSNR sums).
+//! Needs the fixtures (`.venv/bin/python mac/core/tools/replay_fixtures.py`) and is skipped without them. It's faster
+//! with --release because of the PSNR sums.
 
 mod common;
 
@@ -100,7 +101,8 @@ fn plan() -> Option<Plan> {
     })
 }
 
-/// The plan through the Rust recorder; returns the saved clip (copied to fixtures/replay/rust_<hz>.mp4).
+/// Runs the plan through the Rust recorder. Returns the saved clip, which is also copied to
+/// fixtures/replay/rust_<hz>.mp4.
 fn feed(p: &Plan, hz: usize, dir: &Path) -> (std::path::PathBuf, serde_json::Value) {
     let (rec, said) = recorder(dir, p.length);
     rec.set_delay(p.delay * 1000.0);
@@ -168,7 +170,7 @@ fn feed(p: &Plan, hz: usize, dir: &Path) -> (std::path::PathBuf, serde_json::Val
     (keep, info)
 }
 
-/// Where the clip's sound is against the original: the original's time (s) at the clip's time 0.
+/// Where the clip's sound is against the original, as the original's time (s) at the clip's time 0.
 fn audio_at_zero(path: &Path, original: &[i16], expect: f64) -> f64 {
     let (_, a) = probe(path);
     let a = a.expect("no sound");
@@ -176,7 +178,7 @@ fn audio_at_zero(path: &Path, original: &[i16], expect: f64) -> f64 {
     let (w0, n) = (48_000usize, 12_000usize);
     let win = &got[w0..w0 + n];
     let orig: Vec<f32> = original.iter().map(|&s| s as f32 / 32768.0).collect();
-    // The original index that decoded sample w0 is; search 100 ms either side of where it should be
+    // The original index that decoded sample w0 is. Search 100 ms either side of where it should be.
     let centre = ((expect + a.start) * 48_000.0).round() as i64 + w0 as i64;
     let mut best = (f32::MIN, 0i64);
     for lag in centre - 4800..=centre + 4800 {
@@ -223,7 +225,7 @@ fn a_clip_at_60_and_90_hz_matches_the_python() {
         assert!(keys.windows(2).all(|k| k[1] - k[0] <= 1.0 + frame + 1e-6), "keyframes {keys:?}");
         // The sound from the first frame to within the AAC encoder's hold (2112 samples) and a chunk of the end
         assert!(a.start < 1024.0 / 48_000.0 + 1e-3 && (a.start + a.duration - v.duration).abs() < 0.1, "sound {a:?}, video {v:?}");
-        // Sync: the first frame's stamp is its shown index; the sound at the clip's 0 should be the same moment
+        // For sync, the first frame's stamp is its shown index, and the sound at the clip's 0 should be the same moment
         let mut rp = Pipe::video(&rust, "bgr24", 3, None);
         let mut pp = Pipe::video(&python, "bgr24", 3, None);
         let mut sp = Pipe::video(&clip, "bgr24", 3, None);
@@ -236,7 +238,7 @@ fn a_clip_at_60_and_90_hz_matches_the_python() {
             let py = pp.next();
             let sr = read_stamp(&r);
             if let Some(py) = &py {
-                // The same cut: frame for frame the same shown frames, for as long as the Python's goes
+                // The same cut, with the same shown frames frame for frame, for as long as the Python's goes
                 let spy = read_stamp(py);
                 assert_eq!(sr, spy, "frame {j}: rust shows {sr}, python {spy}");
             }
@@ -260,8 +262,8 @@ fn a_clip_at_60_and_90_hz_matches_the_python() {
         }
         assert_eq!(j as u64, v.frames);
         let i0 = i0.unwrap();
-        // Every frame shown up to the save: the encoder is emptied first. (FFmpeg's VideoToolbox encoder still holds
-        // the last few when the Python saves, so its clip ends that much earlier.)
+        // Every frame shown up to the save is there, because the encoder is emptied first. FFmpeg's VideoToolbox
+        // encoder still holds the last few when the Python saves, so its clip ends that much earlier.
         assert_eq!(last + 1, (p.seconds * hz as f64).round() as usize, "the clip ends at shown frame {last}");
         assert!(v.frames >= pv.frames && v.frames - pv.frames <= 12, "rust {} frames, python {}", v.frames, pv.frames);
         let shown = i0 as f64 / hz as f64;
@@ -270,7 +272,8 @@ fn a_clip_at_60_and_90_hz_matches_the_python() {
         let (sync, py_sync) = (rust_audio - shown, python_audio - shown);
         let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
         let min = |v: &[f64]| v.iter().cloned().fold(f64::INFINITY, f64::min);
-        // The before & after: every frame of the clip, the game's frame held on the left; against the Python's
+        // The before & after has every frame of the clip, with the game's frame held on the left. It's compared with
+        // the Python's.
         let rc = fixtures().join(format!("rust_{hz}_compare.mp4"));
         let pc = fixtures().join(format!("python_{hz}_compare.mp4"));
         let (cv, ca) = probe(&rc);
@@ -295,8 +298,8 @@ fn a_clip_at_60_and_90_hz_matches_the_python() {
             let py = pcp.next();
             let pv = pvp.next();
             if let Some(py) = &py {
-                // The left half's stamp is the game frame's: the same one held as the Python holds (but for the
-                // last few, where the Python's before track is missing what FFmpeg's encoder still held)
+                // The left half's stamp is the game frame's, the same one the Python holds. The last few can differ,
+                // because the Python's before track is missing what FFmpeg's encoder still held.
                 if (cj as u64) + 12 < pcv.frames {
                     assert_eq!(read_stamp(&r), read_stamp(py), "before & after frame {cj}: different game frames");
                 }

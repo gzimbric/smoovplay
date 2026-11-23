@@ -1,7 +1,7 @@
-//! The clock: seconds (or nanoseconds) on `CLOCK_UPTIME_RAW`, the clock chiaki-ng's frame tap stamps frames with on
-//! macOS (chiaki_tap/frametap.c, `clock_gettime_nsec_np(CLOCK_UPTIME_RAW)`) and the one behind Python's
-//! `time.monotonic()` and `time.perf_counter()` there, so times from either side compare directly. It doesn't count
-//! time asleep (`CLOCK_MONOTONIC` does, and is days ahead after sleeps).
+//! The clock, in seconds or nanoseconds on `CLOCK_UPTIME_RAW`. On macOS chiaki-ng's frame tap stamps frames with it
+//! (chiaki_tap/frametap.c, `clock_gettime_nsec_np(CLOCK_UPTIME_RAW)`) and Python's `time.monotonic()` and
+//! `time.perf_counter()` read it, so times from either side compare directly. It doesn't count time asleep.
+//! `CLOCK_MONOTONIC` does, and is days ahead after sleeps.
 
 unsafe extern "C" {
     fn clock_gettime_nsec_np(clock: u32) -> u64;
@@ -19,7 +19,7 @@ pub fn now() -> f64 {
     now_ns() as f64 * 1e-9
 }
 
-/// The frame tap's tick rate on macOS (its header's `qpc_freq`): nanoseconds.
+/// The frame tap's tick rate on macOS (its header's `qpc_freq`). A tick is a nanosecond.
 pub const TAP_FREQ: u64 = 1_000_000_000;
 
 #[cfg(test)]

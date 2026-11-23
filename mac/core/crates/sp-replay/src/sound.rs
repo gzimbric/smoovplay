@@ -1,4 +1,4 @@
-//! The sound's timing (replay.py Recorder._encode_sound): the sound plays on, sample after sample, while arrival
+//! The sound's timing (replay.py Recorder._encode_sound). The sound plays on, sample after sample, while arrival
 //! times jitter. Only a gap (silence put in) or getting ahead (sound skipped) that's large, or that's lasted a
 //! second, moves it, so jitter never makes a click. A pause of more than 30 s starts its timeline again.
 
@@ -6,8 +6,8 @@ use std::collections::VecDeque;
 
 use crate::{OFFSET, SOUND_RATE, TB, py_round};
 
-/// What to write for a chunk, in order: `frames` of silence, or of the chunk from frame `from`, at `pts` (48 kHz
-/// samples on the replay's clock).
+/// What to write for a chunk, in order. Each part is `frames` of silence, or of the chunk from frame `from`, at `pts`
+/// in 48 kHz samples on the replay's clock.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Part {
     Silence { pts: i64, frames: usize },
@@ -41,8 +41,8 @@ impl SoundClock {
         self.rem = total % rate as u64;
     }
 
-    /// A chunk of `n` frames at `rate` that reached the Mac at `t`, with SmoovPlay's delay `delay` (s). `t0` is the
-    /// replay's clock zero (set from this chunk if it isn't yet).
+    /// Places a chunk of `n` frames at `rate` that reached the Mac at `t`, with SmoovPlay's delay `delay` in seconds.
+    /// `t0` is the replay's clock zero, set from this chunk if it isn't yet.
     pub fn place(&mut self, t: f64, n: usize, rate: u32, delay: f64, t0: &mut Option<f64>) -> Vec<Part> {
         let mut out = Vec::new();
         let t_due = t + delay; // when the picture it goes with is shown
@@ -64,7 +64,7 @@ impl SoundClock {
         let max = self.drifts.iter().map(|d| d.1).fold(f64::NEG_INFINITY, f64::max);
         if drift > 0.25 || (steady && min > 0.06) {
             if drift > 30.0 {
-                // A long pause: start the sound's timeline again (the clip will have a gap)
+                // After a long pause, start the sound's timeline again. The clip will have a gap.
                 self.a_next = Some(t_due);
                 self.a_pts += py_round(drift * SOUND_RATE as f64);
             } else {

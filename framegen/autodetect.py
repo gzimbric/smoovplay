@@ -41,9 +41,10 @@ VSR_MS = {1: 1.3, 2: 1.6, 3: 3.6, 4: 4.9}
 REF_HALF_MS = 6.8  # this test's half-motion time on that card: the yardstick for "the card's speed"
 REF_PIXELS = 2560 * 1440
 TRT_SPEEDUP = 0.88  # TensorRT's time at full motion detail vs PyTorch's, when its engine isn't built yet to time
-# On a Mac each frame shown also goes GPU -> memory -> OpenGL (no CUDA-OpenGL interop) and is swapped: about 3 ms a
-# frame on an M5 Max at 1080p, beyond this test's time. With it counted, the fake PS5 (scripts/frametap_fake.py
-# --native, test mode) agreed with the pick: 90 fps at half detail showed 92% of the extra frames, 90 at full 69%.
+# On a Mac each frame shown also goes from the GPU to memory to OpenGL, as there's no CUDA-OpenGL interop, and is
+# then swapped. That's about 3 ms a frame on an M5 Max at 1080p, on top of this test's time. With it counted, the fake
+# PS5 (scripts/frametap_fake.py --native, test mode) agreed with the pick. 90 fps at half detail showed 92% of the
+# extra frames, and 90 at full showed 69%.
 MAC_PRESENT_MS = 3.0
 # Frame rate and motion detail, best first. 90 fps at full detail beats 120 at half: in testing it looked better.
 OPTIONS = ((120, "full"), (90, "full"), (120, "half"), (90, "half"), (60, "full"), (60, "half"))
@@ -147,8 +148,9 @@ def primary_display() -> Display | None:
 
 
 def _mac_display() -> Display | None:
-    """The Mac's main display through GLFW: its size in pixels (a Retina display's points times its scale) and refresh
-    rate (a ProMotion display reports 120). macOS runs a display at its top rate, so hz and max_hz are the same."""
+    """The Mac's main display, read through GLFW. Its size is in pixels, so a Retina display's points times its scale,
+    and a ProMotion display reports a refresh rate of 120. macOS runs a display at its top rate, so hz and max_hz are
+    the same."""
     try:
         import glfw
         if not glfw.init():
@@ -163,7 +165,7 @@ def _mac_display() -> Display | None:
                            max([hz] + [int(round(r)) for r in same]))
         finally:
             glfw.terminate()
-    except Exception:  # noqa: BLE001 - unknown display: recommend() assumes 60 Hz
+    except Exception:  # noqa: BLE001 - an unknown display, so recommend() assumes 60 Hz
         return None
 
 
@@ -246,8 +248,8 @@ def time_dml(model: str, log: Callable[[str], None] = print) -> dict:
 
 
 def _time_ticks(it) -> float:
-    """Median ms of one tick with a new real frame: prepare it (from `in_u8`) and draw the in-between frame. CUDA
-    events on NVIDIA; on a Mac's GPU, the clock around a synchronize (framegen/gpu.py timer)."""
+    """Median ms of one tick with a new real frame: prepare it (from `in_u8`) and draw the in-between frame. Timed
+    with CUDA events on NVIDIA, and on a Mac's GPU with the clock around a synchronize (framegen/gpu.py timer)."""
     from . import gpu
 
     def tick() -> None:
@@ -307,7 +309,7 @@ def recommend(current: dict, timing: dict, display: Display | None, *, gpu: str 
     settings are suggested, the rest are left as they are. NVIDIA VFG is suggested when it's set up and keeps up at
     least as high a frame rate as RIFE: setting it up is the user's choice to use it."""
     share = LAPTOP_SHARE if "laptop" in gpu.lower() else SHARE
-    mac = gpu.startswith("Apple")  # (detect(): framegen/gpu.py name())
+    mac = gpu.startswith("Apple")  # detect() passes framegen/gpu.py's name()
     present_ms = MAC_PRESENT_MS if mac else 0.0
     speed = timing["half"]["ms"] / REF_HALF_MS  # above 1 = slower than the card the numbers above come from
     pixels = display.width * display.height if display else REF_PIXELS
@@ -387,7 +389,7 @@ def recommend(current: dict, timing: dict, display: Display | None, *, gpu: str 
         reasons["engine"] = ("Without an NVIDIA card, RIFE runs through DirectML (Experimental). It's slower than "
                              "on an NVIDIA card of the same speed, and hasn't been tried with a game on AMD or Intel "
                              "graphics yet: Send feedback on the Help page says how it went.")
-    elif gpu.startswith("Apple"):  # a Mac (detect(): framegen/gpu.py name())
+    elif gpu.startswith("Apple"):  # a Mac (detect() passes framegen/gpu.py's name())
         reasons["engine"] = ("On a Mac, RIFE runs through PyTorch on Apple's GPU (Metal). TensorRT is for NVIDIA "
                              "cards only.")
     elif trt:

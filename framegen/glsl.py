@@ -2,23 +2,23 @@
 
 The shaders are written for GLSL 4.50, as on Windows. macOS stops at OpenGL 4.1, core profile only, and only when a
 program asks for it (otherwise it gets 2.1, with no vertex arrays). So on a Mac context_hints() asks GLFW for a 4.1
-core context, and source() rewrites each shader for GLSL 4.10: "#version 410 core", no layout(binding = N) on the
-samplers (that's 4.20), and packHalf2x16/unpackHalf2x16 (also 4.20, used by FSR's ffx_a.h) written out in GLSL.
-program() then sets each sampler's texture unit with glUniform1i, as the binding did. Elsewhere the shaders are
-compiled as they are.
+core context, and source() rewrites each shader for GLSL 4.10. It sets "#version 410 core", takes layout(binding = N)
+off the samplers because that needs 4.20, and writes packHalf2x16 and unpackHalf2x16 out in GLSL. Those are 4.20 too,
+and FSR's ffx_a.h uses them. program() then sets each sampler's texture unit with glUniform1i, as the binding did.
+Elsewhere the shaders are compiled as they are.
 """
 from __future__ import annotations
 
 import re
 import sys
 
-# The GLSL version shaders are rewritten for here: 410 on a Mac, None (as written, 450) elsewhere.
+# The GLSL version shaders are rewritten for here. 410 on a Mac, and None elsewhere, where they stay as written (450).
 TARGET = 410 if sys.platform == "darwin" else None
 
 _VERSION = re.compile(r"^[ \t]*#version[ \t]+\d+[ \t]*(core|compatibility)?[ \t]*$", re.M)
 _BINDING = re.compile(r"layout\s*\(\s*binding\s*=\s*(\d+)\s*\)\s*uniform\s+(\w*sampler\w+)\s+(\w+)\s*;")
 
-# GLSL 4.20's half-float packing, for 4.10 (round to nearest even; infinities and NaNs kept).
+# GLSL 4.20's half-float packing, for 4.10. It rounds to nearest even and keeps infinities and NaNs.
 _HALF_PACKING = """uint smoov_f32tof16(float v) {
     uint x = floatBitsToUint(v);
     uint s = (x >> 16) & 0x8000u, ex = (x >> 23) & 0xFFu, m = x & 0x7FFFFFu;
@@ -50,8 +50,8 @@ vec2 smoov_unpackHalf2x16(uint u) { return vec2(smoov_f16tof32(u & 0xFFFFu), smo
 
 def context_hints(glfw) -> None:
     """GLFW window hints for a context these shaders compile in. Call before each glfw.create_window that draws
-    with them (glfw.default_window_hints() clears them). On a Mac: OpenGL 4.1 core, forward-compatible. Elsewhere
-    nothing: GLFW's default, the driver's newest compatibility context."""
+    with them (glfw.default_window_hints() clears them). On a Mac that's OpenGL 4.1 core, forward-compatible.
+    Elsewhere there are none, so GLFW's default applies, the driver's newest compatibility context."""
     if sys.platform != "darwin":
         return
     glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
@@ -81,7 +81,7 @@ def source(src: str, target: int | None = TARGET) -> tuple[str, dict[str, int]]:
 
 def program(GL, vert: str, frag: str) -> int:
     """A linked program from GLSL 4.50 sources (source() rewrites them for this system), with each sampler on the
-    texture unit its layout(binding) named. Raises (OpenGL.GL.shaders' errors, with the compiler's log) if either
+    texture unit its layout(binding) named. Raises OpenGL.GL.shaders' errors, with the compiler's log, if either
     doesn't compile or they don't link."""
     from OpenGL.GL import shaders
 
@@ -95,7 +95,7 @@ def program(GL, vert: str, frag: str) -> int:
         GL.glUseProgram(prog)
         for name, unit in units.items():
             loc = GL.glGetUniformLocation(prog, name)
-            if loc >= 0:  # (one the compiler dropped as unused has none)
+            if loc >= 0:  # a sampler the compiler dropped as unused has none
                 GL.glUniform1i(loc, unit)
         GL.glUseProgram(int(was))
     return prog

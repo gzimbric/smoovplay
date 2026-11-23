@@ -1,6 +1,6 @@
 # Install CUDA PyTorch first (the plain PyPI wheel is CPU-only on Windows):
 #   pip install torch --index-url https://download.pytorch.org/whl/cu128
-# On a Mac the plain PyPI wheel is the one: it runs on Apple's GPU (Metal). See docs/DEVELOPING.md, On a Mac.
+# On a Mac, install the plain PyPI wheel, which runs on Apple's GPU through Metal. See docs/DEVELOPING.md, On a Mac.
 torch>=2.6
 numpy
 opencv-python

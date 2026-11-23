@@ -7,7 +7,7 @@
 //!       and for each of those: zigzag varint of the difference in steps, or (a LUT's file) varint length + UTF-8.
 //! ```
 //!
-//! Python's encode() deflates the body at level 9 and keeps it if it's shorter; [`crate::zlib`] does it bit for bit,
+//! Python's encode() deflates the body at level 9 and keeps it if it's shorter. [`crate::zlib`] does it bit for bit,
 //! so the same look gets the same code.
 
 use super::{Look, LookError, MAX_NAME, normalize, type_by_code};
@@ -16,7 +16,7 @@ use crate::{py, pyuni, zlib};
 
 pub const PREFIX: &str = "SPL1-";
 
-/// A share code that can't be read; the message says why, for the user.
+/// A share code that can't be read. The message says why, for the user.
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 #[error("{0}")]
 pub struct CodeError(pub String);
@@ -177,7 +177,7 @@ fn match_code(text: &str) -> Option<(String, String)> {
     Some((version, body))
 }
 
-/// The look in a share code. Err: a message for the user.
+/// The look in a share code. Err holds a message for the user.
 pub fn decode(code: &str) -> Result<Look, CodeError> {
     let text: String = py::split_ws(code).concat(); // chat apps wrap long lines
     let Some((version, body)) = match_code(&text) else {
@@ -271,7 +271,7 @@ fn parse(body: &[u8]) -> Result<Look, Fail> {
                 if let Some(f) = f.filter(|f| f.text) {
                     n.insert(f.key, r.text()?);
                 } else {
-                    let d = unzz(r.varint()?); // (a setting from a newer version: skipped)
+                    let d = unzz(r.varint()?); // a setting from a newer version, skipped
                     if let Some(f) = f {
                         let steps = (f.q(f.default_num()) as i128 + d) as f64;
                         n.insert(f.key, f.lo + steps * f.step);

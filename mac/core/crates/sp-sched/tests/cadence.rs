@@ -1,5 +1,5 @@
 //! tests/test_cadence.py, test_rhythm_lock.py, test_timeline.py (the timeline on its own) and test_dips.py
-//! (DipWatch and the timeline timed as frames arrived), ported: same names, same assertions.
+//! (DipWatch and the timeline timed as frames arrived), ported with the same names and assertions.
 
 mod common;
 
@@ -39,7 +39,7 @@ fn test_scene_cut_holds_instead_of_interpolating() {
     assert_eq!(run("NdNdNd", &[2]), [C, C, H, C, I, C]);
 }
 
-/// A small xorshift for pictures (the Python uses torch's generator; only the kind of picture matters).
+/// A small xorshift for pictures. The Python uses torch's generator, but only the kind of picture matters.
 struct Rng(u64);
 impl Rng {
     fn next(&mut self) -> u64 {
@@ -80,7 +80,7 @@ fn test_detector_ignores_exact_and_noisy_repeats_but_sees_small_motion() {
         }
     }
     let r = det.update(&means(&moved, w, h));
-    assert!(r.is_new && r.mean_diff < 1.0); // global mean barely moves; block max catches it
+    assert!(r.is_new && r.mean_diff < 1.0); // the global mean barely moves, but the block max catches it
 }
 
 #[test]
@@ -91,8 +91,8 @@ fn test_cut_detector_flags_spikes_not_sustained_fast_motion() {
     assert_eq!(flags, [false, false, false, true, false, false, false, false, false, false, false]);
 }
 
-/// A dark 1080p frame (brightness ~5-40) with its own layout of light and shadow: 9x16 random blobs, bilinear
-/// (torch's interpolate, align_corners=False).
+/// A dark 1080p frame (brightness about 5 to 40) with its own layout of light and shadow, from 9x16 random blobs
+/// scaled up bilinearly as torch's interpolate does it (align_corners=False).
 fn dark_scene(seed: u64) -> Vec<u8> {
     let (w, h, bw, bh) = (1920usize, 1080usize, 16usize, 9usize);
     let mut g = Rng(seed.wrapping_mul(0x2545F4914F6CDD1D) | 1);
@@ -133,7 +133,7 @@ fn test_cut_between_dark_shots_is_caught_by_structure() {
 fn test_structure_needs_a_jump_and_a_real_change() {
     let mut d = CutDetector::default();
     let noise = CutFeatures { corr_dist: 1.2, hist_dist: 0.1, luma: 3.0, contrast: 0.5 }; // near-black frame noise
-    assert!(!d.update(2.0, Some(&noise))); // layout "changes" completely, but the picture barely changed
+    assert!(!d.update(2.0, Some(&noise))); // the layout seems to change completely, but the picture barely changed
     let mut d = CutDetector::default();
     let moving: Vec<CutFeatures> =
         [0.9, 0.95, 0.85, 0.9].iter().map(|&c| CutFeatures { corr_dist: c, hist_dist: 0.1, luma: 40.0, contrast: 20.0 }).collect();
@@ -393,7 +393,7 @@ fn test_dip_watch_switches_on_while_the_game_dips_and_off_after_it_stops() {
     assert!(w.dipping); // two within a second
     for _ in 0..85 {
         w.update(true);
-        w.update(false); // 2.9 s steady again: still on (the dips may come back)
+        w.update(false); // 2.9 s steady again, and still on because the dips may come back
     }
     assert!(w.dipping);
     for _ in 0..3 {

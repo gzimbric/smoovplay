@@ -1,4 +1,4 @@
-//! The Rust port against the Python reference: each test reads what tools/settings_fixtures.py recorded from
+//! The Rust port against the Python reference. Each test reads what tools/settings_fixtures.py recorded from
 //! framegen/*.py and checks this crate gives exactly the same (JSON text, file bytes, protocol lines, share codes).
 //! Without the fixtures (they're git-ignored) each test says SKIPPED and passes.
 
@@ -252,7 +252,7 @@ fn settings_state_lines() {
             c.eq(format!("{name}: line {i}"), g, w);
         }
         let mut log = log.lock().unwrap().clone();
-        log.push(String::new()); // (the Python's split leaves a last "")
+        log.push(String::new()); // the Python's split leaves a last ""
         let want_log: Vec<&str> = list(case, "log").iter().map(|l| l.as_str().unwrap()).collect();
         c.eq(format!("{name}: messages"), log.join("\n"), want_log.join("\n"));
         let poll = match got {
@@ -375,7 +375,7 @@ fn shader_inputs_and_passes() {
         }
     }
     for case in list(&f, "stages") {
-        let look = looks::normalize(&json::loads(s(case, "look")).unwrap()).unwrap(); // (the raw look)
+        let look = looks::normalize(&json::loads(s(case, "look")).unwrap()).unwrap(); // the raw look
         let st = looks::stages(&look, &|name| name != "Missing.cube");
         let got: Vec<Value> = st
             .iter()
@@ -698,7 +698,7 @@ fn detect_results_and_the_timing_file() {
         for (i, gpu) in ["NVIDIA GeForce RTX 2080 Ti", "X"].iter().enumerate() {
             let want = &r[i + 1];
             if want.as_str() == Some("AttributeError") {
-                continue; // (the Python crashes on a list; this says None)
+                continue; // the Python crashes on a list, and this says None
             }
             c.eq(
                 format!("saved_full_ms({:?}, {gpu})", r[0]),
@@ -711,7 +711,7 @@ fn detect_results_and_the_timing_file() {
 }
 
 // ------------------------------------------------------------------------------------------------ JSON and Python
-/// Lone surrogates: a Python str can hold one, a Rust String can't (they read as U+FFFD here).
+/// Lone surrogates. A Python str can hold one and a Rust String can't, so they read as U+FFFD here.
 const LONE_SURROGATES: [&str; 3] = ["\"\\ud83d\"", "\"\\ude00\\ud83d\"", "\"\\ud83dx\""];
 
 #[test]

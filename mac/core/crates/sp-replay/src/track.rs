@@ -1,24 +1,25 @@
-//! One stream of the replay: encoded packets as pieces (pts, keyframe, bytes), oldest first (replay.py _Track), and
-//! cutting a stretch out of one (_cut).
+//! One stream of the replay (replay.py _Track). It holds encoded packets as pieces (pts, keyframe, bytes), oldest
+//! first. [`cut`] takes a stretch out of one, like replay.py's _cut.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-/// What a track's pieces are: the format an MP4 (or VideoToolbox's decoder) needs to read them.
+/// What a track's pieces are, which is the format an MP4 (or VideoToolbox's decoder) needs to read them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Format {
-    /// H.264, each piece an access unit in AVCC form (4-byte big-endian lengths); `avcc` is the avcC box's payload.
+    /// H.264, each piece an access unit in AVCC form (4-byte big-endian lengths). `avcc` is the avcC box's payload.
     H264 { width: u32, height: u32, avcc: Vec<u8> },
-    /// AAC-LC, each piece one raw frame of 1024 samples; `asc` is the AudioSpecificConfig.
+    /// AAC-LC, each piece one raw frame of 1024 samples. `asc` is the AudioSpecificConfig.
     Aac { rate: u32, channels: u32, asc: Vec<u8>, bitrate: u32 },
 }
 
 /// An encoded packet.
 #[derive(Clone, Debug)]
 pub struct Piece {
-    /// When it's shown, on the 90 kHz clock (every track on the same one).
+    /// When it's shown, on the 90 kHz clock that every track shares.
     pub pts: i64,
-    /// The same in the track's own timescale (video: 90 kHz, so `pts`; sound: 48 kHz samples), exact.
+    /// The same time, exactly, in the track's own timescale. For video that's 90 kHz, so `pts`. For sound it's 48 kHz
+    /// samples.
     pub ts: i64,
     pub key: bool,
     pub data: Arc<[u8]>,
@@ -79,7 +80,7 @@ impl Track {
         self.ring.back().map(|p| p.pts)
     }
 
-    /// Drop what's older than `cut`, keeping the keyframe at or before it.
+    /// Drops what's older than `cut`, keeping the keyframe at or before it.
     pub fn trim(&mut self, cut: i64) {
         while self.keys.len() >= 2 && self.keys[1] <= cut {
             self.keys.pop_front();
@@ -100,8 +101,8 @@ impl Track {
     }
 }
 
-/// The pieces of a stretch: from the last keyframe at or before `start` (or with `at_key` false, the first piece at
-/// or after it), up to `end`.
+/// The pieces of a stretch, up to `end`. It starts from the last keyframe at or before `start`, or with `at_key` false,
+/// from the first piece at or after it.
 pub fn cut<'a>(ring: impl IntoIterator<Item = &'a Piece>, start: i64, end: i64, at_key: bool) -> Vec<Piece> {
     let ring: Vec<&Piece> = ring.into_iter().collect();
     let mut i = 0;

@@ -1,7 +1,7 @@
-//! "Simulate a 30 fps game" for any 60 Hz source (framegen/sources.py TestMode): frames 0, 2, 4... arrive as new
-//! content, each odd frame is replaced by the one before it (A A B B), and the frames left out are kept to score the
-//! generated ones against. A filter, tick -> tick or none; a source with a reader thread applies it there, before
-//! its queue, so a frame dropped from a full queue never shifts which frames it keeps.
+//! "Simulate a 30 fps game" for any 60 Hz source (framegen/sources.py TestMode). Frames 0, 2, 4 and so on arrive as
+//! new content, and each odd frame is replaced by the one before it (A A B B). The frames left out are kept to score
+//! the generated ones against. It's a filter that turns a tick into a tick or nothing. A source with a reader thread
+//! applies it there, before its queue, so a frame dropped from a full queue never shifts which frames it keeps.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -14,7 +14,7 @@ pub struct TestMode {
     n: i64,
     last: Option<Frame>,
     truth: HashMap<i64, Frame>,
-    /// The source's word on each recent frame: Some(true) new, Some(false) a repeat, None unknown.
+    /// What the source said about each recent frame: Some(true) new, Some(false) a repeat, None unknown.
     game: HashMap<i64, Option<bool>>,
 }
 
@@ -23,7 +23,7 @@ pub struct TestMode {
 pub type SharedTestMode = Arc<Mutex<TestMode>>;
 
 impl TestMode {
-    /// Left-out frames kept for scoring; the pipeline asks within a frame or two.
+    /// Left-out frames kept for scoring. The pipeline asks within a frame or two.
     pub const KEEP: i64 = 8;
 
     pub fn new(on: bool) -> TestMode {
@@ -44,8 +44,8 @@ impl TestMode {
         self.on = on;
     }
 
-    /// The real frame left out at `content`, or None; None too when the game repeated a frame there or at the kept
-    /// frames either side (below 60 fps the left-out frame isn't the real one halfway between them).
+    /// The real frame left out at `content`, or None. It's None too when the game repeated a frame there or at the
+    /// kept frames either side, because below 60 fps the left-out frame isn't the real one halfway between them.
     pub fn gt(&self, content: i64) -> Option<Frame> {
         if (content - 1..=content + 1).any(|i| self.game.get(&i) == Some(&Some(false))) {
             return None;
@@ -59,7 +59,7 @@ impl TestMode {
         }
         let i = self.n;
         self.n += 1;
-        // (Remote Play: its size check, which only says roughly; the pipeline's own call is the picture's)
+        // Remote Play's size check only says roughly. The pipeline makes its own call from the picture.
         let game = match tick.extra.get("size_new") {
             Some(v) => v.clone(),
             None => tick.new_hint.map(Value::Bool).unwrap_or(Value::Null),
@@ -75,7 +75,7 @@ impl TestMode {
             self.truth.remove(&(i - Self::KEEP));
             (tick.content, tick.truth_new, tick.new_hint) = (Some(i - 1), Some(false), Some(false));
         } else {
-            return None; // switched on at an odd frame: nothing to repeat yet
+            return None; // switched on at an odd frame, so nothing to repeat yet
         }
         Some(tick)
     }
@@ -89,7 +89,7 @@ pub fn apply(test: &Option<SharedTestMode>, tick: Tick) -> Option<Tick> {
     }
 }
 
-/// Any source with test mode applied as its ticks are taken (TestMode.wrap): for sources without a reader thread
+/// Any source with test mode applied as its ticks are taken (TestMode.wrap), for sources without a reader thread
 /// of their own. Waitings pass through.
 pub struct WithTestMode<S: Source> {
     pub source: S,

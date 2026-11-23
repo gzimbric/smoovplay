@@ -1,7 +1,7 @@
-// JSON as the core writes it: objects keep their key order (the settings file is rewritten in the core's own
-// layout), true and 1 stay different (JSONSerialization makes both an NSNumber), and a number keeps the text it came
+// JSON as the core writes it. Objects keep their key order, so the settings file is rewritten in the core's own
+// layout. true and 1 stay different, where JSONSerialization makes both an NSNumber. A number keeps the text it came
 // as, so a choice goes back to the core exactly as it was given ("set fsr_sharpness 1.0"). Numbers compare as
-// numbers: 1 and 1.0 are the same choice, as remote.py treats them.
+// numbers, so 1 and 1.0 are the same choice, as remote.py treats them.
 import Foundation
 
 public enum JSON: Equatable, Hashable, CustomStringConvertible, Sendable {

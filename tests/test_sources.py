@@ -141,7 +141,7 @@ def test_remote_play_through_a_fake_ps5(clip60, native):
     finally:
         out = fake.communicate(timeout=30)[0].decode(errors="replace")
         from framegen.chiaki_tap import unlink
-        unlink(tap)  # (POSIX shared memory outlives both processes)
+        unlink(tap)  # POSIX shared memory outlives both processes
     assert len(ticks) >= 20, out
     assert [t.index for t in ticks] == list(range(len(ticks)))
     for t in ticks:

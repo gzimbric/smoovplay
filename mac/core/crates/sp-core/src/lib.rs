@@ -1,11 +1,16 @@
 //! Shared types for SmoovPlay's macOS core.
 //!
-//! Every other crate builds on these: one Metal device and queue ([`gpu`]), frames that live on the GPU
-//! ([`Frame`]), what a source yields ([`Tick`], [`Waiting`], [`Event`]) and what it is ([`SourceInfo`]), the clock
-//! the frame tap and Python's `time.perf_counter()` share ([`clock`]), the 16x16 block means the repeat and cut
-//! detectors compare ([`stats`]), and the traits the pieces plug into ([`Source`], [`Interpolator`], [`Presenter`]).
+//! Every other crate builds on these:
 //!
-//! The Python pipeline (`framegen/`) is the reference: names and meanings follow it, so its docs and tests describe
+//! - [`gpu`]: one Metal device and queue.
+//! - [`Frame`]: a frame that lives on the GPU.
+//! - [`Tick`], [`Waiting`] and [`Event`]: what a source yields.
+//! - [`SourceInfo`]: what a source is.
+//! - [`clock`]: the clock the frame tap and Python's `time.perf_counter()` share.
+//! - [`stats`]: the 16x16 block means the repeat and cut detectors compare.
+//! - [`Source`], [`Interpolator`] and [`Presenter`]: the traits the pieces plug into.
+//!
+//! The Python pipeline (`framegen/`) is the reference. Names and meanings follow it, so its docs and tests describe
 //! these too.
 
 pub mod clock;

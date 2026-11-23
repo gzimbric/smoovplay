@@ -76,13 +76,13 @@ fn test_override_is_not_saved() {
 #[test]
 fn test_test_mode_is_this_session_only() {
     let path = tmp_dir("testmode").join("s.json");
-    std::fs::write(&path, r#"{"simulate_30": true}"#).unwrap(); // e.g. hand-edited: still starts off
+    std::fs::write(&path, r#"{"simulate_30": true}"#).unwrap(); // a hand-edited file still starts off
     let mut st = settings_at(&path);
     assert!(!st.get_bool("simulate_30"));
     let seen = Arc::new(Mutex::new(Vec::new()));
     let s2 = Arc::clone(&seen);
     st.watch(move |_, k| s2.lock().unwrap().push(k.to_string()));
-    st.set("simulate_30", true).unwrap(); // from the menu: applies (and is heard) but isn't written
+    st.set("simulate_30", true).unwrap(); // from the menu it applies (and is heard) but isn't written
     assert!(st.get_bool("simulate_30") && *seen.lock().unwrap() == ["simulate_30"]);
     st.set("overlay", false).unwrap();
     let f = saved(&path);
@@ -114,7 +114,7 @@ fn test_watchers_fire_on_change_only() {
     let s2 = Arc::clone(&seen);
     let stop = st.watch(move |_, k| s2.lock().unwrap().push(k.to_string()));
     st.set("hz", 90).unwrap();
-    st.set("hz", 90).unwrap(); // unchanged: no call
+    st.set("hz", 90).unwrap(); // unchanged, so no call
     st.override_value("interp", false).unwrap();
     st.unwatch(stop);
     st.set("hz", 60).unwrap();
@@ -123,8 +123,8 @@ fn test_watchers_fire_on_change_only() {
 
 #[test]
 fn test_every_setting_applies_where_the_menu_shows_it() {
-    // (test_every_setting_is_on_a_page and test_rows_that_dont_apply_are_hidden: the menu shows the settings that
-    // apply to the values; here, which those are)
+    // test_every_setting_is_on_a_page and test_rows_that_dont_apply_are_hidden. The menu shows the settings that
+    // apply to the values, and this checks which those are.
     let applies = |vals: &[(&str, Value)]| -> Vec<&'static str> {
         let m: Map = vals.iter().cloned().collect();
         let mut all = Settings::defaults().values();
@@ -188,7 +188,7 @@ fn test_impact_lines_are_plain_short_and_never_about_vfg() {
         }
     }
     for key in ["model", "vfg_quality"] {
-        assert!(spec(key).unwrap().impact.is_empty(), "{key}"); // NVIDIA's licence: no published figures
+        assert!(spec(key).unwrap().impact.is_empty(), "{key}"); // no published figures, by NVIDIA's licence
     }
     let data = settings::specs_json(&settings::default_path(), &LookChoices::builtin());
     assert!(!s(&data, "impact_pc").is_empty());
@@ -208,7 +208,7 @@ fn remote_with(
     let l2 = Arc::clone(&log);
     r.set_log(move |m| l2.lock().unwrap().push(m.to_string()));
     let input = commands.iter().map(|c| format!("{c}\n")).collect::<String>();
-    r.read_from(std::io::Cursor::new(input.into_bytes())).join().unwrap(); // (the reader thread, to the end)
+    r.read_from(std::io::Cursor::new(input.into_bytes())).join().unwrap(); // the reader thread, to the end
     (st, r, out, log)
 }
 
@@ -324,7 +324,7 @@ fn test_settings_for_one_source_say_why_not_with_the_others() {
     assert_eq!(size.unused_with("file").unwrap(), "Only used with a capture card.");
     assert_eq!(mini.unused_with("tap"), mini.unused_with("capture"));
     assert_eq!(mini.unused_with("tap").unwrap(), "Only used with PS5 Remote Play.");
-    assert!(spec("fill").unwrap().unused_with("tap").is_none()); // most settings: every source
+    assert!(spec("fill").unwrap().unused_with("tap").is_none()); // most settings are used with every source
     let data = settings::specs_json(&settings::default_path(), &LookChoices::builtin());
     let row = |k: &str| list(&data, "specs").iter().find(|r| s(r, "key") == k).unwrap().clone();
     assert_eq!(json::dumps(row("capture_size").get("sources").unwrap()), r#"["capture"]"#);
@@ -426,7 +426,7 @@ fn make_code(body: &[u8]) -> String {
 
 #[test]
 fn test_codes_from_a_newer_version() {
-    // a vignette with a setting this version doesn't have (bit 6, past roundness): skipped
+    // a vignette with a setting this version doesn't have (bit 6, past roundness), which is skipped
     let got = decode(&make_code(&[b"\x01X\x01".as_slice(), &[13 << 1], &[1 << 6], b"\x04"].concat())).unwrap();
     let want = normalize(&json::obj([("nodes", Value::List(vec![node("vignette", true, 1.0, &[])]))])).unwrap();
     assert_eq!(got.nodes, want.nodes);
@@ -537,7 +537,7 @@ fn test_k_and_j_and_the_launchers_preview() {
     assert_eq!(st.get_str("look"), "cinematic");
     ls.toggle(&mut st);
     assert!(ls.current(&st, &lib).is_none());
-    ls.next(&mut st, 1); // J while off: turns it on, as it was
+    ls.next(&mut st, 1); // J while off turns it on, as it was
     assert!(st.get_bool("look_on") && st.get_str("look") == "cinematic");
     ls.show(Some(&look_json("Editing", vec![node("vignette", true, 1.0, &[])]))).unwrap(); // the Looks page, live
     assert_eq!(ls.name(&st, &lib), "Editing");
@@ -547,7 +547,7 @@ fn test_k_and_j_and_the_launchers_preview() {
     st.set_look_choices(lib.choices());
     st.set("look", my.as_str()).unwrap();
     lib.delete(&my).unwrap();
-    ls.reload(&mut st, &mut lib); // its file was deleted: back to the default
+    ls.reload(&mut st, &mut lib); // its file was deleted, so back to the default
     assert_eq!(st.get_str("look"), looks::DEFAULT_LOOK);
     ls.close(&mut st);
 }
@@ -596,7 +596,7 @@ fn test_cube_files() {
 
 #[test]
 fn test_a_missing_lut_draws_nothing() {
-    // (test_a_lut_node: the stages part; the drawing is the renderer's)
+    // test_a_lut_node's stages part. The drawing is the renderer's.
     let lib = Library::new(tmp_dir("gone"));
     let gone = normalize(&look_json("", vec![node("lut", true, 1.0, &[("file", v("Gone.cube"))])])).unwrap();
     assert!(looks::stages(&gone, &|n| lib.lut(n).is_some()).is_empty());
@@ -609,7 +609,7 @@ fn test_passes() {
     assert_eq!(starts, [None, Some("blur"), Some("bloom")]);
     assert_eq!(st[0].nodes.iter().map(|n| n.type_key()).collect::<Vec<_>>(), ["color", "split"]);
     let sharpen = normalize(&look_json("", vec![node("sharpen", true, 1.0, &[])])).unwrap();
-    assert!(looks::stages(&sharpen, &|_| true)[0].start.is_none()); // the first pass: never a start
+    assert!(looks::stages(&sharpen, &|_| true)[0].start.is_none()); // the first pass never has a start
     let off = normalize(&look_json("", vec![node("color", false, 1.0, &[]), node("grain", true, 0.0, &[])])).unwrap();
     assert!(looks::stages(&off, &|_| true).is_empty());
 }
@@ -686,9 +686,9 @@ const H: i64 = 1080;
 
 #[test]
 fn test_fit_keeps_all_of_the_picture_with_bars() {
-    assert_eq!(fill::layout("fit", 3440, 1440, W, H), (2560, 1440, 440, 0)); // 21:9: bars at the sides
-    assert_eq!(fill::layout("fit", 1920, 1200, W, H), (1920, 1080, 0, 60)); // 16:10: bars top and bottom
-    assert_eq!(fill::layout("fit", 2560, 1440, W, H), (2560, 1440, 0, 0)); // 16:9: the whole screen
+    assert_eq!(fill::layout("fit", 3440, 1440, W, H), (2560, 1440, 440, 0)); // 21:9 has bars at the sides
+    assert_eq!(fill::layout("fit", 1920, 1200, W, H), (1920, 1080, 0, 60)); // 16:10 has bars top and bottom
+    assert_eq!(fill::layout("fit", 2560, 1440, W, H), (2560, 1440, 0, 0)); // 16:9 fills the whole screen
     assert_eq!(fill::layout("panorama", 3440, 1440, W, H), fill::layout("fit", 3440, 1440, W, H));
 }
 
@@ -700,7 +700,7 @@ fn test_zoom_fills_by_cropping_and_stretch_by_widening() {
     let cut = 1.0 - 1440.0 / dh as f64;
     assert!(0.24 < cut && cut < 0.27);
     let (_, dh, x0, y0) = fill::layout("zoom", 1920, 1200, W, H);
-    assert!((dh, y0) == (1200, 0) && x0 < 0); // 16:10: the sides cut instead
+    assert!((dh, y0) == (1200, 0) && x0 < 0); // on 16:10 the sides are cut instead
     assert_eq!(fill::layout("stretch", 3440, 1440, W, H), (3440, 1440, 0, 0));
     for f in fill::FILLS {
         assert_eq!(fill::layout(f, 2560, 1440, W, H), (2560, 1440, 0, 0), "{f}");
@@ -775,7 +775,7 @@ impl Default for Pick {
     }
 }
 
-/// test_autodetect.py pick(): every suggestion is a valid choice, with a reason.
+/// test_autodetect.py pick(). Every suggestion is a valid choice, with a reason.
 fn pick(p: Pick) -> autodetect::Recommendation {
     let mut current = Settings::defaults().values();
     for (k, x) in p.current {
@@ -857,7 +857,7 @@ fn test_laptop_leaves_more_room() {
 #[test]
 fn test_rtx_vsr_kept_only_where_it_fits() {
     let vsr = || vec![("scaler", v("vsr"))];
-    let r = pick(Pick { current: vsr(), ..Pick::default() }); // 90 fps leaves ~0.7 ms: not enough
+    let r = pick(Pick { current: vsr(), ..Pick::default() }); // 90 fps leaves about 0.7 ms, which isn't enough
     assert!(setting(&r, "scaler") == "fsr" && !r.settings.contains_key("vsr_quality"));
     let d60 = Some(disp(2560, 1440, 60, 60));
     let r = pick(Pick { current: vsr(), display: d60, ..Pick::default() });
@@ -901,7 +901,7 @@ fn test_rtx_40_and_50_cards_without_vfg_are_offered_it() {
     assert!(text.contains("NVIDIA's licence") && text.contains("Auto-detect times it"));
     assert!(!text.contains("driver")); // new enough
     let digit_ms = text.as_bytes().windows(3).any(|w| w[0].is_ascii_digit() && (w[1..] == *b"ms" || &w[1..] == b" m"));
-    assert!(!digit_ms && !text.contains("faster")); // NVIDIA's licence: no speed or quality claims
+    assert!(!digit_ms && !text.contains("faster")); // no speed or quality claims, by NVIDIA's licence
 }
 
 #[test]
@@ -909,7 +909,7 @@ fn test_vfg_offer_asks_for_a_newer_driver_first() {
     let gpu = "NVIDIA GeForce RTX 4070";
     assert!(autodetect::vfg_offer(true, gpu, Some("566.36")).contains("570.65 or newer, and this PC has 566.36"));
     assert!(!autodetect::vfg_offer(true, gpu, Some("570.65")).contains("driver"));
-    assert!(!autodetect::vfg_offer(true, gpu, None).contains("driver")); // unknown: VFG itself will say
+    assert!(!autodetect::vfg_offer(true, gpu, None).contains("driver")); // unknown, so VFG itself will say
     assert!(!autodetect::vfg_offer(true, gpu, Some("r570")).contains("driver"));
 }
 
@@ -944,7 +944,7 @@ fn test_detect_offers_vfg_only_where_it_can_be_set_up() {
     );
     let row = list(&r, "found").iter().find(|f| s(f, "label") == "NVIDIA VFG").unwrap().clone();
     assert_eq!(s(&row, "detail"), "Optional: see below.");
-    let r = detect_on(autodetect::VFG_NOT_SET_UP, "566.36"); // too old: offered, but the button waits for the driver
+    let r = detect_on(autodetect::VFG_NOT_SET_UP, "566.36"); // too old, so offered but the button waits for the driver
     assert!(s(&r, "vfg_offer").contains("566.36") && r.get("vfg_offer_ready") == Some(&v(false)));
     for why in [
         "NVIDIA VFG needs an RTX 40 or 50 series card.",
@@ -959,7 +959,7 @@ fn test_detect_offers_vfg_only_where_it_can_be_set_up() {
 #[test]
 fn test_auto_motion_is_half_where_full_doesnt_fit_this_card() {
     let sh = autodetect::SHARE;
-    assert_eq!(auto_scale(1920, 1080, 60, None, sh), 1.0); // no times saved: the plain rule
+    assert_eq!(auto_scale(1920, 1080, 60, None, sh), 1.0); // no times saved, so the plain rule
     assert_eq!(auto_scale(1920, 1080, 60, Some(19.7), sh), 0.5); // an RTX 2080 Ti
     assert_eq!(auto_scale(1920, 1080, 60, Some(14.4), sh), 1.0);
     assert_eq!(auto_scale(1920, 1080, 90, Some(9.3), sh), 1.0); // the card the rule was tuned on keeps full at 90
@@ -986,7 +986,7 @@ fn test_detect_saves_its_times_only_when_it_measured_them() {
     let path = tmp_dir("measured").join("settings.json");
     let mut st = settings_at(&path);
     let made_up = detect_on("", "621.24");
-    autodetect::finish(&mut st, &path, &made_up, false, false, false); // made-up times (--timing): not kept
+    autodetect::finish(&mut st, &path, &made_up, false, false, false); // made-up times (--timing) aren't kept
     assert_eq!(autodetect::saved_full_ms(&path, "NVIDIA GeForce RTX 4070"), None);
     let machine = Machine { gpu: "NVIDIA GeForce RTX 4070".into(), ..Machine::mac("x", 0.0, None) };
     let measured = autodetect::detect(&st.values(), &Machine { mac_mode: false, ..machine }, &timing(19.7, 14.5), None);
@@ -997,7 +997,7 @@ fn test_detect_saves_its_times_only_when_it_measured_them() {
 
 #[test]
 fn test_detect_apply_saves_the_suggestions_unless_setup_finds_the_card_busy() {
-    // (autodetect.main --apply and --if-new)
+    // autodetect.main --apply and --if-new
     let path = tmp_dir("apply").join("settings.json");
     let mut st = settings_at(&path);
     let mut busy_machine = Machine::mac("Apple M5 Max", 64.0, Some(disp(6016, 3384, 160, 160)));
@@ -1025,7 +1025,7 @@ fn test_vfg_is_suggested_when_it_keeps_up_at_least_as_well() {
 
 #[test]
 fn test_this_mac_reads_its_display_and_chip() {
-    // (primary_display() and gpu.name() on a Mac; on another machine they just say they can't)
+    // primary_display() and gpu.name() on a Mac. On another machine they say they can't.
     if cfg!(target_os = "macos") {
         let d = autodetect::primary_display().expect("the main display");
         assert!(d.width >= 640 && d.height >= 480 && d.hz >= 24 && d.max_hz >= d.hz, "{d:?}");

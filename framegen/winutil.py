@@ -157,7 +157,7 @@ def boost_thread(task: str = "Games") -> bool:
     """Registers the calling thread with Windows' multimedia class scheduler (MMCSS) under `task`, at high
     priority, so it gets the CPU on time. Lasts until the thread ends. Returns whether it worked.
 
-    On a Mac: the thread's quality of service becomes user-interactive, the class macOS keeps on the performance
+    On a Mac the thread's quality of service becomes user-interactive, the class macOS keeps on the performance
     cores for work that's on screen right now."""
     if sys.platform == "darwin" and os.environ.get("FRAMEGEN_NO_BOOST") != "1":
         try:
@@ -193,7 +193,7 @@ def keep_screen_on(on: bool = True) -> bool:
     isn't input to Windows: only a keyboard or a mouse is (chiaki-ng only asks on Linux). Lasts until the calling
     thread ends or calls again with on=False. Returns whether it worked.
 
-    On a Mac, `caffeinate -d -i` does the same while this process runs (and is stopped by on=False)."""
+    On a Mac, `caffeinate -d -i` does the same while this process runs, and on=False stops it."""
     if sys.platform == "darwin":
         return _caffeinate(on)
     if sys.platform != "win32":
@@ -221,7 +221,7 @@ def _caffeinate(on: bool) -> bool:
         return True
     if _caffeinated is not None and _caffeinated.poll() is None:
         return True
-    try:  # -w: it ends by itself when this process does, even if it never gets to call on=False
+    try:  # with -w it ends by itself when this process does, even if on=False never comes
         _caffeinated = subprocess.Popen(["caffeinate", "-d", "-i", "-w", str(os.getpid())],
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True

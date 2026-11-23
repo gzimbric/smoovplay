@@ -1,5 +1,5 @@
-// Connect your PS5 (Ui.cs BuildGuide), and the other sources' setup guides: steps to tick off, remembered in the
-// prefs as "guide:<id>". The PS5's, done, makes the app open on Play.
+// Connect your PS5 (Ui.cs BuildGuide) and the other sources' setup guides. Each is a list of steps to tick off,
+// remembered in the prefs as "guide:<id>". Once the PS5's is done, the app opens on Play.
 import SmoovPlayKit
 import SwiftUI
 
@@ -14,7 +14,7 @@ enum Guides {
         GuideStep(id: "rest", title: "Let it wake from rest mode (optional)", text: "Settings → System → Power Saving → Features Available in Rest Mode: turn on Stay Connected to the Internet and Enable Turning On PS5 from Network."),
         GuideStep(id: "psn", title: "Sign in to PSN in chiaki-ng", text: "Open chiaki-ng. When it asks, sign in to PlayStation Network in the browser window it opens, then paste the address you land on back into chiaki-ng.", action: "chiaki"),
         GuideStep(id: "register", title: "Register your PS5", text: "chiaki-ng finds consoles on your network. Click the one marked Automatic Registration Available and choose Yes. Not offered? Use a PIN from the PS5: Settings → System → Remote Play → Link Device."),
-        GuideStep(id: "video", title: "Stream at 60 fps", text: "In chiaki-ng's settings, under Video: resolution 1080p (720p on a weak connection) and 60 fps. Pick a codec without HDR: on a Mac, SmoovPlay shows an HDR stream in SDR. SmoovPlay warns you if it's set differently."),
+        GuideStep(id: "video", title: "Stream at 60 fps", text: "In chiaki-ng's settings, under Video: resolution 1080p (720p on a weak connection) and 60 fps. Pick a codec without HDR, since on a Mac SmoovPlay shows an HDR stream in SDR. SmoovPlay warns you if it's set differently."),
         GuideStep(id: "hdcp", title: "Black picture? Turn off HDCP", text: "Only if you need it: if the picture stays black, or the PS5 says the content can't be shown, go to Settings → System → HDMI on the PS5, turn off Enable HDCP and connect again. Video apps like Netflix need HDCP, so turn it back on when you're done playing."),
         GuideStep(id: "controller", title: "Connect your controller", text: "Plug it into the Mac with USB or pair it over Bluetooth. It keeps working while chiaki-ng's window is hidden."),
         GuideStep(id: "play", title: "Press Play", text: "Always start from SmoovPlay: press Play, then connect to your PS5 in chiaki-ng. The smooth video opens in its own window, and chiaki-ng's window is hidden until you stop.", action: "play"),
@@ -22,8 +22,8 @@ enum Guides {
 
     static let window: [GuideStep] = [
         GuideStep(id: "window-app", title: "Open the app and start a game", text: "PS Remote Play, Moonlight, Steam Link, GeForce NOW, or a browser for cloud gaming. If the app has a frame rate setting, pick 60 fps."),
-        GuideStep(id: "window-permission", title: "Allow Screen Recording", text: "SmoovPlay copies the app's window with macOS's screen capture. macOS asks the first time you pick App window; you can also turn on SmoovPlay in System Settings > Privacy & Security > Screen & System Audio Recording, then open SmoovPlay again."),
-        GuideStep(id: "window-screen", title: "Keep its window open", text: "Not minimised. Windows on top of it don't matter: SmoovPlay copies the window on its own. A window in its own full-screen space works too."),
+        GuideStep(id: "window-permission", title: "Allow Screen Recording", text: "SmoovPlay copies the app's window with macOS's screen capture. macOS asks the first time you pick App window. You can also turn on SmoovPlay in System Settings > Privacy & Security > Screen & System Audio Recording, then open SmoovPlay again."),
+        GuideStep(id: "window-screen", title: "Keep its window open", text: "Not minimised. Windows on top of it don't matter, because SmoovPlay copies the window on its own. A window in its own full-screen space works too."),
         GuideStep(id: "window-sound", title: "Sound and controller", text: "The app keeps the controller, the keyboard and its own sound. Its sound comes a little ahead of the smooth picture."),
         GuideStep(id: "window-play", title: "Pick the window, then press Play", text: "Choose the app's window under the source buttons on the Play page. The app keeps the keyboard, so SmoovPlay's keys use Control-Option: Control-Option-M menu, Control-Option-F fullscreen, Control-Option-Esc quit. The Play page lists them all, and you can change them there.", action: "play"),
     ]
@@ -32,7 +32,7 @@ enum Guides {
         GuideStep(id: "capture-wire", title: "Connect the card", text: "The console's HDMI output goes into the card's HDMI input, and the card into this Mac (USB 3 or Thunderbolt). A card with an HDMI output can pass the picture on to your TV too."),
         GuideStep(id: "capture-hdcp", title: "Turn off HDCP on a PS5", text: "On the PS5: Settings → System → HDMI → turn off Enable HDCP. With it on, the card only gets a blank picture. Turn it back on when you're done: video apps like Netflix need it."),
         GuideStep(id: "capture-mode", title: "1080p, 60 Hz, HDR off", text: "Set the console's video output to 1080p at 60 Hz, with HDR off. SmoovPlay expects a 60 Hz signal, in which a 30 fps game shows each frame twice."),
-        GuideStep(id: "capture-sound", title: "Sound and controller", text: "Your controller stays connected to the console as usual. On a Mac SmoovPlay doesn't play the card's sound yet: listen through the card's HDMI output."),
+        GuideStep(id: "capture-sound", title: "Sound and controller", text: "Your controller stays connected to the console as usual. On a Mac SmoovPlay doesn't play the card's sound yet, so listen through the card's HDMI output."),
         GuideStep(id: "capture-play", title: "Press Play", text: "The smooth video from the card opens in its own window.", action: "play"),
     ]
 
@@ -200,7 +200,7 @@ struct HelpPage: View {
                                 HStack(spacing: 8) { KeyCap(key: k); Text(t).font(.system(size: 12.5)).foregroundStyle(Color.text2) }
                             }
                         }
-                        Small("From any app: Control-Option-R saves the instant replay and Control-Option-B a before & after, while instant replay is on (Settings). Playing from an app's window? The app keeps the keyboard, so the video window's keys use Control-Option there: Control-Option-M menu, Control-Option-F fullscreen, Control-Option-Esc quit. The Play page lists them all and lets you change them.")
+                        Small("From any app, Control-Option-R saves the instant replay and Control-Option-B a before & after, while instant replay is on (Settings). Playing from an app's window? The app keeps the keyboard, so the video window's keys use Control-Option there: Control-Option-M menu, Control-Option-F fullscreen, Control-Option-Esc quit. The Play page lists them all and lets you change them.")
                         Small("Only 60 fps games? Test with a 60 fps game, on the Play page, plays one as if it were 30 fps.")
                         Small("chiaki-ng is an unofficial Remote Play app. SmoovPlay and chiaki-ng are independent projects, not made, supported or endorsed by Sony Interactive Entertainment. PlayStation and PS5 are its trademarks.", color: .muted)
                     }
@@ -208,7 +208,7 @@ struct HelpPage: View {
                 Card {
                     VStack(alignment: .leading, spacing: 10) {
                         Overline(text: "THE CORE")
-                        Small("What plays the video: the Python pipeline (run.py) today, or the Rust core once it's built. Both take the same command line and the same commands.")
+                        Small("The Python pipeline (run.py) plays the video today, or the Rust core once it's built. Both take the same command line and the same commands.")
                         Picker("", selection: Binding(get: { ["python", "rust"].contains(m.coreChoice) ? m.coreChoice : "custom" },
                                                       set: { v in if v == "custom" { if !customCore.isEmpty { m.coreChoice = customCore } } else { m.coreChoice = v } })) {
                             Text("Python (run.py)").tag("python")

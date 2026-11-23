@@ -1,10 +1,10 @@
 //! Parity with the Python Mac engine (framegen/interpolator.py RifeInterpolator on MPS) on real frames from the
-//! test clip: mac/core/tools/rife_fixtures.py writes the frames, the Python outputs and their scores against the
-//! real in-between frames into mac/core/fixtures/rife/. Skipped (with a note) when the fixtures or weights are
+//! test clip. mac/core/tools/rife_fixtures.py writes the frames, the Python outputs and their scores against the
+//! real in-between frames into mac/core/fixtures/rife/. Skipped with a note when the fixtures or weights are
 //! missing.
 //!
-//! Checks per case: PSNR of the Rust output against the Python output, and that the Rust output scores the same
-//! against the real frame as the Python did (within 0.05 dB).
+//! For each case it checks the PSNR of the Rust output against the Python output, and that the Rust output scores
+//! the same against the real frame as the Python did, within 0.05 dB.
 
 use std::path::{Path, PathBuf};
 

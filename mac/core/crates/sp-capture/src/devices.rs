@@ -2,12 +2,13 @@
 //! AVFoundation lists them, the ways a card can send video, the one SmoovPlay asks for ([`pick_mode`]), and the
 //! card's own sound device ([`pick_audio`]).
 //!
-//! AVFoundation's formats come as FourCCs; they're named here as FFmpeg names them, so pick_mode is Python's as it
-//! stands and `--formats NAME --json` reads the same: '420v' / '420f' are "nv12" (limited / full range), 'yuvs' is
-//! "yuyv422", '2vuy' "uyvy422", 'dmb1' "mjpeg", 'x420' "p010" (10-bit, noted and not used, as on Windows).
+//! AVFoundation's formats come as FourCCs. They're named here as FFmpeg names them, so pick_mode is Python's as it
+//! stands and `--formats NAME --json` reads the same. '420v' and '420f' are "nv12" (limited and full range), 'yuvs'
+//! is "yuyv422", '2vuy' "uyvy422", 'dmb1' "mjpeg" and 'x420' "p010", which is 10-bit and noted but not used, as on
+//! Windows.
 //!
-//! Listing reads AVFoundation's device list and each device's format list; neither opens a device (nothing is
-//! captured, and macOS asks nothing).
+//! Listing reads AVFoundation's device list and each device's format list. Neither opens a device, so nothing is
+//! captured and macOS asks nothing.
 
 use objc2::rc::Retained;
 use objc2_av_foundation::{
@@ -24,8 +25,8 @@ use objc2_core_media::{
 use objc2_foundation::NSArray;
 use serde::{Deserialize, Serialize};
 
-/// Raw formats, best first: NV12 is the smallest uncompressed format (4:2:0), YUY2/UYVY are 4:2:2 (more USB
-/// bandwidth, the same picture after 4:2:0 HDMI sources). Anything compressed comes after all of them.
+/// Raw formats, best first. NV12 is the smallest uncompressed format (4:2:0). YUY2 and UYVY are 4:2:2, which takes
+/// more USB bandwidth for the same picture from 4:2:0 HDMI sources. Anything compressed comes after all of them.
 pub const RAW_RANK: &[(&str, u32)] =
     &[("nv12", 0), ("yuyv422", 1), ("uyvy422", 2), ("yuv420p", 3), ("bgr24", 4), ("bgr0", 4), ("rgb24", 4)];
 pub const COMPRESSED_RANK: &[(&str, u32)] = &[("mjpeg", 10)];
@@ -38,7 +39,7 @@ pub const BYTES_PER_PIXEL: &[(&str, f64)] = &[
     ("rgb24", 3.0),
     ("bgr0", 4.0),
 ];
-/// A card's 10-bit formats (HDR): noted, not used (capture.py's _UNREADABLE).
+/// A card's 10-bit formats (HDR), noted but not used (capture.py's _UNREADABLE).
 pub const UNREADABLE: &[&str] = &["p010", "p016", "p210"];
 
 fn rank(fmt: &str) -> Option<u32> {
@@ -69,16 +70,16 @@ impl Device {
 /// One way a device can send video (capture.py Mode, the same fields in the same order).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Mode {
-    /// Pixel format for raw video ("nv12", "yuyv422", ...), or the codec ("mjpeg", "h264").
+    /// Pixel format for raw video, such as "nv12" or "yuyv422", or the codec ("mjpeg", "h264").
     pub fmt: String,
     pub raw: bool,
     pub w: u32,
     pub h: u32,
     pub fps_min: f64,
     pub fps_max: f64,
-    /// "tv" (limited) or "pc" (full) when the card says; "" when it doesn't.
+    /// "tv" (limited) or "pc" (full) when the card says, and "" when it doesn't.
     pub range: String,
-    /// Colour matrix, when the card says ("bt709", "bt470bg", ...).
+    /// Colour matrix, such as "bt709" or "bt470bg", when the card says.
     pub space: String,
 }
 
@@ -98,7 +99,7 @@ impl Mode {
     }
 }
 
-/// Python's `f"{x:g}"`: six significant digits, no trailing zeros.
+/// Python's `f"{x:g}"`, six significant digits with no trailing zeros.
 pub fn g(x: f64) -> String {
     if x == 0.0 {
         return "0".into();
@@ -123,10 +124,10 @@ pub fn g(x: f64) -> String {
 pub const USB2_NOTE: &str = "the card offers 1280x720 at 30 fps at most, as cards do on a USB 2 port: connect it to a \
                              USB 3 port (on the Mac itself, or a USB 3 hub)";
 
-/// The mode to ask for, and a note for the log when it isn't what we'd want ("" when it is) (capture.py pick_mode).
+/// The mode to ask for, and a note for the log when it isn't what we'd want, or "" when it is (capture.py pick_mode).
 ///
-/// The size asked for if the card has it (else the largest at or under it, else the smallest), at a rate that
-/// reaches `fps` if possible, in the best format: raw before compressed, NV12 first.
+/// The size asked for if the card has it, else the largest at or under it, else the smallest. The rate reaches `fps`
+/// if possible, and the format is the best one, raw before compressed and NV12 first.
 pub fn pick_mode(modes: &[Mode], w: u32, h: u32, fps: f64) -> (Option<Mode>, String) {
     if modes.is_empty() {
         return (None, "the card listed no video formats".into());
@@ -149,7 +150,7 @@ pub fn pick_mode(modes: &[Mode], w: u32, h: u32, fps: f64) -> (Option<Mode>, Str
         (w, h)
     } else {
         let under: Vec<(u32, u32)> = sizes.iter().copied().filter(|s| s.0 <= w && s.1 <= h).collect();
-        // (the first of equal areas, in the card's order)
+        // the first of equal areas, in the card's order
         let best = |v: &[(u32, u32)], larger: bool| {
             let mut pick = v[0];
             for s in &v[1..] {
@@ -198,7 +199,8 @@ pub fn pick_mode(modes: &[Mode], w: u32, h: u32, fps: f64) -> (Option<Mode>, Str
     (Some(best.clone()), notes.join("; "))
 }
 
-/// The rate to ask a mode for (capture.py open_options' framerate): `fps` if the mode reaches it, else its fastest.
+/// The rate to ask a mode for (capture.py open_options' framerate). That's `fps` if the mode reaches it, else its
+/// fastest.
 pub fn open_rate(mode: &Mode, fps: f64) -> f64 {
     if mode.fps_max >= fps - 0.5 { fps.min(mode.fps_max) } else { mode.fps_max }
 }
@@ -229,8 +231,8 @@ fn not_to_use(name: &str) -> bool {
     low.match_indices("not to use").any(|(i, m)| !word(low[..i].chars().last()) && !word(low[i + m.len()..].chars().next()))
 }
 
-/// A device's name without a "-Video"/"-Audio" ending, lower case ("Live Gamer Ultra 2.1-Video" -> "live gamer
-/// ultra 2.1"), unless only generic words would be left ("USB Video" stays as it is).
+/// A device's name without a "-Video" or "-Audio" ending, in lower case, so "Live Gamer Ultra 2.1-Video" becomes
+/// "live gamer ultra 2.1". A name that would leave only generic words stays as it is, like "USB Video".
 fn card_name(name: &str) -> String {
     let low = name.to_lowercase().trim().to_string();
     let core = ["video", "audio"]
@@ -243,10 +245,10 @@ fn card_name(name: &str) -> String {
     }
 }
 
-/// The capture card's own sound device: one named like the video device (e.g. "USB3.0 Capture" and "Digital Audio
-/// Interface (USB3.0 Capture)", "Cam Link 4K" for both, or "Live Gamer Ultra 2.1-Video" and "HDMI/Line In (Live
-/// Gamer Ultra 2.1-Audio)"), else None. A device whose name says nothing (only generic words) matches only on the
-/// whole name. AVerMedia's "Not To Use" sound device is never picked.
+/// The capture card's own sound device, which is one named like the video device, else None. For example "USB3.0
+/// Capture" and "Digital Audio Interface (USB3.0 Capture)", "Cam Link 4K" for both, or "Live Gamer Ultra 2.1-Video"
+/// and "HDMI/Line In (Live Gamer Ultra 2.1-Audio)". A device whose name says nothing (only generic words) matches
+/// only on the whole name. AVerMedia's "Not To Use" sound device is never picked.
 pub fn pick_audio(video: &str, devices: &[Device]) -> Option<String> {
     let audio: Vec<&str> = devices
         .iter()
@@ -296,7 +298,7 @@ pub fn format_name(code: u32) -> (String, bool, &'static str) {
         b"dmb1" | b"jpeg" | b"mjpa" | b"mjpb" => ("mjpeg", false, ""),
         b"avc1" => ("h264", false, ""),
         b"hvc1" | b"hev1" => ("hevc", false, ""),
-        // 10-bit: noted, not used (raw false, as Windows' "unknown compression type" lists them)
+        // 10-bit, noted but not used, with raw false as Windows' "unknown compression type" lists them
         b"x420" => ("p010", false, "tv"),
         b"xf20" => ("p010", false, "pc"),
         b"x422" => ("p210", false, "tv"),
@@ -321,7 +323,7 @@ fn space_name(matrix: &str) -> &'static str {
 }
 
 /// A Mode from what AVFoundation says of a format and one of its frame rate ranges. Rates are rounded to 1/1000
-/// (59.94005994 reads as 59.94); the device is opened with the range's own frame durations.
+/// (59.94005994 reads as 59.94). The device is opened with the range's own frame durations.
 pub fn mode_of(code: u32, w: u32, h: u32, fps_min: f64, fps_max: f64, matrix: Option<&str>, full: Option<bool>) -> Mode {
     let (fmt, raw, range) = format_name(code);
     let r3 = |x: f64| (x * 1000.0).round() / 1000.0;
@@ -369,8 +371,8 @@ fn cfbool(v: Option<CFRetained<objc2_core_foundation::CFPropertyList>>) -> Optio
 }
 
 /// A device's modes, one per format and frame rate range, in AVFoundation's order except that a limited-range
-/// format comes before the same one in full range (HDMI video is limited range unless the card says otherwise, and
-/// pick_mode takes the first of equals). Duplicates are dropped.
+/// format comes before the same one in full range. HDMI video is limited range unless the card says otherwise, and
+/// pick_mode takes the first of equals. Duplicates are dropped.
 pub fn device_modes(device: &AVCaptureDevice) -> Vec<DeviceMode> {
     let mut out: Vec<DeviceMode> = Vec::new();
     unsafe {
@@ -396,7 +398,7 @@ pub fn device_modes(device: &AVCaptureDevice) -> Vec<DeviceMode> {
             }
         }
     }
-    // stable: "tv" before "pc" for otherwise equal modes
+    // stable, so "tv" stays before "pc" for otherwise equal modes
     let same = |a: &Mode, b: &Mode| (a.fmt.as_str(), a.w, a.h, a.fps_max) == (b.fmt.as_str(), b.w, b.h, b.fps_max);
     let mut i = 1;
     while i < out.len() {
@@ -450,13 +452,14 @@ fn describe(d: &AVCaptureDevice, kind: &str) -> Device {
     unsafe { Device { name: d.localizedName().to_string(), kind: kind.into(), alt: d.uniqueID().to_string() } }
 }
 
-/// The capture devices the Mac has (capture.py list_devices): video ones first, then sound.
+/// The capture devices the Mac has (capture.py list_devices), video ones first, then sound.
 pub fn list_devices() -> Vec<Device> {
     let (video, audio) = av_devices();
     video.iter().map(|d| describe(d, "video")).chain(audio.iter().map(|d| describe(d, "audio"))).collect()
 }
 
-/// Whether a device carries sound itself (its own input has an audio port: a muxed device, or one with both).
+/// Whether a device carries sound itself, because its own input has an audio port. That's a muxed device, or one
+/// with both.
 pub fn has_sound(d: &AVCaptureDevice) -> bool {
     unsafe {
         AVMediaTypeAudio.is_some_and(|a| d.hasMediaType(a)) || AVMediaTypeMuxed.is_some_and(|m| d.hasMediaType(m))
@@ -469,8 +472,8 @@ pub fn find_video(spec: &str) -> Option<Retained<AVCaptureDevice>> {
     find_in(&video, spec)
 }
 
-/// A sound device by unique ID, name, or number among the sound devices; a video device's own sound when it's
-/// named.
+/// A sound device by unique ID, name, or number among the sound devices. Naming a video device gives its own
+/// sound.
 pub fn find_audio(spec: &str) -> Option<Retained<AVCaptureDevice>> {
     let (video, audio) = av_devices();
     find_in(&audio, spec).or_else(|| find_in(&video, spec).filter(|d| has_sound(d)))
@@ -500,8 +503,8 @@ struct DevicesJson<'a> {
     error: Option<&'a str>,
 }
 
-/// `--list --json`: {"video": [...], "audio": [...]} (devices of unknown kind with the video ones), keys in the
-/// Python's order.
+/// `--list --json`: {"video": [...], "audio": [...]}, with devices of unknown kind among the video ones and keys in
+/// the Python's order.
 pub fn devices_json(devices: &[Device], error: Option<&str>) -> String {
     serde_json::to_string(&DevicesJson {
         video: devices.iter().filter(|d| d.kind == "video" || d.kind == "unknown").collect(),

@@ -1,12 +1,13 @@
 //! The pipeline's view of pixels: the block means the repeat and cut detectors compare, the delay test's 18x32
-//! brightness blocks, and the sums --score adds up. [`GpuProbe`] does all three with small Metal kernels reading the
-//! frames where they are; [`CpuProbe`] reads them back with `Frame::to_bgr` (slow: the reference, and for tests).
+//! brightness blocks, and the sums --score adds up. [`GpuProbe`] does all three with small Metal kernels that read
+//! the frames where they are. [`CpuProbe`] reads them back with `Frame::to_bgr`. It is slow, and serves as the
+//! reference and for tests.
 //!
-//! Block means: the sums are exact (each 8-bit level added as an integer, divided once on the CPU), so they equal
-//! torch's avg_pool2d on the same uint8 frame bit for bit, which the parity traces rely on. sp_core::stats::block_means
-//! adds normalised floats and comes out up to ~1e-4 off, enough to flip a frame that changes by exactly the
-//! threshold (2 levels) from repeat to new. An HDR (RGBA16F, PQ) frame is taken at its 8-bit stand-in (hdr.py to_u8:
-//! level8, truncated).
+//! The block-mean sums are exact, with each 8-bit level added as an integer and divided once on the CPU. So they
+//! equal torch's avg_pool2d on the same uint8 frame bit for bit, which the parity traces rely on.
+//! sp_core::stats::block_means adds normalised floats and comes out up to about 1e-4 off. That is enough to flip a
+//! frame that changes by exactly the threshold (2 levels) from repeat to new. An HDR frame (RGBA16F, PQ) is taken at
+//! its 8-bit stand-in, hdr.py's to_u8 (level8, truncated).
 
 use std::ptr::NonNull;
 use std::sync::OnceLock;
@@ -25,11 +26,12 @@ use crate::delaytest::{self, BLOCKS};
 use crate::score::{self, ScoreSums};
 
 pub trait Probe: Send {
-    /// 16x16 block means, 0..255, BGR (the DuplicateDetector's input).
+    /// 16x16 block means, 0 to 255, BGR (the DuplicateDetector's input).
     fn block_means(&mut self, frame: &Frame) -> BlockMeans;
     /// The delay test's 18x32 brightness blocks (framegen/delaytest.py small()).
     fn small(&mut self, frame: &Frame) -> Vec<f32>;
-    /// --score's sums: a the previous real frame, b the next one, out the AI frame, gt the real in-between one.
+    /// --score's sums. `a` is the previous real frame, `b` the next one, `out` the AI frame and `gt` the real
+    /// in-between one.
     fn score(&mut self, a: &Frame, b: &Frame, out: &Frame, gt: &Frame) -> ScoreSums;
 }
 
@@ -39,13 +41,14 @@ using namespace metal;
 
 struct Params { uint kind; float l8; uint step; uint seg; };
 
-// A pixel's R, G, B in 8-bit levels: BGRA8 as its 0..255 value, RGBA16F (PQ) through hdr.py's level8.
+// A pixel's R, G and B in 8-bit levels. BGRA8 gives its 0 to 255 value, and RGBA16F (PQ) goes through hdr.py's
+// level8.
 inline float3 lv8(float4 p, constant Params &q) {
     return q.kind == 0 ? rint(p.rgb * 255.0) : clamp(p.rgb * q.l8, 0.0, 255.0);
 }
 
-// Exact 16x16 block sums of the 8-bit levels (an HDR frame's to_u8 stand-in: truncated), B, G, R per block. One
-// 16x16 threadgroup per block, a pixel a thread, added up in integers through the simdgroups.
+// Exact 16x16 block sums of the 8-bit levels, B, G, R per block. An HDR frame uses its truncated to_u8 stand-in.
+// One 16x16 threadgroup per block and one pixel per thread, added up in integers through the simdgroups.
 kernel void block_sums(texture2d<float, access::read> src [[texture(0)]],
                        device uint *out [[buffer(0)]],
                        constant Params &q [[buffer(1)]],
@@ -99,7 +102,7 @@ inline float lum(texture2d<float, access::read> g, int x, int y, int w, int h, c
 
 inline float maxabs(float3 d) { d = abs(d); return max(d.x, max(d.y, d.z)); }
 
-// --score's per-pixel numbers over a run of `seg` pixels of one row: 11 partial sums per thread.
+// --score's per-pixel numbers over a run of `seg` pixels in one row, as 11 partial sums per thread.
 kernel void score_parts(texture2d<float, access::read> ta [[texture(0)]],
                         texture2d<float, access::read> tb [[texture(1)]],
                         texture2d<float, access::read> to [[texture(2)]],
@@ -141,8 +144,8 @@ kernel void score_parts(texture2d<float, access::read> ta [[texture(0)]],
 }
 "#;
 
-/// Pixels of one row each score thread adds up: per-thread sums of 8-bit squared errors stay under 2^24, so the
-/// float32 partials are exact and the CPU's float64 total is too.
+/// Pixels of one row each score thread adds up. Per-thread sums of 8-bit squared errors stay under 2^24, so the
+/// float32 partials are exact and so is the CPU's float64 total.
 const SEG: usize = 64;
 
 #[repr(C)]
@@ -171,7 +174,7 @@ fn kernels() -> &'static Kernels {
     K.get_or_init(|| {
         let gpu = Gpu::shared();
         let options = MTLCompileOptions::new();
-        options.setMathMode(MTLMathMode::Safe); // IEEE arithmetic: the sums must match the CPU's
+        options.setMathMode(MTLMathMode::Safe); // IEEE arithmetic, because the sums must match the CPU's
         let lib = gpu
             .device
             .newLibraryWithSource_options_error(&NSString::from_str(SHADER), Some(&options))
@@ -233,8 +236,8 @@ fn dispatch<T: Copy>(pipe: &Pipe, frames: &[&Frame], p: Params, grid: Grid, n: u
     }
 }
 
-/// All three on the GPU: a block-means pass is one small dispatch (~0.1 ms at 1080p), scoring one pass over the four
-/// frames plus 2000-odd floats added up on the CPU.
+/// All three on the GPU. A block-means pass is one small dispatch (about 0.1 ms at 1080p). Scoring is one pass over
+/// the four frames plus 2000-odd floats added up on the CPU.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GpuProbe;
 
@@ -297,8 +300,8 @@ impl Probe for GpuProbe {
     }
 }
 
-/// The same from frames read back to the CPU (SDR frames only): slow at 1080p (four 8 MB read-backs and a scalar
-/// pass, about 30 ms), so only for tests and as the reference.
+/// The same from frames read back to the CPU, for SDR frames only. It is slow at 1080p, about 30 ms for four 8 MB
+/// read-backs and a scalar pass, so it is only for tests and as the reference.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CpuProbe;
 

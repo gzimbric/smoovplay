@@ -14,10 +14,10 @@ Compared with a capture card, each frame also carries what the stream knows abou
   - damaged: frames were lost before this one, or it's the PS5's recovery frame after a loss. The pipeline
     holds instead of interpolating, so a broken frame isn't smeared into the generated one.
 
-Windows: a named file mapping and a named event. macOS (and Linux): the same layout in POSIX shared memory
-(shm_open), named from the Windows name by posix_name ("Local\\chiaki-frametap" is "/chiaki-frametap"). There's no
-event there: a reader polls the header every half millisecond while it waits (FrameTap.wait). Times are
-QueryPerformanceCounter ticks on Windows, and a monotonic clock in nanoseconds elsewhere (qpc_freq 1e9).
+Windows: a named file mapping and a named event. macOS and Linux: the same layout in POSIX shared memory
+(shm_open), named from the Windows name by posix_name, so "Local\\chiaki-frametap" becomes "/chiaki-frametap".
+There's no event there, so a reader polls the header every half millisecond while it waits (FrameTap.wait). Times
+are QueryPerformanceCounter ticks on Windows, and a monotonic clock in nanoseconds elsewhere (qpc_freq 1e9).
 """
 
 from __future__ import annotations
@@ -87,10 +87,10 @@ AUDIO_TOTAL = AUDIO_HEADER + AUDIO_SLOTS * AUDIO_SLOT_SIZE
 BUTTON_OPTIONS, BUTTON_PS = 1 << 12, 1 << 15  # ChiakiControllerButton
 
 WINDOWS = sys.platform == "win32"
-# POSIX shared memory names: "/" and the name, at most this long with the "/" (macOS's PSHMNAMLEN).
+# POSIX shared memory names are "/" and the name, at most this long with the "/" (macOS's PSHMNAMLEN).
 SHM_NAME_MAX = 31 if sys.platform == "darwin" else 255
 POLL_S = 0.0005  # POSIX: how often a waiting reader looks at the header (about 0.6% of a core while it waits)
-_WATCH = struct.Struct("<I28xQ4xI")  # magic, write_seq, session: what changes when a frame comes or a stream starts
+_WATCH = struct.Struct("<I28xQ4xI")  # magic, write_seq and session, which change when a frame comes or a stream starts
 
 if WINDOWS:
     _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -111,12 +111,12 @@ if WINDOWS:
         return freq.value
 
     def _fence() -> None:
-        pass  # (x86 keeps stores in order, and the Windows writers' Interlocked calls are full barriers)
+        pass  # x86 keeps stores in order, and the Windows writers' Interlocked calls are full barriers
 else:
     def qpc() -> int:
-        """Now, in nanoseconds: time.monotonic_ns(), which on macOS is mach_absolute_time (the clock frametap.c reads
-        with clock_gettime_nsec_np(CLOCK_UPTIME_RAW); macOS's CLOCK_MONOTONIC also counts time asleep, so it's off by
-        days) and on Linux CLOCK_MONOTONIC. The header's qpc_freq is then 1e9."""
+        """Now, in nanoseconds, from time.monotonic_ns(). On macOS that's mach_absolute_time, the clock frametap.c reads
+        with clock_gettime_nsec_np(CLOCK_UPTIME_RAW). macOS's CLOCK_MONOTONIC would be off by days, because it also
+        counts time asleep. On Linux it's CLOCK_MONOTONIC. The header's qpc_freq is then 1e9."""
         return time.monotonic_ns()
 
     def qpc_freq() -> int:
@@ -127,15 +127,16 @@ else:
     try:
         _fence = ctypes.CDLL(None).OSMemoryBarrier
         _fence.restype, _fence.argtypes = None, []
-    except (OSError, AttributeError):  # (not macOS)
+    except (OSError, AttributeError):  # not macOS
         def _fence() -> None:
             pass
 
 
 def posix_name(name: str) -> str:
-    """A tap's name as a POSIX shared-memory name: what follows the last backslash, after a "/" ("Local\\chiaki-frametap"
-    is "/chiaki-frametap"; "/name" and "name" are "/name" too). ValueError if nothing is left, it has a "/" in it, or
-    it's too long for this system (macOS: SHM_NAME_MAX, 31 characters with the "/")."""
+    """A tap's name as a POSIX shared-memory name, which is "/" and what follows the last backslash.
+    "Local\\chiaki-frametap" becomes "/chiaki-frametap", and "/name" and "name" both become "/name". ValueError if
+    nothing is left, it has a "/" in it, or it's too long for this system (SHM_NAME_MAX, 31 characters with the "/" on
+    macOS)."""
     base = name.rsplit("\\", 1)[-1].lstrip("/")
     if not base or "/" in base:
         raise ValueError(f"the frame tap's name {name!r} isn't usable as shared memory here (try a plain name)")
@@ -147,8 +148,9 @@ def posix_name(name: str) -> str:
 
 
 def check_name(name: str) -> None:
-    """POSIX: ValueError unless the tap's name and its sound ring's (the name + AUDIO_SUFFIX) both fit, so a name that's
-    too long fails at once rather than when the sound starts. Windows: nothing (its names have room)."""
+    """POSIX: ValueError unless the tap's name and its sound ring's name (the name plus AUDIO_SUFFIX) both fit, so a
+    name that's too long fails at once rather than when the sound starts. Windows: does nothing, since its names have
+    room."""
     if WINDOWS:
         return
     posix_name(name)
@@ -163,10 +165,11 @@ def check_name(name: str) -> None:
 
 def _shm_map(name: str, size: int) -> mmap.mmap:
     """POSIX: `size` bytes of the shared memory `name` (posix_name), created if it isn't there. Either side may come
-    first: macOS sets a shared-memory object's size only once, while it's still empty, so the second side to try gets
-    EINVAL and finds it already sized. The object lasts until shm_unlink (unlink below) or a restart, like a file:
-    neither side removes it, as a reader that did would leave chiaki-ng writing into memory nobody else can open."""
-    import _posixshmem  # (multiprocessing.shared_memory would hand it to Python's resource tracker, which unlinks it)
+    first. macOS sets a shared-memory object's size only once, while it's still empty, so the second side to try gets
+    EINVAL and finds it already sized. Like a file, the object lasts until shm_unlink (unlink below) or a restart.
+    Neither side removes it, because a reader that did would leave chiaki-ng writing into memory nobody else can
+    open."""
+    import _posixshmem  # multiprocessing.shared_memory would hand it to Python's resource tracker, which unlinks it
     path = posix_name(name)
     fd = _posixshmem.shm_open(path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
@@ -174,15 +177,15 @@ def _shm_map(name: str, size: int) -> mmap.mmap:
             try:
                 os.ftruncate(fd, size)
             except OSError as e:
-                if e.errno != errno.EINVAL:  # EINVAL: the other side sized it first
+                if e.errno != errno.EINVAL:  # EINVAL means the other side sized it first
                     raise
         # When both sides size it at once, the one that gets EINVAL can still see 0 bytes for a moment, until the
-        # other's ftruncate shows (about 1 in 600 simultaneous opens, found by the Rust reader's stress test): give
-        # that up to 200 ms.
+        # other's ftruncate shows. The Rust reader's stress test found that in about 1 in 600 simultaneous opens, so
+        # wait up to 200 ms for it.
         have, t_end = os.fstat(fd).st_size, time.perf_counter() + 0.2
         while have == 0 and time.perf_counter() < t_end:
             time.sleep(0.0002)
-            have = os.fstat(fd).st_size  # (macOS rounds it up to whole pages)
+            have = os.fstat(fd).st_size  # macOS rounds it up to whole pages
         if have < size:
             raise OSError(f"the shared memory {path} is {have} bytes, too small for the frame tap ({size}): something "
                           f"else made it. Remove it (framegen.chiaki_tap.unlink) or use another name")
@@ -192,8 +195,8 @@ def _shm_map(name: str, size: int) -> mmap.mmap:
 
 
 def unlink(name: str) -> None:
-    """POSIX: remove the tap `name` and its sound ring (memory already mapped stays usable until it's closed); for
-    tests and clean-up. Windows: nothing to do (a mapping goes when its last handle closes)."""
+    """POSIX: remove the tap `name` and its sound ring, for tests and clean-up. Memory already mapped stays usable
+    until it's closed. Windows: nothing to do, since a mapping goes when its last handle closes."""
     if WINDOWS:
         return
     import _posixshmem
@@ -240,8 +243,8 @@ class Packet:
 class FrameTap:
     """The shared ring. Either side may create it first; both see the same memory.
 
-    POSIX: event_name is unused (there's no event; wait() polls), and the name has to fit SHM_NAME_MAX with the sound
-    ring's suffix (check_name), else ValueError."""
+    POSIX: event_name is unused, since there's no event and wait() polls. The name has to fit SHM_NAME_MAX with the
+    sound ring's suffix (check_name), else ValueError."""
 
     def __init__(self, name: str = NAME, event_name: str = EVENT_NAME) -> None:
         if WINDOWS:
@@ -297,9 +300,10 @@ class FrameTap:
         struct.pack_into("<I", self.mm, 88, max(0, min(500, int(ms))))
 
     def wait(self, timeout_s: float) -> None:
-        """Until the writer sends a frame or starts or ends a stream (since this thread's last header()), or timeout_s.
-        Windows: the writer's event. POSIX: macOS has no sem_timedwait, so this looks at the header every POLL_S,
-        which keeps the writers as simple as they are on Windows; it adds about 0.3 ms to a frame's wait on average."""
+        """Waits until the writer sends a frame or starts or ends a stream (since this thread's last header()), or for
+        timeout_s. Windows: the writer's event. POSIX: macOS has no sem_timedwait, so this looks at the header every
+        POLL_S, which keeps the writers as simple as they are on Windows. It adds about 0.3 ms to a frame's wait on
+        average."""
         if WINDOWS:
             _k32.WaitForSingleObject(self.event, int(timeout_s * 1000))
             return
@@ -307,7 +311,7 @@ class FrameTap:
         t_end = time.perf_counter() + timeout_s
         while True:
             now = _WATCH.unpack_from(self.mm, 0)
-            if seen is None:  # no header() yet on this thread: wait for a change from now
+            if seen is None:  # no header() yet on this thread, so wait for a change from now
                 seen = now
             elif now != seen:
                 return
@@ -322,7 +326,7 @@ class FrameTap:
         the writer's layout (Header.slots, .slot_size). into: a uint8 numpy array to copy the frame into instead of
         a new bytes object (a decoded frame, megabytes); the Packet's data is then b"" and its size is in `size`."""
         off = HEADER + (seq % slots) * slot_size
-        _fence()  # (after the header's write_seq was read)
+        _fence()  # after the header's write_seq was read
         s0, q, size, lost, rec, flags = struct.unpack_from("<QQIiII", self.mm, off)
         if s0 != seq or size > slot_size - SLOT_HEADER:
             return None
@@ -649,7 +653,7 @@ class ChiakiSource:
         self._last_idr = 0.0
         self._header_file = Path(tempfile.gettempdir()) / (tap_name.split("\\")[-1].lstrip("/") + "-header.bin")
         if sys.platform == "darwin" and decoder in ("cuda", "d3d11va"):
-            decoder = "videotoolbox"  # (a Mac has neither: its own hardware decoder instead)
+            decoder = "videotoolbox"  # a Mac has neither, but has its own hardware decoder
         self.decoder_kind = decoder
         self._vt_checked = False  # whether the first VideoToolbox picture has been checked (_check_vt)
         t_end = time.perf_counter() + wait_s
@@ -722,7 +726,7 @@ class ChiakiSource:
                 if not ctx.is_hwaccel:
                     raise RuntimeError(f"no VideoToolbox decoder for {codec}")
             except Exception as e:  # noqa: BLE001 - the stream still plays, on the CPU
-                print(f"{self.tag} VideoToolbox can't decode here ({str(e)[:120]}): decoding in software",
+                print(f"{self.tag} VideoToolbox can't decode here ({str(e)[:120]}), so decoding in software",
                       file=sys.stderr)
                 self.decoder_kind = "sw"
                 return self._new_decoder(codec)
@@ -733,8 +737,8 @@ class ChiakiSource:
         return ctx
 
     def _check_vt(self, frames) -> None:
-        """VideoToolbox's first pictures come out as NV12 or P010; FFmpeg's software decoders give planar YUV. Says so
-        once if VideoToolbox turned the stream down and FFmpeg fell back to software."""
+        """VideoToolbox's first pictures come out as NV12 or P010, and FFmpeg's software decoders give planar YUV. This
+        says so once if VideoToolbox turned the stream down and FFmpeg fell back to software."""
         if self._vt_checked or not frames:
             return
         self._vt_checked = True
@@ -742,7 +746,7 @@ class ChiakiSource:
         if fmt in ("nv12", "p010le"):
             print(f"{self.tag} decoding with VideoToolbox")
         else:
-            print(f"{self.tag} VideoToolbox didn't take this stream ({fmt}): FFmpeg decodes it in software",
+            print(f"{self.tag} VideoToolbox didn't take this stream ({fmt}), so FFmpeg decodes it in software",
                   file=sys.stderr)
 
     def _reader(self) -> None:

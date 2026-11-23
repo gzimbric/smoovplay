@@ -31,7 +31,7 @@ fn test_mode_plays_60fps_as_30fps_and_keeps_the_left_out_frames() {
     assert_eq!(px(&tm.gt(11).unwrap()), 11);
     assert_eq!(px(&tm.gt(5).unwrap()), 5);
     assert!(tm.gt(1).is_none() && tm.gt(4).is_none());
-    // game_new: the source's word (no size check here: new_hint, None)
+    // game_new is what the source said. There's no size check here, so it's new_hint, which is None.
     assert_eq!(ticks[0].extra["game_new"], serde_json::Value::Null);
 }
 
@@ -112,7 +112,7 @@ fn tap_source_bgra_end_to_end() {
     assert_eq!(got.iter().map(|t| t.new_hint).collect::<Vec<_>>(), [Some(true), Some(false), None].repeat(2));
     assert_eq!(got.iter().map(|t| t.damaged).collect::<Vec<_>>(), vec![false, false, false, false, true, false]);
     assert_eq!(got.iter().map(|t| t.index).collect::<Vec<_>>(), (0..6).collect::<Vec<_>>());
-    // The stream ends: so do the ticks
+    // The stream ends, and so do the ticks
     tap.end();
     let t_end = clock::now() + 3.0;
     loop {
@@ -134,7 +134,8 @@ fn tap_source_nv12_colours() {
     let (w, h) = (64usize, 36usize);
     tap.begin(CODEC_NV12, w as u32, h as u32, 60, 0, None).unwrap();
     let OpenedTap::Tap(mut src) = open_tap(&n, 1.0, None, None).unwrap() else { panic!("not a TapSource") };
-    // Mid grey with neutral chroma, then a red (BT.601 limited: Y 81, Cb 90, Cr 240; 36 lines is "auto" -> BT.601)
+    // Mid grey with neutral chroma, then a red in BT.601 limited range (Y 81, Cb 90, Cr 240). With no colours in
+    // the header, 36 lines means BT.601.
     let grey = vec![128u8; w * h * 3 / 2];
     let mut red = vec![81u8; w * h];
     red.extend([90u8, 240].repeat(w * h / 4));
@@ -142,7 +143,7 @@ fn tap_source_nv12_colours() {
     let got = ticks(&mut src, 2);
     th.join().unwrap();
     let g = got[0].frame.to_bgr();
-    assert!(g.iter().all(|&v| v.abs_diff(130) <= 3), "limited range 128 -> about 130");
+    assert!(g.iter().all(|&v| v.abs_diff(130) <= 3), "limited range 128 comes out about 130");
     let r = got[1].frame.to_bgr();
     let (b, gg, rr) = (r[0], r[1], r[2]);
     assert!(rr >= 250 && gg <= 3 && b <= 3, "red came out {b} {gg} {rr}");
@@ -166,7 +167,7 @@ fn open_tap_variable_writer_gets_a_beat() {
     sp_tap::unlink(&n);
 }
 
-/// framegen/sources.py's Clock60 test: uneven frames from a variable writer, on a 100 Hz beat.
+/// framegen/sources.py's Clock60 test, with uneven frames from a variable writer on a 100 Hz beat.
 #[test]
 fn clock60_puts_uneven_frames_on_a_steady_beat() {
     let n = name("c");
@@ -178,7 +179,7 @@ fn clock60_puts_uneven_frames_on_a_steady_beat() {
     let gaps = vec![35u64, 4, 60, 12, 30, 200];
     let frames = (0..6u8).map(|i| ([i, 0, 0, 255].repeat(256), 0, None)).collect();
     let th = send(n.clone(), frames, gaps);
-    // Until the first frame: Waitings
+    // Waitings until the first frame
     let mut out = Vec::new();
     let t_end = clock::now() + 4.0;
     while clock::now() < t_end {
@@ -227,7 +228,7 @@ fn another_apps_compressed_frames_are_read_as_chiaki_ngs() {
     let OpenedTap::Chiaki(mut src) = opened else { panic!() };
     assert_eq!(src.info().name, "Frame tap");
     assert_eq!(src.info().kind, "chiaki");
-    // Nothing comes: Waitings with the ring's hint
+    // Nothing comes, so Waitings with the ring's hint
     let Some(Event::Waiting(w)) = src.next_event() else { panic!("no Waiting") };
     assert_eq!(w.what, "the PS5");
     std::thread::sleep(Duration::from_millis(1100));
@@ -321,7 +322,8 @@ fn ps5_sim_noise_and_realtime() {
     let took = clock::now() - t0;
     assert_eq!(frames.len(), 12);
     assert!(took > 11.0 / 60.0 - 0.01, "not paced: {took}");
-    // Against the same tick without noise: about sd 4 (a little less: truncated, and clipped at 0 and 255)
+    // Against the same tick without noise it's about sd 4, a little less because it's truncated and clipped at 0
+    // and 255
     let mut clean = Ps5SimSource::open(&clip, SimOptions { max_ticks: Some(1), ..Default::default() }).unwrap();
     let Some(Event::Tick(c)) = clean.next_event() else { panic!() };
     let d: Vec<i32> = frames[0]

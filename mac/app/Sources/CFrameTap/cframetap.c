@@ -15,13 +15,13 @@ void *sp_shm_map(const char *path, size_t size, int *err) {
     }
     struct stat st;
     if (fstat(fd, &st) == 0 && st.st_size == 0) {
-        if (ftruncate(fd, (off_t)size) != 0 && errno != EINVAL) {  // EINVAL: the other side sized it first
+        if (ftruncate(fd, (off_t)size) != 0 && errno != EINVAL) {  // EINVAL means the other side sized it first
             *err = errno;
             close(fd);
             return NULL;
         }
     }
-    if (fstat(fd, &st) != 0 || (size_t)st.st_size < size) {  // (macOS rounds the size up to whole pages)
+    if (fstat(fd, &st) != 0 || (size_t)st.st_size < size) {  // macOS rounds the size up to whole pages
         *err = -1;
         close(fd);
         return NULL;

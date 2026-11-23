@@ -18,7 +18,7 @@ if sys.platform == "win32":
                 if p.exists()), None)
 elif sys.platform == "darwin":  # Apple's clang
     GCC = next((Path(p) for p in (shutil.which("clang"), shutil.which("cc")) if p), None)
-else:  # (the example is for Windows and macOS)
+else:  # the example is for Windows and macOS
     GCC = None
 
 
@@ -62,5 +62,5 @@ def test_c_writer_frames_read_back():
     finally:
         proc.wait(timeout=30)
         tap.close()
-        unlink(NAME)  # (POSIX: shared memory lasts until it's removed)
+        unlink(NAME)  # POSIX shared memory lasts until it's removed
     assert proc.returncode == 0

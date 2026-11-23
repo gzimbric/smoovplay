@@ -34,7 +34,7 @@ pub fn sum(xs: &[f64]) -> f64 {
     }
 }
 
-/// np.mean: NaN for an empty list (numpy warns and returns nan).
+/// np.mean, which is NaN for an empty list (numpy warns and returns nan).
 pub fn mean(xs: &[f64]) -> f64 {
     if xs.is_empty() {
         return f64::NAN;
@@ -86,7 +86,7 @@ fn lerp(a: f64, b: f64, t: f64) -> f64 {
     if t >= 0.5 { b - d * (1.0 - t) } else { a + d * t }
 }
 
-/// np.percentile on a float32 array: the same, in float32 arithmetic (numpy keeps the array's type).
+/// np.percentile on a float32 array, in float32 arithmetic because numpy keeps the array's type.
 pub fn percentile_f32(xs: &[f32], p: f64) -> f32 {
     let n = xs.len();
     if n == 0 || xs.iter().any(|x| x.is_nan()) {
@@ -108,7 +108,7 @@ pub fn percentile_f32(xs: &[f32], p: f64) -> f32 {
     if t >= 0.5 { b - d * (1.0 - t) } else { a + d * t }
 }
 
-/// Python's round(x) for a float: to the nearest integer, halves to even.
+/// Python's round(x) for a float, to the nearest integer with halves to even.
 pub fn round(x: f64) -> i64 {
     x.round_ties_even() as i64
 }

@@ -1,10 +1,9 @@
 """Writes crates/sp-settings/src/generated.rs from the Python reference: every setting in framegen/settings.py's SPECS,
 the look node types (framegen/looks.py TYPES_LIST) and the built-in looks (looks.BUILTIN, as normalize() leaves them).
-Run it after a setting, a node type or a built-in look changes in the Python:
+That way the Rust core never keeps a hand-made copy that can drift, and the parity tests check the result. Run it after
+a setting, a node type or a built-in look changes in the Python:
 
     .venv/bin/python mac/core/tools/settings_codegen.py
-
-so the Rust core never keeps a hand-made copy that can drift (the parity tests check the result).
 """
 from __future__ import annotations
 
@@ -96,7 +95,7 @@ def param_code(f) -> str:
 
 
 def main() -> None:
-    # The looks library reads its folder when framegen.looks is imported: point it at an empty one.
+    # The looks library reads its folder when framegen.looks is imported, so point it at an empty one.
     os.environ["SMOOVPLAY_LOOKS_DIR"] = tempfile.mkdtemp(prefix="sp-codegen-")
     sys.path.insert(0, str(ROOT))
     from framegen import looks, settings

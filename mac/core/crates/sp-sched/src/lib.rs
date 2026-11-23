@@ -1,16 +1,16 @@
 //! SmoovPlay's scheduling heart for the macOS core, ported from the Python reference (framegen/cadence.py,
-//! pipeline.py, delaytest.py, streamcheck.py, run.py's results report):
+//! pipeline.py, delaytest.py, streamcheck.py and run.py's results report).
 //!
 //! - [`cadence`]: repeat and cut detection, the cadence scheduler, the 30 fps lock, Dip smoothing's watch and the
-//!   even-timing timeline;
-//! - [`pipeline`]: the tick loop at 60, 90 and 120 Hz, generic over sp_core's Source / Interpolator / Presenter,
-//!   with an injectable [`clock`] and the [`settings`] it follows live;
-//! - [`stats`]: what a session measured, summary() for the log and results() for test mode's report;
-//! - [`probe`] and [`score`]: the pixels the pipeline looks at (block means, the delay test's blocks, --score's
-//!   sums), on the GPU;
+//!   even-timing timeline.
+//! - [`pipeline`]: the tick loop at 60, 90 and 120 Hz, generic over sp_core's Source, Interpolator and Presenter,
+//!   with an injectable [`clock`] and the [`settings`] it follows live.
+//! - [`stats`]: what a session measured, summary() for the log and results() for test mode's report.
+//! - [`probe`] and [`score`]: the pixels the pipeline looks at on the GPU (block means, the delay test's blocks,
+//!   --score's sums).
 //! - [`delaytest`], [`streamcheck`], [`report`].
 //!
-//! Parity with the Python is checked by tests/parity.rs against traces recorded by tools/sched_traces.py.
+//! tests/parity.rs checks parity with the Python against traces recorded by tools/sched_traces.py.
 
 pub mod cadence;
 pub mod clock;

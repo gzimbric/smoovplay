@@ -3,20 +3,20 @@
     .venv/bin/python mac/core/tools/capture_fixtures.py [--skip-frames] [--skip-onset] [--check-devices]
 
   clip_<i>.bgr      frames of testdata/clip_1080p60.mp4 decoded by PyAV and read with capture.raw_to_bgr (CPU, torch)
-                    in the file's own colours (untagged: BT.601, limited range, as FFmpeg takes it): HxWx3 uint8
-                    BGR. The Rust stand-in must match these within a level.
-  clip_<i>.standin.bgr  the same frames as the Python's CardSource.video_file hands them on: reformatted by swscale
-                    into NV12 BT.709 (from the file's BT.601: a round trip, so the picture stays the file's own)
-                    and read back with raw_to_bgr. Within a level of the above but where swscale resamples chroma
+                    in the file's own colours, as HxWx3 uint8 BGR. Untagged is BT.601 limited range, as FFmpeg
+                    takes it. The Rust stand-in must match these within a level.
+  clip_<i>.standin.bgr  the same frames as the Python's CardSource.video_file hands them on. swscale reformats them
+                    into NV12 BT.709 from the file's BT.601, a round trip that keeps the file's own picture, and
+                    raw_to_bgr reads them back. Within a level of the above except where swscale resamples chroma
                     at colour edges.
   silent.mov        12 frames of the same, no sound track
-  onset.mov         320x180 at 60 fps, 2 s, H.264 and 16-bit PCM (48 kHz stereo): dark until frame 60 (1.0 s), then
-                    bright; silent until 1.0 s, then a 440 Hz tone. What the sound timing check plays.
+  onset.mov         320x180 at 60 fps, 2 s, H.264 and 16-bit PCM (48 kHz stereo). It's dark until frame 60 (1.0 s),
+                    then bright, and silent until 1.0 s, then a 440 Hz tone. The sound timing check plays it.
   delay_<name>.*    framegen.audio.DelayLine runs on a simulated clock: the pushes and pulls (.json), the PCM pushed
                     (.in.s16) and what came out (.out.s16), for the Rust to replay byte for byte
   picks.json        capture.pick_mode and pick_audio on many inputs, audio.sound_report on a few stats
-  manifest.json     what's here, and the Python's own measurements (onset: how far the tone's start came from the
-                    flash's tick, in the Python's CardSource.video_file)
+  manifest.json     what's here, and the Python's own measurements. onset says how far the tone's start came from
+                    the flash's tick in the Python's CardSource.video_file.
 
 --check-devices also lists the Mac's devices through FFmpeg's AVFoundation input (names only, nothing opened) and
 compares them with sp-capture's own list (target-capture/debug/examples/capture --list --json, if built).
@@ -56,9 +56,9 @@ def clip_frames(manifest: dict) -> None:
             break
         if i not in REF:
             continue
-        # the file's own colours (AVCOL_SPC_BT709 = 1; AVCOL_RANGE_JPEG = 2), as swscale takes them
+        # the file's own colours (AVCOL_SPC_BT709 = 1, AVCOL_RANGE_JPEG = 2), as swscale takes them
         bt709, full = fr.colorspace == 1, fr.color_range == 2
-        nv12 = fr.reformat(format="nv12").to_ndarray().ravel().copy()  # (the decoder's samples, as they are)
+        nv12 = fr.reformat(format="nv12").to_ndarray().ravel().copy()  # the decoder's samples, as they are
         bgr = c.raw_to_bgr(torch.from_numpy(nv12), "nv12", w, h, bt709, full).numpy()
         (OUT / f"clip_{i}.bgr").write_bytes(bgr.tobytes())
         # what CardSource.video_file does (_frames, decode_to="nv12"), the raw path's colours for 1080p
@@ -152,7 +152,7 @@ class _Clock:
 
 
 def _card(secs, hold_ms=0.0, every_s=5.0, seed=2, first_at=None):
-    """tests/test_audio.py _card: a card's 20 ms packets, held up now and then, and the output's 10 ms blocks."""
+    """tests/test_audio.py _card. A card's 20 ms packets, held up now and then, and the output's 10 ms blocks."""
     rnd = random.Random(seed)
     ev, held, nxt = [], 0, every_s if first_at is None else first_at
     for i in range(int(secs / 0.02)):
@@ -180,7 +180,8 @@ def _sine(channels, freq=220, amp=12000, per_s=0.02):
 
 
 def trace(name: str, channels: int, steps) -> dict:
-    """Runs a DelayLine through `steps` ((t, "in", pcm) / (t, "out", frames) / (None, "delay", s)), saving it all."""
+    """Runs a DelayLine through `steps`, saving it all. A step is (t, "in", pcm), (t, "out", frames) or
+    (None, "delay", s)."""
     from framegen.audio import DelayLine
     clock = _Clock()
     line = DelayLine(RATE, channels, clock=clock)
@@ -240,12 +241,13 @@ def traces(manifest: dict) -> None:
             pcm = tone()[: n * 2] if n <= blk else tone() + tone()[: (n - blk) * 2]
             steps += [(i * 0.01, "in", pcm), (i * 0.01, "out", blk)]
         out[name] = trace(name, 1, steps)
-    # filling: silence until the delay, then the sound in order (test_silence_until_the_delay_then_the_sound_in_order)
+    # filling, with silence until the delay, then the sound in order
+    # (test_silence_until_the_delay_then_the_sound_in_order)
     steps = [(None, "delay", 0.1)]
     for i in range(30):
         steps += [(i * 0.01, "in", np.full(blk * CH, i + 1, np.int16).tobytes()), (i * 0.01, "out", blk)]
     out["fill"] = trace("fill", CH, steps)
-    # odd block sizes, as Core Audio asks when the card's rate isn't the output's (470/471 frames, say)
+    # odd block sizes, as Core Audio asks when the card's rate isn't the output's (470 or 471 frames, say)
     tone = _sine(CH, freq=1000)
     rnd = random.Random(5)
     steps = [(None, "delay", 0.03)]
@@ -292,7 +294,8 @@ def picks(manifest: dict) -> None:
     for modes in lists:
         for w, h, fps in (asks if len(cases) < 40 else [rnd.choice(asks)]):
             best, note = c.pick_mode(modes, w, h, fps)
-            # (sizes of equal area: Python's set order picks; the Rust takes the first in the card's order)
+            # Python's set order picks among sizes of equal area, and the Rust takes the first in the card's order,
+            # so those cases are skipped
             areas = [m.w * m.h for m in modes]
             if len(set(areas)) != len(set((m.w, m.h) for m in modes)):
                 continue

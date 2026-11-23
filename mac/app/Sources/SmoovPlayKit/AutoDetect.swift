@@ -1,7 +1,7 @@
-// Auto-detect, at the top of the Settings page (installer/launcher/AutoDetect.cs): python -m framegen.autodetect
-// times the GPU (about 10 s; a second or two with --timing), reads the display and what's installed, and suggests
-// settings with the reason for each. Apply changes them the same way picking them on the page does. The test needs
-// the GPU to itself, so it can't run while playing, and Play waits for it. Its output goes to
+// Auto-detect, at the top of the Settings page (installer/launcher/AutoDetect.cs). python -m framegen.autodetect
+// times the GPU in about 10 s, or a second or two with --timing. It reads the display and what's installed, and
+// suggests settings with the reason for each. Apply changes them the same way picking them on the page does. The
+// test needs the GPU to itself, so it can't run while playing, and Play waits for it. Its output goes to
 // <logs>/autodetect.txt.
 import Foundation
 
@@ -45,14 +45,14 @@ public struct DetectResult: Equatable, Sendable {
 public enum AutoDetect {
     public static let resultPrefix = "[detect-result] ", linePrefix = "[detect] "
 
-    /// "[detect] timing the AI model" -> "Timing the AI model" (progress), or nil for other lines.
+    /// A "[detect] timing the AI model" line as progress ("Timing the AI model"), or nil for other lines.
     public static func progress(_ line: String) -> String? {
         guard line.hasPrefix(linePrefix), !line.contains("ERROR") else { return nil }
         let step = String(line.dropFirst(linePrefix.count))
         return step.prefix(1).uppercased() + step.dropFirst()
     }
 
-    /// Runs it (blocking: call off the main thread). Returns the result, or why it didn't finish.
+    /// Runs it. It blocks, so call it off the main thread. Returns the result, or why it didn't finish.
     public static func run(_ paths: AppPaths, extra: [String], progress: @escaping (String) -> Void) -> Result<DetectResult, DetectError> {
         try? FileManager.default.createDirectory(at: paths.logs, withIntermediateDirectories: true)
         let logURL = paths.logs.appendingPathComponent("autodetect.txt")
@@ -76,7 +76,8 @@ public enum AutoDetect {
     public struct DetectError: Error, Sendable { public let text: String }
 }
 
-/// A test-mode report (run.py --results): its verdict and a few numbers for the results card, as ShowResults does.
+/// A test-mode report (run.py --results), read for its verdict and a few numbers for the results card, as
+/// ShowResults does.
 public struct TestResults: Equatable, Sendable {
     public struct Tile: Equatable, Sendable {
         public var label, value, hint: String

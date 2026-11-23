@@ -1,135 +1,150 @@
-# SmoovPlay's macOS core (Rust)
+# SmoovPlay's macOS core
 
-`smoovplay` is the Rust binary that replaces `run.py` (and the `python -m framegen.*` helpers the launcher calls) on
-a Mac. The Python pipeline (`run.py`, `framegen/`) stays the reference: the same flags, the same `[run] ...` lines and
-the same `--control` protocol, so the Mac app (`mac/app`) switches cores by changing only the command it starts
-(`SMOOVPLAY_CORE=rust`, or the Help page).
+`smoovplay` is a Rust program that does on a Mac what `run.py` and the `python -m framegen.*` helpers do. It takes
+the same flags, prints the same `[run]` lines and speaks the same `--control` protocol, so the Mac app in `mac/app`
+can run either core. The Python pipeline in `framegen/` is the reference it was checked against.
 
 ## Crates
 
-| Crate | What it is |
+| Crate | What it does |
 |---|---|
-| `sp-core` | Frames on the GPU (`Frame`, Metal textures), `Gpu`, ticks and sources (`Tick`, `Event`, `Waiting`, `SourceInfo`), the clock, block means, and the traits the pieces plug into (`Source`, `Interpolator`, `Presenter`). |
-| `sp-tap` | The frame tap: chiaki-ng's shared-memory frame and sound rings, byte-compatible with `chiaki_tap/frametap.c` and `framegen/chiaki_tap.py`. |
-| `sp-media` | VideoToolbox decoding, NV12/P010 to Metal frames (HDR tone mapping), and the sources: `ChiakiSource` (PS5 Remote Play), `TapSource`/`open_tap` (an app's frames), `FileSource`, `Ps5SimSource`, test mode, `Clock60`. |
-| `sp-rife` | RIFE on Apple's GPU: MPSGraph executables for the convolutions, Metal kernels for the rest. |
-| `sp-sched` | The pipeline: repeat and cut detection, the cadence scheduler, 60/90/120 Hz, even timing, dip smoothing, scoring, the stats, the results report, the stream check, the delay test. |
-| `sp-present` | The video window: Metal drawing (FSR 1, fill modes, looks, overlays, the menu), presentation, HDR through EDR. |
-| `sp-settings` | Settings (the same JSON file as the Python), the `--control` protocol, looks and their CLI, Auto-detect's recommendations. |
-| `sp-replay` | Instant replay: the last 30 s to 5 min encoded by VideoToolbox in memory, saved as MP4; the before & after video. |
-| `sp-capture` | Capture cards through AVFoundation (Experimental), their sound played in step with the picture, the device list. |
-| `smoovplay` | The binary: run.py's `main()` and the helpers' subcommands, wiring the crates together. |
+| `sp-core` | Shared types. Frames are Metal textures, and every crate uses one GPU device and queue. Also ticks, sources, the clock, block means, and the traits the other crates implement. |
+| `sp-tap` | The frame tap, the shared memory that chiaki-ng writes frames and sound into. Byte-compatible with `chiaki_tap/frametap.c` and `framegen/chiaki_tap.py`. |
+| `sp-media` | VideoToolbox decoding, conversion of NV12 and P010 into Metal frames with HDR tone mapping, and the sources for Remote Play, the frame tap, video files, the simulated PS5 and test mode. |
+| `sp-rife` | RIFE on Apple's GPU. MPSGraph runs the convolutions and Metal kernels do the rest. |
+| `sp-sched` | The pipeline itself. Repeat and cut detection, the scheduler for 60, 90 and 120 Hz, even timing, dip smoothing, scoring, stats, the results report, the stream check and the delay test. |
+| `sp-present` | The video window. FSR 1, fill modes, looks, overlays and the menu, all drawn in Metal, plus HDR output through EDR. |
+| `sp-settings` | Settings in the same JSON file as the Python, the `--control` protocol, looks and their command line, and Auto-detect's recommendations. |
+| `sp-replay` | Instant replay. VideoToolbox encodes the last 30 seconds to 5 minutes into memory and saves it as MP4. Also the before and after video. |
+| `sp-capture` | Capture cards through AVFoundation, with their sound played in step with the picture. Experimental. |
+| `smoovplay` | The program. It ties the crates together the way `run.py` does and adds the helpers as subcommands. |
 
 ## Building
 
 ```
-cargo build --release -p smoovplay      # -> target/release/smoovplay (what the Mac app starts)
+./build_release.sh                       # builds target/release/smoovplay and signs it
 cargo test -p smoovplay -p sp-settings -p sp-present
 ```
 
-The RIFE weights come from the repo's `models/` folder (downloaded there on first use), the looks preview's sample
-pictures from `framegen/samples` (`SMOOVPLAY_MODELS` and `SMOOVPLAY_SAMPLES` point elsewhere).
+`build_release.sh` signs with the keychain's Apple Development identity if there is one, otherwise ad hoc. RIFE's
+weights come from the repo's `models/` folder and are downloaded there on first use. The looks preview takes its
+sample pictures from `framegen/samples`. Set `SMOOVPLAY_MODELS` or `SMOOVPLAY_SAMPLES` to use other folders.
 
 ## Running
 
-Play (run.py's flags; `smoovplay --help` lists them):
+`smoovplay --help` lists every flag. Some common runs:
 
 ```
-smoovplay testdata/clip_1080p60.mp4 --display --realtime          # a video file as a simulated PS5 30 fps game
-smoovplay testdata/clip_1080p60.mp4 --score --settings none        # headless, scored against the left-out frames
-smoovplay --chiaki --display                                       # PS5 Remote Play through chiaki-ng's frame tap
-smoovplay --chiaki --test-mode --display --results out/results.txt # test mode, with the plain-language report
-smoovplay --source tap --tap smoovplay-window --display            # the Mac app's App window (or any frame-tap app)
-smoovplay --source chiaki --display --control --results <file>     # what the Mac app starts
+smoovplay testdata/clip_1080p60.mp4 --display --realtime          # a video file played as a 30 fps PS5 game
+smoovplay testdata/clip_1080p60.mp4 --score --settings none        # no window, scored against the left-out frames
+smoovplay --chiaki --display                                       # PS5 Remote Play through chiaki-ng
+smoovplay --chiaki --test-mode --display --results out/results.txt # test mode with the written report
+smoovplay --source tap --tap smoovplay-window --display            # an app window copied by the Mac app
+smoovplay --source chiaki --display --control --results <file>     # what the Mac app runs
 ```
 
-With `--display` the source is opened and RIFE built on the main thread, the window opens there, and the pipeline
-moves to its own thread (QoS user-interactive) while the main thread runs AppKit's event loop. The display is kept
-awake while playing (an `IOPMAssertion`). Headless runs stay on the main thread. With the window, instant replay
-records as run.py's does (Settings > Instant replay; R and B save, `key R` / `key B` from the app), with
-"Looks in clips" drawn by a renderer of its own; the before & after video is made by `smoovplay replay-compose` in a
-process of its own. `--capture N|NAME|FILE` reads a capture card (or a recording standing in for one) through
-sp-capture, its sound held back to meet the picture. `--max-ticks` works for any source
-(the Python honours it for video files only).
+With `--display`, the window opens on the main thread, which then runs AppKit's event loop, and the pipeline moves
+to a thread of its own at user-interactive priority. The Mac stays awake while a session plays. Without a window,
+everything runs on the main thread.
 
-Subcommands (the Python helpers, same arguments and output):
+Instant replay works as it does in `run.py`. Turn it on under Settings, Instant replay, then press R or B, or send
+`key R` or `key B` from the app. Looks can be drawn into clips. The before and after video is made by
+`smoovplay replay-compose` in a separate, lower priority process.
+
+`--capture` takes a capture card by number or name, or a video file standing in for one. The card's sound is held
+back to meet the picture. `--max-ticks` works for every source, where the Python honours it only for video files.
+
+The helpers are subcommands with the same arguments and output as the Python ones:
 
 ```
-smoovplay autodetect [--apply] [--if-new] [--settings P] [--timing F,H] [--present-ms MS]   # python -m framegen.autodetect
-smoovplay looks schema|encode|decode|import|save|delete|add-lut|preview ...              # python -m framegen.looks
-smoovplay looks-preview                                                                  # python -m framegen.looks_preview
-smoovplay prepare [--model M] [--no-detect]                                              # python -m framegen.prepare
-smoovplay settings                                                                       # python -m framegen.settings
-smoovplay sources --json      (also smoovplay --list-sources --json)                     # python -m framegen.sources
-smoovplay capture --list|--formats NAME [--json]                                         # python -m framegen.capture
-smoovplay replay-compose --after A --before B --out OUT ...                              # python -m framegen.replay compose
+smoovplay autodetect [--apply] [--if-new] [--settings P] [--timing F,H] [--present-ms MS]   # framegen.autodetect
+smoovplay looks schema|encode|decode|import|save|delete|add-lut|preview ...              # framegen.looks
+smoovplay looks-preview                                                                  # framegen.looks_preview
+smoovplay prepare [--model M] [--no-detect]                                              # framegen.prepare
+smoovplay settings                                                                       # framegen.settings
+smoovplay sources --json                                                                 # framegen.sources
+smoovplay capture --list [--json]                                                        # framegen.capture
+smoovplay replay-compose --after A --before B --out OUT ...                              # framegen.replay compose
 ```
 
-## The launcher link (`--control`)
+## The control link
 
-As `framegen/remote.py`: `set <key> <json>`, `restart`, `quit`, `state`, `look-show <json>`, `look-hide`,
-`looks-reload`, and a `[settings-state] {json}` line at the start of every session and after every change. The Mac
-app's additions:
+`--control` takes the commands `framegen/remote.py` documents and prints a `[settings-state]` line at the start of
+each session and after every change. The Mac app needs a few more, and only this core has them.
 
-- `key <name>`: a key as if pressed in the video window. M, F, I, S, U, Z, K, J, L, R, B, Q (either case), Up,
-  Down, Left, Right, Enter (Return), Esc (Escape), Backspace (Delete), Tab; `Shift+J` is the previous look. `key`
-  alone does nothing (the app's probe).
-- `overlay <x> <y> <w> <h>` (points from the main display's top left, as ScreenCaptureKit gives them) puts the window
-  over that rectangle: borderless, floating, click-through, never taking the keys; F then covers that monitor.
-  `overlay none` makes it a normal window again.
-- `"menu_open": true|false` after `"restart"` in the state, published again whenever the menu opens or closes.
-- When stdin closes under `--control`, the core quits as `quit` does, so it never outlives the app.
-- `minimize_chiaki` isn't greyed out on a Mac (the app hides chiaki-ng's window itself).
+`key <name>` acts as if the key were pressed in the video window. It accepts M, F, I, S, U, Z, K, J, L, R, B and Q
+in either case, the arrow keys, Enter, Esc, Backspace and Tab. `Shift+J` goes to the previous look. A bare `key`
+does nothing, which lets the app check whether the core takes keys.
 
-## Measured (Apple M5 Max, 6016x3384 160 Hz display, same inputs, one run after the other)
+`overlay <x> <y> <w> <h>` puts the window over that rectangle, given in points from the top left of the main
+display. The window becomes borderless and floating, lets clicks through and never takes the keys. F then fills that
+monitor. `overlay none` turns it back into a normal window.
 
-Headless, `smoovplay testdata/clip_1080p60.mp4 --score --settings none --max-ticks 600` vs run.py: the PSNR line is
-identical (RIFE 28.41 | blend 23.33 | repeat 20.85 dB, n=299, worst 25.47), and so is the repeat check
-(tp 300, tn 300). Interp ticks: 4.78 ms p50 (Python 9.21).
+The state gains a `menu_open` field after `restart`, published again whenever the menu opens or closes. The core
+quits when its standard input closes, so it never outlives the app. And `minimize_chiaki` stays available on a Mac,
+because the app hides chiaki-ng's window itself.
 
-PS5 Remote Play: `scripts/frametap_fake.py testdata/clip_1080p60.mp4 --seconds 12 --codec hevc --native --chiaki-like`
-into `--chiaki --test-mode --score --display --hz H --scale S --settings none` (720 ticks; the window 3200x1800,
-FSR 1):
+## Measured
 
-| fps | motion detail | extra frames on time, Rust / Python | arrival to screen p50 / p95 ms, Rust / Python | interp tick p50 ms, Rust / Python | RIFE dB, Rust / Python |
-|---|---|---|---|---|---|
-| 60 | full | n/a | 19.0 / 19.7 vs 27.1 / 29.6 | 5.23 vs 10.24 | 29.28 vs 29.14 |
-| 60 | half | n/a | 19.0 / 19.5 vs 25.2 / 27.5 | 4.43 vs 8.25 | 27.89 vs 27.82 |
-| 90 | full | 99% vs 73% | 28.8 / 40.4 vs 42.7 / 47.8 | 8.79 vs 21.32 | (scored at 60 and 120) |
-| 90 | half | 99% vs 87% | 27.8 / 40.1 vs 41.2 / 46.1 | 6.58 vs 16.98 | (scored at 60 and 120) |
-| 120 | full | 98% vs 36% | 31.7 / 39.7 vs 43.2 / 48.3 | 8.81 vs 21.34 | 29.28 vs 29.14 |
-| 120 | half | 98% vs 50% | 30.2 / 37.6 vs 34.8 / 46.2 | 5.90 vs 15.79 | 27.89 vs 27.74 |
+All on an Apple M5 Max with a 6016x3384 display at 160 Hz. Each comparison ran the same input through both cores,
+one after the other.
 
-(At 90 and 120 an interp tick holds two or three generated frames and the pacing between them.)
+On a real PS5 over Ethernet, playing a 30 fps game for about four minutes at 90 fps and full motion detail:
 
-Auto-detect's test (one new frame plus one in-between frame at 1080p): 4.41 ms at full motion detail, 2.41 at half
-(Python on the same Mac: 7.74 and 5.10), so it suggests 120 fps at full detail where the Python suggests 90 at half.
-The window's cost per frame shown, which Auto-detect and Auto motion detail add (`run::PRESENT_MS`, 1.0 ms; the
-Python's `MAC_PRESENT_MS` is 3.0 for its CPU copy into OpenGL): `write()` 0.08 ms of CPU (p50), FSR 1 0.45 ms of GPU
-into the 3200x1800 window and 1.17 ms fullscreen at 6016x3384, less the 0.24 ms of FSR `recommend()` counts itself.
-`smoovplay autodetect --present-ms 3.0` reproduces the Python's JSON and settings file byte for byte.
+| | Rust core | Python core |
+|---|---|---|
+| Extra frames shown on time | 100% | 67% |
+| Stream to screen, median | 29.8 ms | 42.5 ms |
+| Stream to screen, 95th percentile | 30.9 ms | 49.7 ms |
+| Interpolation tick, median | 9.4 ms | 21.4 ms |
 
-## Parity with the Python helpers
+With the fake PS5 (`scripts/frametap_fake.py --native`, HEVC, 12 seconds, test mode, a 3200x1800 window with FSR 1):
 
-Byte for byte (same inputs, the user's folders swapped for temporary ones): `settings`, `sources --json`,
-`--list-sources --json`, `looks schema|decode|encode|import` (and the saved file), a bad share code's error,
-`looks preview`'s reply, `autodetect --timing 9.3,6.8 [--apply] [--if-new]` at the Python's 3.0 ms present cost, and
-the `[settings-state]` lines for `set hz 90`, `state`, `restart`, `quit` and `set motion "half"` (restart list
-["Motion detail"]), apart from `"menu_open"` and three reasons worded for this core:
+| Output | Detail | On time, Rust | On time, Python | To screen p50, Rust | To screen p50, Python | Tick p50, Rust | Tick p50, Python |
+|---|---|---|---|---|---|---|---|
+| 60 fps | full | | | 19.0 ms | 27.1 ms | 5.2 ms | 10.2 ms |
+| 60 fps | half | | | 19.0 ms | 25.2 ms | 4.4 ms | 8.3 ms |
+| 90 fps | full | 99% | 73% | 28.8 ms | 42.7 ms | 8.8 ms | 21.3 ms |
+| 90 fps | half | 99% | 87% | 27.8 ms | 41.2 ms | 6.6 ms | 17.0 ms |
+| 120 fps | full | 98% | 36% | 31.7 ms | 43.2 ms | 8.8 ms | 21.3 ms |
+| 120 fps | half | 98% | 50% | 30.2 ms | 34.8 ms | 5.9 ms | 15.8 ms |
 
-- engine: "On a Mac, RIFE runs on Apple's GPU (Metal)." (Python: "...through PyTorch on...")
-- present: "On a Mac, the window always presents through Metal." (Python: "...through OpenGL.")
-- vsr_quality: "RTX VSR isn't available: it needs an NVIDIA RTX card." (Python: "...it needs frames decoded on the GPU...")
+At 90 and 120 fps a tick draws two or three in-between frames and paces them. RIFE scored the same against the real
+frames in both cores, 29.3 dB at full detail and 27.9 dB at half (Python 29.1 and 27.8).
 
-`looks-preview` gives the same replies (errors included); its pictures are within 0.2 levels on average of the
-OpenGL ones (0.6 for looks that sharpen). The results report has the Python's lines and layout ("AI engine: Metal").
-Not the same: argparse's usage text for a bad `looks` subcommand (stderr only), and `capture --list --json`, whose
-"alt" is AVFoundation's unique ID (sp-capture's choice) and whose JSON is compact.
+Scoring the test clip without a window (`--score --settings none --max-ticks 600`) gives exactly the Python's
+quality line, 28.41 dB for RIFE, 23.33 for a blend and 20.85 for the repeat, and the same repeat detection. An
+interpolation tick takes 4.8 ms there, against 9.2 ms in Python.
+
+Auto-detect times one new frame plus one in-between frame at 1080p. That takes 4.4 ms at full detail and 2.4 ms at
+half, against 7.7 and 5.1 in Python on the same Mac, so it suggests 120 fps at full detail. It also adds the cost of
+showing a frame, which is 1.0 ms here (`run::PRESENT_MS`). The Python adds 3.0 ms, because it copies each frame
+through the CPU into OpenGL. Measured, the window takes 0.08 ms of CPU per frame, and FSR 1 takes 0.45 ms of GPU in
+the 3200x1800 window and 1.17 ms fullscreen. `--present-ms 3.0` makes the output match the Python's byte for byte.
+
+## Checked against the Python
+
+These give byte-identical output for the same input: `settings`, `sources --json`, `--list-sources --json`,
+`looks schema`, `decode`, `encode` and `import` with the file it saves, the error for a bad share code, the reply to
+`looks preview`, and `autodetect --timing 9.3,6.8` with and without `--apply` and `--if-new` at the Python's 3.0 ms
+present cost.
+
+So do the `[settings-state]` lines for `set hz 90`, `state`, `restart`, `quit` and `set motion "half"`, apart from
+`menu_open` and three reasons reworded for this core. The engine row says RIFE runs on Apple's GPU through Metal
+instead of PyTorch, the presentation row says Metal instead of OpenGL, and RTX VSR's row says it needs an NVIDIA
+card.
+
+The looks preview gives the same replies, errors included. Its pictures are within 0.2 levels of the OpenGL ones on
+average, and 0.6 for looks that sharpen. The results report has the Python's lines and layout. Two things differ:
+the usage text for a bad `looks` subcommand, which only goes to standard error, and `capture --list --json`, which
+gives AVFoundation's device ID as `alt` and prints compact JSON.
 
 ## Not in this core yet
 
-- `--out` (writing the result to a video file) and `--display-cv`; `--fp32` (the Metal engine is half precision).
-- `--source window`: on a Mac the app copies the window and sends it through the frame tap (`--source tap`).
-- NVIDIA's pieces (TensorRT, VFG, RTX VSR), DXGI presentation: greyed out with the reason, as in the Python on a Mac.
-- HDR10 output needs a display with EDR headroom; it was checked only as far as "shown in SDR" on an SDR display.
-- The watchdog prints macOS's `sample` of the process for "where each thread is" (no Python stacks to show).
+- `--out` for writing the result to a video file, and `--display-cv`.
+- `--fp32`. The Metal engine runs in half precision only.
+- `--source window`. On a Mac the app copies the window and sends it through the frame tap, so use `--source tap`.
+- NVIDIA's pieces (TensorRT, VFG and RTX VSR) and DXGI. They are greyed out with the reason, as in the Python.
+- HDR10 output on a display with EDR headroom. It has only been checked on an SDR display, where it falls back to
+  tone-mapped SDR.
+- The watchdog prints macOS's `sample` of the process when the loop stalls, because there are no Python stacks.

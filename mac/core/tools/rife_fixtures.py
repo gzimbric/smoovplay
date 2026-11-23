@@ -1,12 +1,12 @@
-"""Reference data for sp-rife's parity tests: real frame pairs from the test clip and what the Python Mac engine
-(framegen/interpolator.py RifeInterpolator on Apple's GPU, i.e. framegen/metalrife.py's MetalIFNet) draws between
-them, plus the real in-between frames for scoring.
+"""Reference data for sp-rife's parity tests. It takes real frame pairs from the test clip and saves what the Python
+Mac engine draws between them, plus the real in-between frames for scoring. That engine is framegen/interpolator.py
+RifeInterpolator on Apple's GPU, which runs framegen/metalrife.py's MetalIFNet.
 
 Run from the repo root with the project's venv:
 
     .venv/bin/python mac/core/tools/rife_fixtures.py
 
-It writes mac/core/fixtures/rife/ (git-ignored): raw frames and index.json. Frames are packed HxWx3 BGR, uint8
+It writes raw frames and index.json to mac/core/fixtures/rife/, which git ignores. Frames are packed HxWx3 BGR, uint8
 (".bgr") or, for the HDR case, little-endian float16 PQ (".bgr16", framegen/hdr.py's pq16). index.json lists the
 cases with their settings, the files, and the Python output's PSNR against the real frame, which the Rust tests
 must match within 0.05 dB.
@@ -34,7 +34,7 @@ OUT = ROOT / "mac" / "core" / "fixtures" / "rife"
 MODEL = "4.22.lite"
 STEADY = 0.03  # framegen/steady.py STEADY_HUD_THRESHOLD
 
-# (name, first frame, last frame): the real frames between them are the truth for t = k / (last - first).
+# (name, first frame, last frame). The real frames between them are the truth for t = k / (last - first).
 PAIRS = [("p120", 120, 122), ("p210", 210, 213), ("p440", 440, 442)]
 # (pair, scale, t's, steady, hdr)
 CASES = [
@@ -47,9 +47,9 @@ CASES = [
     ("p440", 1.0, [1 / 2], False, True),
     ("p120", 0.25, [1 / 2], False, False),
 ]
-# RIFE versions with five blocks, on random weights (no download needed; checkpoints written here in vs-rife's
-# format): (version, scale, crop size). As tests/test_metalrife.py, the blocks' last layers are scaled down so the
-# random flow stays a few pixels.
+# RIFE versions with five blocks, as (version, scale, crop size), on random weights. Nothing needs downloading,
+# since the checkpoints are written here in vs-rife's format. As in tests/test_metalrife.py, the blocks' last layers
+# are scaled down so the random flow stays a few pixels.
 RANDOM = [("4.25", 1.0, (320, 180)), ("4.25.lite", 0.5, (320, 180))]
 
 

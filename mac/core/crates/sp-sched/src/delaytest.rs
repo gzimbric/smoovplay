@@ -1,8 +1,8 @@
-//! The delay test (L in the video window, PS5 Remote Play; framegen/delaytest.py): chiaki-ng presses Options on the
-//! PS5 a few times, and each time the pipeline times how long the answer takes to reach this Mac, from the moment
-//! chiaki-ng sent the press to the first frame that shows it. The picture is compared in 32x18 blocks of brightness:
-//! a press is answered when at least a quarter of the blocks change by much more than the picture moved on its own
-//! in the second before the test.
+//! The delay test (framegen/delaytest.py), started with L in the video window during PS5 Remote Play. chiaki-ng
+//! presses Options on the PS5 a few times, and each time the pipeline times how long the answer takes to reach this
+//! Mac, from the moment chiaki-ng sent the press to the first frame that shows it. The picture is compared in 32x18
+//! blocks of brightness. A press counts as answered when at least a quarter of the blocks change by much more than
+//! the picture moved on its own in the second before the test.
 
 use crate::np;
 
@@ -10,9 +10,9 @@ pub const BUTTON_OPTIONS: u32 = 1 << 12; // ChiakiControllerButton
 /// An even number, so a menu that opens and closes ends closed.
 pub const PRESSES: u32 = 6;
 pub const HOLD_MS: u32 = 100;
-/// Watch the picture this long first, to learn how much it moves on its own...
+/// Watch the picture this long first, to learn how much it moves on its own.
 pub const SETTLE_S: f64 = 1.0;
-/// ...comparing frames this many ticks apart.
+/// While settling, compare frames this many ticks apart.
 pub const SPAN: usize = 10;
 /// The longest wait for an answer.
 pub const WAIT_S: f64 = 1.0;
@@ -20,12 +20,12 @@ pub const WAIT_S: f64 = 1.0;
 pub const SEND_S: f64 = 0.5;
 /// From an answer (or giving up) to the next press.
 pub const GAP_S: f64 = 1.2;
-/// Brightness levels: the smallest change that counts as an answer, however still the picture.
+/// The smallest change, in brightness levels, that counts as an answer, however still the picture.
 pub const MIN_CHANGE: f64 = 6.0;
 
 /// Blocks down and across.
 pub const BLOCKS: (usize, usize) = (18, 32);
-/// Pixels looked at across each block (and down it): every 4th at 1080p.
+/// Pixels read across and down each block, every 4th one at 1080p.
 pub const SAMPLES: usize = 15;
 
 /// How far apart small() reads pixels: 4 at 1080p, 8 at 4K, every pixel in a frame too small to spare any.
@@ -33,8 +33,8 @@ pub fn step(h: usize, w: usize) -> usize {
     1.max((h / (BLOCKS.0 * SAMPLES)).min(w / (BLOCKS.1 * SAMPLES)))
 }
 
-/// small() on packed 8-bit BGR, on the CPU: the reference the GPU probe is checked against. 18x32 blocks of
-/// brightness, row-major, every step()th pixel read, averaged like torch's adaptive_avg_pool2d.
+/// small() on packed 8-bit BGR, on the CPU. The GPU probe is checked against it. It gives 18x32 blocks of
+/// brightness, row-major, reading every step()th pixel and averaging like torch's adaptive_avg_pool2d.
 pub fn small_bgr(bgr: &[u8], w: usize, h: usize) -> Vec<f32> {
     let s = step(h, w);
     let (hs, ws) = (h.div_ceil(s), w.div_ceil(s));
@@ -57,13 +57,15 @@ pub fn small_bgr(bgr: &[u8], w: usize, h: usize) -> Vec<f32> {
     out
 }
 
-/// How much of the picture changed: the 75th percentile of the blocks' change, so at least a quarter of it.
+/// How much of the picture changed. This is the 75th percentile of the blocks' change, so at least a quarter of the
+/// picture changed by this much.
 pub fn change(a: &[f32], b: &[f32]) -> f64 {
     let d: Vec<f32> = a.iter().zip(b).map(|(x, y)| (x - y).abs()).collect();
     np::percentile_f32(&d, 75.0) as f64
 }
 
-/// chiaki-ng's side of a press: press(buttons, hold_ms) -> token, press_sent(token) -> when it went out, or None.
+/// chiaki-ng's side of a press. press(buttons, hold_ms) returns a token, and press_sent(token) returns when the
+/// press went out, or None.
 pub trait Press {
     fn press(&mut self, buttons: u32, hold_ms: u32) -> u64;
     fn press_sent(&mut self, token: u64) -> Option<f64>;
@@ -78,7 +80,7 @@ pub enum State {
     Done,
 }
 
-/// Feed it every frame with feed(); it presses, watches and times by itself until done().
+/// Feed it every frame with feed(). It presses, watches and times by itself until done().
 #[derive(Clone, Debug)]
 pub struct DelayTest {
     pub presses: u32,
@@ -88,7 +90,7 @@ pub struct DelayTest {
     pub recent: Vec<Vec<f32>>,
     pub motion: Vec<f64>,
     pub threshold: f64,
-    /// Each answered press: sent -> the first frame showing it arrived.
+    /// Each answered press, in ms from sending it to the arrival of the first frame that shows it.
     pub ms: Vec<f64>,
     pub pressed: u32,
     pub missed: u32,
@@ -199,7 +201,7 @@ impl DelayTest {
         s
     }
 
-    /// The answer, in a line: the PS5 and Remote Play's part, SmoovPlay's, and the two together.
+    /// The answer in one line, with the PS5 and Remote Play's part, SmoovPlay's part and the two together.
     pub fn result(&self, smoovplay_ms: Option<f64>) -> String {
         if !self.error.is_empty() && self.ms.is_empty() {
             return if self.error.contains("nothing changed") {

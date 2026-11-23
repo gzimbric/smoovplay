@@ -186,11 +186,11 @@ MAC_CAPTURE = sys.platform == "darwin"  # capture cards through OpenCV's AVFound
 
 def open_capture(a, w: int, h: int, test):
     """--capture: a card by name or number (framegen.capture), or a file standing in for one. On a Mac a card is
-    read through OpenCV's AVFoundation input, by number (DirectShow, which framegen.capture reads cards with, is
-    Windows-only); untested with a real card on a Mac."""
+    read by number through OpenCV's AVFoundation input, because framegen.capture reads cards with DirectShow, which
+    only Windows has. Not yet tested with a real card on a Mac."""
     if MAC_CAPTURE and a.capture_backend == "pyav" and not Path(a.capture).is_file():
         if not a.capture.isdigit():
-            sys.exit("[capture] on a Mac, give the capture card by number (0 is usually the first camera or card); "
+            sys.exit("[capture] on a Mac, give the capture card by number (0 is usually the first camera or card). "
                      "ffmpeg -f avfoundation -list_devices true -i \"\" lists them")
         print("[capture] on a Mac, capture cards are read through OpenCV's AVFoundation input (Experimental)")
         a.capture_backend = "opencv"
@@ -306,8 +306,8 @@ def main() -> int:
     ap.add_argument("--chiaki", action="store_true", help="PS5 Remote Play frames from chiaki-ng's frame tap")
     ap.add_argument("--chiaki-decoder", default="cuda", choices=["cuda", "sw", "d3d11va", "videotoolbox"],
                     help="how to decode the Remote Play stream (default cuda: NVDEC, frames stay on the GPU, ~1.5 ms "
-                         "a frame; sw takes ~10 ms a frame on gameplay; on a Mac, videotoolbox, which cuda and "
-                         "d3d11va also mean there)")
+                         "a frame; sw takes ~10 ms a frame on gameplay. On a Mac, videotoolbox, and cuda and d3d11va "
+                         "mean that there too)")
     ap.add_argument("--chiaki-log", metavar="CSV", help="write one row per tick: stream facts and pipeline decisions")
     ap.add_argument("--minimize-chiaki", action=argparse.BooleanOptionalAction, default=None,
                     help="minimise chiaki-ng's window while ours is up (it keeps streaming but stops drawing video "
@@ -393,7 +393,7 @@ def main() -> int:
     mac_mode = gpu.MAC and not torch.cuda.is_available()
     dml_mode = not torch.cuda.is_available() and not mac_mode
     if mac_mode:
-        where = "Apple's GPU (Metal)" if gpu.is_mps() else "the CPU (Metal isn't available: this will be slow)"
+        where = "Apple's GPU (Metal)" if gpu.is_mps() else "the CPU (Metal isn't available, so this will be slow)"
         print(f"[run] RIFE runs through PyTorch on {where}, {gpu.name()}")
         if a.chiaki_decoder in ("cuda", "d3d11va"):
             a.chiaki_decoder = "videotoolbox"
@@ -430,7 +430,7 @@ def main() -> int:
         try:
             src = ChiakiSource(a.chiaki_decoder, wait_s=600, log_path=a.chiaki_log or frame_log(a.results),
                                tap_name=a.chiaki_tap or NAME, test=test)
-        except ValueError as e:  # e.g. a tap name too long for POSIX shared memory (framegen/chiaki_tap.py)
+        except ValueError as e:  # for example a tap name too long for POSIX shared memory (framegen/chiaki_tap.py)
             print(f"[chiaki] {e}", file=sys.stderr)
             return 1
     elif kind == "capture":
@@ -496,7 +496,7 @@ def main() -> int:
         if dml_mode:
             hdr_why = "SmoovPlay's HDR needs an NVIDIA card for now"
         elif mac_mode:
-            hdr_out = "sdr8"  # (HDR output goes through a DXGI swap chain, which only Windows has)
+            hdr_out = "sdr8"  # HDR output goes through a DXGI swap chain, which only Windows has
             if settings.hdr == "hdr10":
                 print("[run] HDR output isn't on the Mac yet; showing HDR in SDR")
         else:

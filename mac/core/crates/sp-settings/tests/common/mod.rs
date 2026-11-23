@@ -20,7 +20,7 @@ pub fn tmp_dir(name: &str) -> PathBuf {
     d
 }
 
-/// mac/core/fixtures/settings/<name>.json, written by tools/settings_fixtures.py; None (and a note) if it isn't there.
+/// mac/core/fixtures/settings/<name>.json, written by tools/settings_fixtures.py. None, with a note, if it isn't there.
 pub fn fixture(name: &str) -> Option<Value> {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/settings").join(format!("{name}.json"));
     match std::fs::read_to_string(&p) {
@@ -70,7 +70,7 @@ impl Write for Buf {
     }
 }
 
-/// Writes files (name -> text) into a new folder: a looks library.
+/// Writes files, given as name and text, into a new folder for a looks library.
 pub fn library_from(files: &Value) -> PathBuf {
     let d = tmp_dir("lib");
     if let Value::Dict(m) = files {

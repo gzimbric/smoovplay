@@ -1,12 +1,12 @@
 //! The codec header saved for a later run that joins the same stream (framegen/chiaki_tap.py `_save_header`,
-//! `_load_header`): the file `<temp dir>/<name after its last backslash>-header.bin`, holding u32 session, u32 codec
-//! (little-endian), then the parameter sets as [`crate::nal::param_sets`] gives them. The temp dir is found the way
-//! Python's `tempfile.gettempdir()` finds it, so Python and Rust readers share the file.
+//! `_load_header`). It goes in `<temp dir>/<name after its last backslash>-header.bin` and holds u32 session, u32
+//! codec (little-endian), then the parameter sets as [`crate::nal::param_sets`] gives them. The temp dir is found
+//! the way Python's `tempfile.gettempdir()` finds it, so Python and Rust readers share the file.
 
 use std::path::{Path, PathBuf};
 
-/// Python's `tempfile.gettempdir()` on macOS: the first of $TMPDIR, $TEMP, $TMP that's a writable folder, else
-/// /tmp, /var/tmp, /usr/tmp, else the current folder.
+/// Python's `tempfile.gettempdir()` on macOS. It's the first of $TMPDIR, $TEMP and $TMP that's a writable folder,
+/// else the first of /tmp, /var/tmp and /usr/tmp that is, else the current folder.
 pub fn temp_dir() -> PathBuf {
     let mut dirs: Vec<PathBuf> = ["TMPDIR", "TEMP", "TMP"]
         .iter()
@@ -33,7 +33,7 @@ fn writable(d: &Path) -> bool {
     unsafe { libc::access(c.as_ptr(), libc::W_OK | libc::X_OK) == 0 }
 }
 
-/// os.path.abspath: absolute and normalised (no trailing "/", "." or "..") without resolving links.
+/// As os.path.abspath, absolute and normalised (no trailing "/", "." or "..") without resolving links.
 fn absolute(d: &Path) -> PathBuf {
     let d = if d.is_absolute() { d.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(d) };
     let mut out = PathBuf::from("/");

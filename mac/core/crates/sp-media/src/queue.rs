@@ -1,6 +1,6 @@
-//! A live source's ticks between its reader thread and the pipeline (framegen/io.py queue_ticks): at most a few
-//! queued, the oldest dropped when the pipeline falls behind; numbered from 0 as they're taken, with a Waiting
-//! whenever none has come for WAIT_POLL_S.
+//! A live source's ticks between its reader thread and the pipeline (framegen/io.py queue_ticks). At most a few are
+//! queued, and the oldest is dropped when the pipeline falls behind. They're numbered from 0 as they're taken, with a
+//! Waiting whenever none has come for WAIT_POLL_S.
 
 use std::collections::VecDeque;
 use std::sync::{Condvar, Mutex};
@@ -31,7 +31,7 @@ impl TickQueue {
         TickQueue { state: Mutex::new(State { items: VecDeque::new(), ended: false }), cv: Condvar::new(), cap }
     }
 
-    /// Queue a tick; if the queue is full the oldest goes. Returns true if one was dropped.
+    /// Queue a tick. If the queue is full the oldest goes. Returns true if one was dropped.
     pub fn put(&self, t: Tick) -> bool {
         let mut s = self.state.lock().unwrap();
         let dropped = s.items.len() >= self.cap;
@@ -92,7 +92,8 @@ impl Ticker {
         Ticker { index: 0, last: sp_core::clock::now(), what: what.to_string() }
     }
 
-    /// The next tick (numbered), a Waiting after WAIT_POLL_S without one (why: the source's hint), or None at the end.
+    /// The next tick (numbered), a Waiting after WAIT_POLL_S without one, or None at the end. `why` gives the source's
+    /// hint for the Waiting.
     pub fn next(&mut self, q: &TickQueue, why: impl FnOnce() -> String) -> Option<Event> {
         match q.get(WAIT_POLL_S) {
             Got::Tick(mut t) => {

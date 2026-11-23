@@ -1,5 +1,5 @@
-//! The before & after maker on its own: `sp-replay-compose --after A --before B --out OUT ...` (the smoovplay binary
-//! runs the same as `smoovplay replay-compose ...`). An optional leading `replay-compose` or `compose` is skipped.
+//! The before & after maker on its own, as `sp-replay-compose --after A --before B --out OUT ...`. The smoovplay binary
+//! runs the same code as `smoovplay replay-compose ...`. An optional leading `replay-compose` or `compose` is skipped.
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();

@@ -1,20 +1,20 @@
-// App window mode on a Mac: ScreenCaptureKit copies the chosen app's window (PS Remote Play, Moonlight, a browser
-// playing a cloud game...) at up to 60 fps as BGRA, and each picture goes into the frame tap as a decoded frame,
-// which the core reads (run.py --source tap). The window is copied on its own, so windows over it (SmoovPlay's
-// video among them) don't get in the way.
+// App window mode on a Mac. ScreenCaptureKit copies the chosen app's window (PS Remote Play, Moonlight, a browser
+// playing a cloud game) at up to 60 fps as BGRA, and each picture goes into the frame tap as a decoded frame, which
+// the core reads (run.py --source tap). The window is copied on its own, so windows over it, SmoovPlay's video
+// among them, don't get in the way.
 //
-// Frames come when the window changes (FEATURE_VARIABLE): ScreenCaptureKit hands over a picture with status
+// Frames come when the window changes (FEATURE_VARIABLE). ScreenCaptureKit hands over a picture with status
 // "complete" when something in the window changed, and only says "idle" when nothing did. So a picture is sent once,
 // and the core puts the pictures on a 60 Hz beat, where a beat with no new picture is a repeat for certain. A
-// complete picture with nothing marked changed in it is sent as a repeat (FLAG_REPEAT); otherwise the core compares
-// pictures, as a streaming app's repeats are decoded again and never quite identical.
+// complete picture with nothing marked changed in it is sent as a repeat (FLAG_REPEAT). Otherwise the core compares
+// pictures, because a streaming app's repeats are decoded again and never quite identical.
 //
-// The picture is the window's shape at the start, fitted into 1920x1080 (the size the pipeline is tuned for); if
-// the window changes size later, the picture is squeezed into the same size (as Windows' window capture always
-// does), so the core's video window can be stretched back over it.
+// The picture is the window's shape at the start, fitted into 1920x1080, the size the pipeline is tuned for. If the
+// window changes size later, the picture is squeezed into the same size, as Windows' window capture always does, so
+// the core's video window can be stretched back over it.
 //
-// Screen Recording permission: macOS asks the first time (System Settings > Privacy & Security > Screen & System
-// Audio Recording). Without it the window list is empty and capture fails.
+// macOS asks for the Screen Recording permission the first time (System Settings > Privacy & Security > Screen &
+// System Audio Recording). Without it the window list is empty and capture fails.
 import AppKit
 import CFrameTap
 import CoreMedia
@@ -60,14 +60,14 @@ public struct CaptureWindow: Identifiable, Hashable, Sendable {
         return 3
     }
 
-    /// Best first: known apps, cloud games in a browser, other browsers, the rest; then the biggest.
+    /// Best first: known apps, cloud games in a browser, other browsers, then the rest, each biggest first.
     public static func sorted(_ list: [CaptureWindow]) -> [CaptureWindow] {
         list.sorted { a, b in
             a.rank != b.rank ? a.rank < b.rank : a.frame.width * a.frame.height > b.frame.width * b.frame.height
         }
     }
 
-    /// The picture's size for a window of this shape: fitted into 1920x1080, even, at least 320x180.
+    /// The picture's size for a window of this shape, fitted into 1920x1080, even, and at least 320x180.
     public static func captureSize(for frame: CGRect, box: CGSize = CGSize(width: 1920, height: 1080)) -> (Int, Int) {
         guard frame.width > 0, frame.height > 0 else { return (Int(box.width), Int(box.height)) }
         let s = min(box.width / frame.width, box.height / frame.height)
@@ -77,11 +77,11 @@ public struct CaptureWindow: Identifiable, Hashable, Sendable {
 }
 
 public enum ScreenPermission {
-    /// Granted already (no prompt).
+    /// Whether it's granted already, without a prompt.
     public static var granted: Bool { CGPreflightScreenCaptureAccess() }
 
-    /// Asks macOS: the first time it shows its prompt; after a "Don't Allow" it shows nothing, and only System
-    /// Settings can change it. Returns whether it's granted now.
+    /// Asks macOS. The first time, it shows its prompt. After Don't Allow it shows nothing, and only System Settings
+    /// can change it. Returns whether it's granted now.
     @discardableResult
     public static func request() -> Bool { CGRequestScreenCaptureAccess() }
 
@@ -97,7 +97,7 @@ public enum ScreenPermission {
 }
 
 /// The window's place now (points, top-left origin), and whether it's on screen (not minimised or hidden). No
-/// permission needed: CGWindowList gives every window's bounds.
+/// permission is needed, since CGWindowList gives every window's bounds.
 public func windowBounds(_ id: CGWindowID) -> (CGRect, Bool)? {
     guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], id) as? [[String: Any]],
           let d = list.first, let b = d[kCGWindowBounds as String] as? [String: Any],
@@ -119,11 +119,11 @@ public final class WindowCapture: NSObject, SCStreamOutput, SCStreamDelegate, @u
     private var _stats = Stats()
     public private(set) var size = (0, 0)
     public private(set) var window: CaptureWindow?
-    /// The title bar left out of the picture, in points (0: none).
+    /// The title bar left out of the picture, in points (0 for none).
     public private(set) var titleBar: CGFloat = 0
 
-    /// A standard title bar's height: 32 points from macOS 26 on (28 for apps built for older versions, which lose 4
-    /// points of picture rather than show a strip of title bar), 28 before. Another app's own title bar can't be
+    /// A standard title bar's height, 32 points from macOS 26 on and 28 before. Apps built for older versions have
+    /// 28, and lose 4 points of picture rather than show a strip of title bar. Another app's own title bar can't be
     /// measured without the Accessibility permission.
     public static var titleBarHeight: CGFloat {
         ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 ? 32 : 28
@@ -142,7 +142,7 @@ public final class WindowCapture: NSObject, SCStreamOutput, SCStreamDelegate, @u
         return _stats
     }
 
-    /// The windows that could be captured, best first (needs Screen Recording; throws without it).
+    /// The windows that could be captured, best first. Needs Screen Recording, and throws without it.
     public static func windows() async throws -> [CaptureWindow] {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         let me = Bundle.main.bundleIdentifier ?? ""
@@ -151,7 +151,7 @@ public final class WindowCapture: NSObject, SCStreamOutput, SCStreamDelegate, @u
             guard w.windowLayer == 0, w.frame.width >= 320, w.frame.height >= 180, let app = w.owningApplication else { continue }
             let bid = app.bundleIdentifier
             let appName = app.applicationName.lowercased()
-            // (the core's own video window is python's, or the Rust core's smoovplay)
+            // the core's own video window is python's, or the Rust core's smoovplay
             if bid == me || bid == "com.apple.dock" || bid == "com.apple.WindowManager" || appName == "smoovplay"
                 || appName.hasPrefix("python") { continue }
             let title = w.title ?? ""
@@ -163,8 +163,9 @@ public final class WindowCapture: NSObject, SCStreamOutput, SCStreamDelegate, @u
     }
 
     /// Starts copying the window into the tap. Throws if the window is gone or capture can't start.
-    /// leaveOutTitleBar: the top of the window, a standard title bar's height, isn't copied (not for a window that
-    /// fills a screen, which has none). Apps that draw under their title bar (a browser's tabs, QuickTime) want it off.
+    /// With leaveOutTitleBar, the top of the window, a standard title bar's height, isn't copied. A window that fills
+    /// a screen has no title bar, so all of it is copied. Apps that draw under their title bar (a browser's tabs,
+    /// QuickTime) want it off.
     public func start(_ target: CaptureWindow, leaveOutTitleBar: Bool = true) async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         guard let w = content.windows.first(where: { $0.windowID == target.id }) else {
@@ -192,7 +193,7 @@ public final class WindowCapture: NSObject, SCStreamOutput, SCStreamDelegate, @u
         cfg.ignoreShadowsSingleWindow = true
         cfg.shouldBeOpaque = true
         cfg.colorSpaceName = CGColorSpace.sRGB
-        cfg.sourceRect = source  // (points, from the window's top left)
+        cfg.sourceRect = source  // points, from the window's top left
         let filter = SCContentFilter(desktopIndependentWindow: w)
         let s = SCStream(filter: filter, configuration: cfg, delegate: self)
         try s.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
@@ -242,7 +243,7 @@ public final class WindowCapture: NSObject, SCStreamOutput, SCStreamDelegate, @u
         case .complete:
             _stats.complete += 1
         case .idle:
-            _stats.idle += 1  // nothing changed: nothing to send (the core's beat repeats the last picture)
+            _stats.idle += 1  // nothing changed, so nothing to send (the core's beat repeats the last picture)
             return
         default:
             _stats.other += 1
@@ -255,8 +256,8 @@ public final class WindowCapture: NSObject, SCStreamOutput, SCStreamDelegate, @u
         defer { CVPixelBufferUnlockBaseAddress(pb, .readOnly) }
         guard let base = CVPixelBufferGetBaseAddress(pb), CVPixelBufferGetWidth(pb) == tap.width,
               CVPixelBufferGetHeight(pb) == tap.height else { return }
-        // When the picture was made: ScreenCaptureKit's times are the host clock (mach_absolute_time), which
-        // CLOCK_UPTIME_RAW, the reader's clock, counts in nanoseconds. Now, if it doesn't look like one.
+        // When the picture was made. ScreenCaptureKit's times are on the host clock (mach_absolute_time), which
+        // CLOCK_UPTIME_RAW, the reader's clock, counts in nanoseconds. A time that doesn't look like one becomes now.
         let pts = CMSampleBufferGetPresentationTimeStamp(sb)
         let now = sp_now_ns()
         var at = now

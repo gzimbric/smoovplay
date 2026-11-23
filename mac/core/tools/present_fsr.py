@@ -1,11 +1,11 @@
-"""Reference data for sp-present's FSR 1 and bilinear passes: what the Python window's OpenGL versions
-(framegen/fsr.py FsrScaler, and GLWindowSink's glBlitFramebuffer with GL_LINEAR) draw, on this Mac's OpenGL 4.1
-(framegen/glsl.py rewrites the shaders for it). crates/sp-present/tests/shaders.rs draws the same with Metal and
+"""Reference data for sp-present's FSR 1 and bilinear passes. It's what the Python window's OpenGL versions draw on
+this Mac's OpenGL 4.1, which framegen/glsl.py rewrites the shaders for. Those versions are framegen/fsr.py FsrScaler
+and GLWindowSink's glBlitFramebuffer with GL_LINEAR. crates/sp-present/tests/shaders.rs draws the same with Metal and
 compares.
 
     .venv/bin/python mac/core/tools/present_fsr.py   (from the repository root)
 
-Writes mac/core/fixtures/present/fsr/: <name>.in.bgr, <name>.<w>x<h>.<what>.bgr (top row first), cases.json.
+Writes mac/core/fixtures/present/fsr/: <name>.in.bgr, <name>.<w>x<h>.<what>.bgr (top row first) and cases.json.
 """
 from __future__ import annotations
 
@@ -23,12 +23,12 @@ OUT = ROOT / "mac" / "core" / "fixtures" / "present" / "fsr"
 
 
 def _pattern(w: int, h: int) -> np.ndarray:
-    """Edges, diagonals, fine detail and smooth gradients: what FSR's edge detection and RCAS react to."""
+    """Edges, diagonals, fine detail and smooth gradients, which are what FSR's edge detection and RCAS react to."""
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     a = np.stack([128 + 120 * np.sin(xx / 9), 128 + 120 * np.sin(yy / 7 + 1), 128 + 120 * np.cos((xx + yy) / 13)], -1)
     a[(xx // 8 + yy // 8) % 2 == 0] *= 0.6  # a checkerboard
     r = np.hypot(xx - w * 0.7, yy - h * 0.4)
-    a[r < h * 0.25] = 255 * ((np.sin(r[r < h * 0.25] * 1.3) > 0)[:, None])  # rings: aliasing-prone circles
+    a[r < h * 0.25] = 255 * ((np.sin(r[r < h * 0.25] * 1.3) > 0)[:, None])  # rings, circles that are prone to aliasing
     a[h // 10: h // 10 + 3, :] = 255  # thin lines
     a[:, w // 7: w // 7 + 1] = 0
     return np.clip(a, 0, 255).astype(np.uint8)
@@ -106,7 +106,7 @@ def main() -> None:
                 (OUT / file).write_bytes(read(out_fbo, dw, dh).tobytes())
                 cases.append({"input": f"{name}.in.bgr", "w": w, "h": h, "dw": dw, "dh": dh, "what": "fsr",
                               "sharpness": s, "file": file})
-            # bilinear: the window's plain blit (image row 0 at the top, so the destination's Y is flipped)
+            # bilinear is the window's plain blit. Image row 0 is at the top, so the destination's Y is flipped.
             GL.glBindFramebuffer(GL.GL_READ_FRAMEBUFFER, src_fbo)
             GL.glBindFramebuffer(GL.GL_DRAW_FRAMEBUFFER, out_fbo)
             GL.glBlitFramebuffer(0, 0, w, h, 0, dh, dw, 0, GL.GL_COLOR_BUFFER_BIT, GL.GL_LINEAR)

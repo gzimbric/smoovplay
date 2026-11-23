@@ -1,6 +1,6 @@
-//! VideoToolbox + the conversion kernels against FFmpeg (PyAV) on the same packets (fixtures from
-//! mac/core/tools/media_fixtures.py): the SDR path against to_ndarray("bgr24"), the HDR paths against
-//! framegen/hdr.py's StreamConverter and its exact maths. Prints the differences; fails past 1 level where the
+//! VideoToolbox and the conversion kernels against FFmpeg (PyAV) on the same packets, fixtures from
+//! mac/core/tools/media_fixtures.py. The SDR path is checked against to_ndarray("bgr24"), and the HDR paths against
+//! framegen/hdr.py's StreamConverter and its exact maths. Prints the differences, and fails past 1 level where the
 //! Python path is meant to match.
 
 mod common;
@@ -48,12 +48,12 @@ fn hdr_matches_hdr_py() {
     for i in REF {
         let d = &pics[i];
         assert!(d.ten_bit);
-        // HDR off: washed out (as in Python, which warns about it). swscale's 10-bit path isn't the 8-bit one's
-        // maths (it seems to dither), so this is only reported.
+        // With HDR off it's washed out, as in Python, which warns about it. swscale's 10-bit path isn't the 8-bit
+        // one's maths (it seems to dither), so this is only reported.
         let off = conv.sdr(d).unwrap();
         let (max, mean, _) = diff(&off.to_bgr(), &read(&format!("hevc10_{i}.bgr")));
         eprintln!("hevc10 frame {i}: HDR off vs PyAV bgr24: max {max}, mean {mean:.4}");
-        // sdr8: against the maths per pixel, and against Python's 3D LUT
+        // sdr8 against the maths per pixel, and against Python's 3D LUT
         let (f, info) = conv.hdr(d, &sdr8).unwrap();
         assert_eq!(info.describe(), "10-bit PQ BT.2020");
         let ours = f.to_bgr();
@@ -67,7 +67,7 @@ fn hdr_matches_hdr_py() {
         );
         worst_exact = worst_exact.max(max_e);
         worst_over = worst_over.max(over_e);
-        // pq16: half floats, RGBA here, BGR there
+        // pq16 is half floats, RGBA here and BGR there
         let (f, _) = conv.hdr(d, &pq16).unwrap();
         let raw = f.read_raw();
         let theirs = read(&format!("hevc10_{i}.pq16.f16"));
@@ -80,7 +80,7 @@ fn hdr_matches_hdr_py() {
         }
         eprintln!("hevc10 frame {i}: pq16 vs StreamConverter: max {max_pq:.6} (of 0..1; a 10-bit step is {:.6})", 1.0 / 876.0);
         worst_pq = worst_pq.max(max_pq);
-        // The 8-bit stand-in (hdr.py to_u8: v * 255 / PQ(203 nits), truncated), against the same sum on the CPU
+        // The 8-bit stand-in (hdr.py to_u8, v * 255 / PQ(203 nits) truncated) against the same sum on the CPU
         let level = conv.pq16_to_8(&f, false, &pq16).to_bgr();
         let scale = 255.0 / sp_media::colour::pq_of_nits(pq16.sdr_nits) as f32;
         let mut worst_level = 0u8;
@@ -92,16 +92,16 @@ fn hdr_matches_hdr_py() {
             }
         }
         assert!(worst_level <= 1, "level8 {worst_level}");
-        // pq16 back to sdr8 (instant replay's clips): the direct sdr8's maths, but from half floats. Where the
-        // BT.2020-to-709 matrix leaves a channel of a bright, saturated colour near 0, SDR gamma is steep and the
-        // half-float rounding of the PQ value shows as up to ~20 levels; elsewhere 0-4.
+        // pq16 back to sdr8, for instant replay's clips. It's the direct sdr8's maths, but from half floats. Where
+        // the BT.2020-to-709 matrix leaves a channel of a bright, saturated colour near 0, SDR gamma is steep and the
+        // half-float rounding of the PQ value shows as up to about 20 levels. Elsewhere it's 0 to 4.
         let back = conv.pq16_to_8(&f, true, &pq16).to_bgr();
         let (max_b, mean_b, _) = diff(&back, &ours);
-        eprintln!("hevc10 frame {i}: pq16 -> sdr8 vs sdr8 directly: max {max_b}, mean {mean_b:.4}; level8 within {worst_level}");
+        eprintln!("hevc10 frame {i}: pq16 to sdr8 vs sdr8 directly: max {max_b}, mean {mean_b:.4}, level8 within {worst_level}");
         assert!(mean_b < 1.0 && max_b <= 32);
     }
-    // float32 on both sides, but different pow/exp: a few pixels a frame near black, where SDR gamma is steepest,
-    // land 2-4 levels apart; everything else within 1.
+    // float32 on both sides, but different pow and exp. A few pixels a frame near black, where SDR gamma is
+    // steepest, land 2 to 4 levels apart. Everything else is within 1.
     assert!(worst_exact <= 4 && worst_over < 1e-5, "sdr8 {worst_exact} levels ({worst_over}) from hdr.py's maths");
     assert!(worst_pq < 1.0 / 876.0, "pq16 {worst_pq} from StreamConverter");
 }

@@ -37,12 +37,12 @@ fn pick_prefers_raw_at_the_size_and_rate_asked_for() {
     let mut with = modes.clone();
     with.push(nv12.clone());
     assert_eq!(pick_mode(&with, 1920, 1080, 60.0).0, Some(nv12));
-    // only MJPEG reaches 60 at 1080p: it's used, with a warning; a raw 30 fps mode isn't preferred over it
+    // only MJPEG reaches 60 at 1080p, so it's used, with a warning. A raw 30 fps mode isn't preferred over it.
     let no_raw60: Vec<Mode> = modes.iter().filter(|m| !(m.raw && m.fps_max == 60.0 && m.w == 1920)).cloned().collect();
     let (best, note) = pick_mode(&no_raw60, 1920, 1080, 60.0);
     assert_eq!(best.unwrap().fmt, "mjpeg");
     assert!(note.contains("compressed"), "{note}");
-    // no 1080p at all: the largest size under it
+    // no 1080p at all, so the largest size under it
     let small: Vec<Mode> = modes.iter().filter(|m| m.w != 1920).cloned().collect();
     let (best, note) = pick_mode(&small, 1920, 1080, 60.0);
     let best = best.unwrap();
@@ -74,7 +74,7 @@ fn a_card_on_usb_2_is_pointed_to_usb_3() {
 
 #[test]
 fn open_rate_is_open_options_framerate() {
-    // test_open_options: 59.94 asked as 59.94; a 30-60 mode at 60
+    // test_open_options. 59.94 is asked as 59.94, and a 30 to 60 mode at 60.
     assert_eq!(g(open_rate(&Mode::new("nv12", true, 1920, 1080, 59.94, 59.94), 60.0)), "59.94");
     assert_eq!(open_rate(&Mode::new("mjpeg", false, 1920, 1080, 30.0, 60.0), 60.0), 60.0);
     assert_eq!(open_rate(&Mode::new("nv12", true, 1920, 1080, 30.0, 30.0), 60.0), 30.0);
@@ -99,12 +99,12 @@ fn avfoundation_formats_are_named_as_ffmpeg_names_them() {
     assert_eq!(name(b"avc1"), ("h264".into(), false, ""));
     assert_eq!(name(b"BGRA"), ("bgr0".into(), true, ""));
     assert_eq!(name(b"xf20"), ("p010".into(), false, "pc"));
-    // a mode from a format: rates to 1/1000, the matrix and range from its tags
+    // a mode from a format, with rates to 1/1000 and the matrix and range from its tags
     let m = mode_of(fourcc(b"2vuy"), 1920, 1080, 60000.0 / 1001.0, 60000.0 / 1001.0, Some("ITU_R_709_2"), Some(false));
     assert_eq!(m, Mode { range: "tv".into(), space: "bt709".into(), ..Mode::new("uyvy422", true, 1920, 1080, 59.94, 59.94) });
     let m = mode_of(fourcc(b"dmb1"), 1280, 720, 5.0, 30.0, Some("ITU_R_601_4"), None);
     assert_eq!((m.range.as_str(), m.space.as_str(), m.fps_min), ("", "bt470bg", 5.0));
-    // pick_mode on a Mac card's list: NV12 in limited range first of equals (the listing puts 420v before 420f)
+    // pick_mode on a Mac card's list takes NV12 in limited range first of equals, as the listing puts 420v before 420f
     let modes = vec![
         mode_of(fourcc(b"420v"), 1920, 1080, 60.0, 60.0, None, None),
         mode_of(fourcc(b"420f"), 1920, 1080, 60.0, 60.0, None, None),
@@ -131,10 +131,10 @@ fn the_cards_sound_device_is_found_by_name() {
     assert_eq!(pick("USB3.0 Capture", &devs).as_deref(), Some("Digital Audio Interface (USB3.0 Capture)"));
     assert_eq!(pick("Cam Link 4K", &devs).as_deref(), Some("Cam Link 4K"));
     assert_eq!(pick("Game Capture HD60 X", &devs).as_deref(), Some("Game Capture HD60 X Audio"));
-    assert_eq!(pick("USB Video", &devs), None); // generic words only: no guess
+    assert_eq!(pick("USB Video", &devs), None); // generic words only, so no guess
     let elgato = vec![d("Elgato 4K X", "video"), d("Line (Elgato 4K X)", "audio"), d("Line (Elgato Wave)", "audio")];
     assert_eq!(pick("Elgato 4K X", &elgato).as_deref(), Some("Line (Elgato 4K X)"));
-    // AVerMedia (issue 23): "-Video"/"-Audio" endings, and a "Not To Use" device named like the real one
+    // AVerMedia (issue 23) has "-Video" and "-Audio" endings, and a "Not To Use" device named like the real one
     let avermedia = vec![
         d("Live Gamer Ultra 2.1-Video", "video"),
         d("HDMI/Line In (Live Gamer Ultra 2.1-Audio)", "audio"),
@@ -156,7 +156,7 @@ fn the_sound_device_follows_capture_audio() {
     assert_eq!(pick_sound_device("Cam Link 4K", "off", &devs, &mut say), None);
     assert_eq!(pick_sound_device("Cam Link 4K", "1", &devs, &mut say).as_deref(), Some("Mic"));
     assert_eq!(pick_sound_device("Cam Link 4K", "Mic", &devs, &mut say).as_deref(), Some("Mic"));
-    // a card with no sound device of its own (the AVerMedia GC573, issue 9): its own sound is tried
+    // a card with no sound device of its own (the AVerMedia GC573, issue 9) gets its own sound tried
     let gc573 = vec![Device::new("AVerMedia HD Capture GC573 1", "video"), Device::new("Microphone (USB Audio)", "audio")];
     assert_eq!(pick_sound_device("AVerMedia HD Capture GC573 1", "auto", &gc573, &mut say).as_deref(), Some("AVerMedia HD Capture GC573 1"));
     assert!(said.iter().any(|l| l.contains("trying the card's own sound")));
@@ -177,8 +177,8 @@ fn json_has_the_pythons_shape() {
     assert_eq!(f["note"], "");
 }
 
-/// The Python's pick_mode, pick_audio and sound_report on the same inputs (picks.json): the same answers, the
-/// Windows-only words aside.
+/// The Python's pick_mode, pick_audio and sound_report on the same inputs (picks.json). The answers match, apart
+/// from Windows-only words.
 #[test]
 fn picks_match_the_python() {
     let Some(p) = common::fixture("picks.json") else { return };
@@ -228,7 +228,7 @@ fn picks_match_the_python() {
     assert!(n > 300, "{n} cases");
 }
 
-/// AVFoundation's list (names and unique IDs only: nothing is opened).
+/// AVFoundation's list, names and unique IDs only. Nothing is opened.
 #[test]
 fn the_macs_devices_are_listed() {
     let devs = list_devices();

@@ -1,10 +1,10 @@
-// Keys that work from any app, through Carbon's RegisterEventHotKey: no Accessibility permission, no key logging
-// (macOS tells the app only when one of its own shortcuts is pressed).
+// Keys that work from any app, through Carbon's RegisterEventHotKey. It needs no Accessibility permission and logs
+// no keys, since macOS tells the app only when one of its own shortcuts is pressed.
 //
-// While a session plays, the app holds Control-Option-R (save the instant replay) and Control-Option-B (a before &
-// after video) when instant replay is on, as the core's Ctrl+Alt+R and Ctrl+Alt+B do on Windows (replay.py,
-// Windows-only there), and in App window mode the video window's own keys (WindowKeys.cs, framegen/hotkeys.py),
-// since the app being captured keeps the keyboard. Each press becomes a command for the core.
+// While a session plays with instant replay on, the app holds Control-Option-R (save the instant replay) and
+// Control-Option-B (a before & after video), as the core's Ctrl+Alt+R and Ctrl+Alt+B do on Windows (replay.py,
+// Windows-only there). In App window mode it also holds the video window's own keys (WindowKeys.cs,
+// framegen/hotkeys.py), since the app being captured keeps the keyboard. Each press becomes a command for the core.
 import Carbon.HIToolbox
 import Foundation
 
@@ -16,7 +16,7 @@ public struct KeyCombo: Hashable, Sendable, CustomStringConvertible {
 
     public var keyCode: UInt32 { KeyCombo.codes[key] ?? 0 }
 
-    /// As people read it: "Control-Option-M", Apple's way of writing shortcuts.
+    /// The name as people read it, "Control-Option-M", which is how Apple writes shortcuts.
     public var name: String {
         var parts: [String] = []
         if mods & UInt32(controlKey) != 0 { parts.append("Control") }
@@ -109,8 +109,8 @@ public final class Hotkeys: @unchecked Sendable {
         }, 1, &spec, me, &handler)
     }
 
-    /// Takes the shortcut; the action runs on the main thread each time it's pressed. nil if another app (or
-    /// macOS) has it, else an id for unregister.
+    /// Takes the shortcut. The action runs on the main thread each time it's pressed. Returns nil if another app or
+    /// macOS has it, else an id for unregister.
     @discardableResult
     public func register(_ combo: KeyCombo, action: @escaping () -> Void) -> UInt32? {
         installHandler()
@@ -135,8 +135,8 @@ public final class Hotkeys: @unchecked Sendable {
 
     public var held: [KeyCombo] { registered.values.map(\.combo) }
 
-    /// No other app has it, and it isn't one of macOS's own (System Settings > Keyboard > Keyboard Shortcuts): it's
-    /// taken for a moment and let go. One the app itself holds counts as free.
+    /// True if no other app has it and it isn't one of macOS's own (System Settings > Keyboard > Keyboard
+    /// Shortcuts). It's taken for a moment to find out, then let go. One the app itself holds counts as free.
     public func free(_ combo: KeyCombo) -> Bool {
         if registered.values.contains(where: { $0.combo == combo }) { return true }
         if Hotkeys.systemShortcuts().contains(combo) { return false }
@@ -148,7 +148,7 @@ public final class Hotkeys: @unchecked Sendable {
         return true
     }
 
-    /// macOS's own shortcuts that are turned on (Mission Control, Spotlight, input sources, screenshots...).
+    /// macOS's own shortcuts that are turned on (Mission Control, Spotlight, input sources, screenshots and so on).
     public static func systemShortcuts() -> Set<KeyCombo> {
         var out: Set<KeyCombo> = []
         var array: Unmanaged<CFArray>?
@@ -165,9 +165,9 @@ public final class Hotkeys: @unchecked Sendable {
     }
 }
 
-/// App window mode's shortcuts (WindowKeys.cs and framegen/hotkeys.py on Windows; keep them in step). The app being
-/// captured keeps the keyboard, so these work from anywhere: Control-Option with the video window's usual key.
-/// People can change them on the Play page; they're kept as "window-key:<action>=<keys>" in the prefs.
+/// App window mode's shortcuts. Keep them in step with WindowKeys.cs and framegen/hotkeys.py on Windows. The app
+/// being captured keeps the keyboard, so these work from anywhere, as Control-Option with the video window's usual
+/// key. People can change them on the Play page. The prefs keep them as "window-key:<action>=<keys>".
 public enum WindowKeys {
     public struct Action: Sendable {
         public let id, label: String
@@ -183,13 +183,13 @@ public enum WindowKeys {
         Action(id: "smooth", label: "Smooth on/off", defaults: ["Control-Option-I"], key: "I"),
     ]
 
-    /// Instant replay's, held whenever it's on (any source).
+    /// Instant replay's keys, held whenever it's on, with any source.
     public static let replay: [(id: String, combo: String, key: String, what: String)] = [
         ("replay", "Control-Option-R", "R", "saving a replay"),
         ("compare", "Control-Option-B", "B", "saving a before & after"),
     ]
 
-    /// The menu's own keys, plain, while it's open (once the core says when it is: SettingsState.menuOpen).
+    /// The menu's own keys, taken plain while it's open, once the core says when it is (SettingsState.menuOpen).
     public static let nav = ["Up", "Down", "Left", "Right", "Enter", "Esc", "Backspace"]
 
     static let prefix = "window-key:"
@@ -212,7 +212,8 @@ public enum WindowKeys {
         prefs.flags.filter { $0.hasPrefix(prefix) }.forEach { prefs.set($0, false) }
     }
 
-    /// Each action's shortcuts to try: the one picked, or its defaults minus any picked for another action.
+    /// Each action's shortcuts to try. That's the one picked, or else its defaults minus any picked for another
+    /// action.
     public static func choices(_ prefs: Prefs) -> [String: [String]] {
         let p = picked(prefs)
         let used = Set(p.values)
@@ -235,7 +236,7 @@ public enum WindowKeys {
         return (got, taken)
     }
 
-    /// Why `name` can't be the shortcut for `action`, or nil.
+    /// Why `combo` can't be the shortcut for `action`, or nil.
     public static func problem(_ combo: KeyCombo?, action: String, prefs: Prefs, free: (KeyCombo) -> Bool) -> String? {
         guard let c = combo else {
             return "That key can't be used. Pick a letter, a number, F1 to F20, Esc, Space, Return, Tab, an arrow, Home, End, Page Up, Page Down or Delete."

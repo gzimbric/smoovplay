@@ -1,4 +1,4 @@
-// SmoovPlay for macOS: the launcher window, with the Windows launcher's pages in a rail on the left.
+// SmoovPlay for macOS. The launcher window has the Windows launcher's pages in a rail on the left.
 import AppKit
 import SmoovPlayKit
 import SwiftUI
@@ -38,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         src.setEventHandler { Trace.log("SIGTERM: quitting"); NSApp.terminate(nil) }
         src.resume()
         sigterm = src
-        if let out = options.diagnostics {  // --diagnostics FILE: what Copy diagnostics copies, then quit
+        if let out = options.diagnostics {  // --diagnostics FILE writes what Copy diagnostics copies, then quits
             let text = MainActor.assumeIsolated { model.diagnosticsText() }
             try? text.write(toFile: out, atomically: true, encoding: .utf8)
             NSApp.terminate(nil)
@@ -86,7 +86,7 @@ struct RootView: View {
         .animation(.easeOut(duration: 0.2), value: m.toast)
         .sheet(item: $m.dialog) { d in DialogView(dialog: d) }
         .background(WindowFinder())
-        .onAppear { m.go(m.page) }  // the first page's loading (--page, or Play/the guide)
+        .onAppear { m.go(m.page) }  // loads the first page (--page, or Play or the guide)
     }
 }
 
@@ -195,8 +195,8 @@ struct WindowFinder: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-/// SMOOVPLAY_SHOTS=<folder>: a PNG of the window on every page or state change, drawn by the app itself (never a
-/// screen capture, so nothing but SmoovPlay's own window is in it).
+/// SMOOVPLAY_SHOTS=<folder> saves a PNG of the window on every page or state change. The app draws it itself,
+/// never with a screen capture, so nothing but SmoovPlay's own window is in it.
 enum Snapshots {
     static weak var window: NSWindow?
     static let folder = ProcessInfo.processInfo.environment["SMOOVPLAY_SHOTS"]

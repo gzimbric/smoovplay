@@ -1,13 +1,13 @@
-//! The before & after video's labels (replay.py _label): white text on a translucent dark box, sized for the
-//! picture's height, as (Y, weight) per pixel. The text is the system font drawn by Core Text, where the Python uses
-//! OpenCV's Hershey font; the box is laid out the same way (14 px of padding at 1080p, even sizes).
+//! The before & after video's labels (replay.py _label). Each is white text on a translucent dark box, sized for the
+//! picture's height and stored as (Y, weight) per pixel. Core Text draws the text in the system font, where the
+//! Python uses OpenCV's Hershey font. The box is laid out the same way, with 14 px of padding at 1080p and even sizes.
 
 use objc2_core_foundation::{CFAttributedString, CFDictionary, CFRetained, CFString, CFType, CGFloat};
 use objc2_core_graphics::{CGBitmapContextCreate, CGColor, CGColorSpace, CGContext, CGImageAlphaInfo, CGImageByteOrderInfo, kCGColorSpaceSRGB};
 use objc2_core_text::{CTFont, CTFontUIFontType, CTLine, kCTFontAttributeName, kCTForegroundColorAttributeName};
 
-/// A label: `w` x `h` (even), each pixel (Y, weight): Y as the box's colour would encode (BT.709 limited range), the
-/// weight max(0.55, text coverage).
+/// A label of `w` x `h` (even) with (Y, weight) for each pixel. Y is what the box's colour would encode to in BT.709
+/// limited range, and the weight is max(0.55, text coverage).
 #[derive(Clone, Debug)]
 pub struct Label {
     pub w: usize,
@@ -53,7 +53,7 @@ pub fn label(text: &str, h_frame: usize) -> Label {
             ),
         );
         CGContext::set_should_antialias(Some(&ctx), true);
-        // Core Graphics counts up from the bottom: the baseline is pad + th from the top
+        // Core Graphics counts up from the bottom, and the baseline is pad + th from the top
         CGContext::set_text_position(Some(&ctx), pad, h as CGFloat - (pad + th));
         l.draw(&ctx);
         CGContext::flush(Some(&ctx));
@@ -63,7 +63,7 @@ pub fn label(text: &str, h_frame: usize) -> Label {
         .0
         .iter()
         .map(|p| {
-            let g = p[1] as f32; // (B, G, R, A): white text, so any of them
+            let g = p[1] as f32; // (B, G, R, A), and the text is white, so any of them will do
             let y = (g * 219.0 / 255.0 + 16.0).round_ties_even();
             [y, (g / 255.0).max(0.55)]
         })

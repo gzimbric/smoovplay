@@ -87,7 +87,7 @@ impl PyRandom {
         a + (b - a) * self.random()
     }
 
-    /// A standard normal (Box-Muller; not numpy's, for the tests that only need some jitter).
+    /// A standard normal (Box-Muller, not numpy's), for the tests that only need some jitter.
     pub fn normal(&mut self) -> f64 {
         let u = self.random().max(1e-300);
         let v = self.random();

@@ -327,7 +327,7 @@ def test_shaders_are_rewritten_for_a_macs_opengl_4_1_and_left_as_they_are_elsewh
     assert units == {"src": 0, "glow": 1, "lut0": 2} and "uniform sampler3D lut0;" in out
     easu = fsr._source("#define FSR_EASU_F 1\n", fsr._EASU)
     out, units = glsl.source(easu, 410)
-    assert units == {"src": 0} and "#define packHalf2x16 smoov_packHalf2x16" in out  # (GLSL 4.20's, written out)
+    assert units == {"src": 0} and "#define packHalf2x16 smoov_packHalf2x16" in out  # GLSL 4.20's, written out
     assert out.count("#version") == 1
     assert glsl.TARGET == (410 if sys.platform == "darwin" else None)
 
@@ -342,11 +342,11 @@ def gl():
     if not glfw.init():
         pytest.skip("no OpenGL")
     glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
-    context_hints(glfw)  # (a Mac: OpenGL 4.1 core)
+    context_hints(glfw)  # OpenGL 4.1 core on a Mac
     win = glfw.create_window(64, 64, "test", None, None)
     if not win:
         glfw.terminate()
-        pytest.skip("no OpenGL 4.5 (Mac: 4.1) context")
+        pytest.skip("no OpenGL 4.5 context (4.1 on a Mac)")
     glfw.make_context_current(win)
     GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
     GL.glPixelStorei(GL.GL_PACK_ALIGNMENT, 1)

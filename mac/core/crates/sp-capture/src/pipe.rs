@@ -1,16 +1,16 @@
 //! What every kind of [`crate::CardSource`] does with each frame and each packet of sound, whoever delivers them (a
-//! card's capture session, a file standing in, raw frames in a test): capture.py's `_reader`, `_frames`, `_damaged`,
-//! `_sound`, `_play` and `_report_sound`, in one place, so a stand-in runs the same lines as a card.
+//! card's capture session, a file standing in, raw frames in a test). It's capture.py's `_reader`, `_frames`,
+//! `_damaged`, `_sound`, `_play` and `_report_sound` in one place, so a stand-in runs the same lines as a card.
 //!
-//! - Frames are numbered as they come off the card (`extra["seq"]`), damaged ones and ones macOS dropped included,
-//!   so a frame dropped from the queue leaves a gap rather than shifting the count (Game frame rate 30 fps counts by
-//!   them). Test mode is applied before the queue; when the pipeline falls behind the oldest tick goes, counted in
-//!   `dropped`.
-//! - A frame that can't be read is skipped and counted (said once); capture stops only when none can be read for
+//! - Frames are numbered as they come off the card (`extra["seq"]`), damaged ones and ones macOS dropped included.
+//!   A frame dropped from the queue then leaves a gap rather than shifting the count, which Game frame rate 30 fps
+//!   counts by. Test mode is applied before the queue. When the pipeline falls behind the oldest tick goes, counted
+//!   in `dropped`.
+//! - A frame that can't be read is skipped and counted, and said once. Capture stops only when none can be read for
 //!   [`DAMAGED_GIVE_UP_S`].
-//! - Sound: a card's is played as it comes, held back by the pipeline's delay less however much later the sound
-//!   arrives than the picture (both timed by the session's clock); a file's waits until the picture gets to it.
-//!   Everything played is kept for instant replay (`read_sound`).
+//! - A card's sound is played as it comes, held back by the pipeline's delay less however much later the sound
+//!   arrives than the picture. Both are timed by the session's clock. A file's sound waits until the picture gets to
+//!   it. Everything played is kept for instant replay (`read_sound`).
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -33,29 +33,29 @@ use crate::audio::{sound_report, SoundStats};
 use crate::devices::g;
 use crate::{fourcc, fourcc_name};
 
-/// No frame readable for this long: the card's frames aren't readable at all, and capture stops. Generous, as a
-/// stick can send broken frames for a moment while it settles on the signal.
+/// No frame readable for this long means the card's frames aren't readable at all, and capture stops. It's generous
+/// because a stick can send broken frames for a moment while it settles on the signal.
 pub const DAMAGED_GIVE_UP_S: f64 = 5.0;
 /// Sound chunks kept for instant replay until it reads them.
 const REPLAY_KEPT: usize = 2000;
 /// Recent arrivals kept to tell how late each stream comes.
 const LATE_KEPT: usize = 120;
 
-/// What plays the card's sound (framegen/audio.py Player; a stand-in in tests): made when the first sound comes, with
-/// its rate and channels.
+/// What plays the card's sound (framegen/audio.py Player, or a stand-in in tests). It's made when the first sound
+/// comes, with its rate and channels.
 pub trait SoundOut: Send {
     /// Interleaved 16-bit PCM, as it arrives.
     fn push(&mut self, pcm: &[i16]);
     /// How long to hold the sound back, seconds.
     fn set_delay(&mut self, seconds: f64);
-    /// How it's played, for the log (None: a stand-in that doesn't say).
+    /// How it's played, for the log. None for a stand-in that doesn't say.
     fn stats(&self) -> Option<SoundStats> {
         None
     }
     fn close(&mut self) {}
 }
 
-/// Makes a [`SoundOut`] for (rate, channels); an error plays the picture without sound.
+/// Makes a [`SoundOut`] for (rate, channels). An error plays the picture without sound.
 pub type SoundFactory = Box<dyn FnMut(u32, u32) -> Result<Box<dyn SoundOut>, String> + Send>;
 
 /// Python's `str(e)[:n]`.
@@ -78,7 +78,7 @@ struct SoundState {
     has: bool,
     delay_s: Option<f64>,
     replay: VecDeque<Sound>,
-    /// A file's sound, held until the picture gets to it: (time, pcm, rate, channels).
+    /// A file's sound as (time, pcm, rate, channels), held until the picture gets to it.
     wait: VecDeque<(f64, Vec<i16>, u32, u32)>,
     report_t: f64,
     seen: Option<SoundStats>,
@@ -99,7 +99,7 @@ pub(crate) struct Pipe {
     pub give_up_s: f64,
     frames: Mutex<Frames>,
     sound: Mutex<SoundState>,
-    /// How late each stream arrives after its own timestamps: (picture, sound).
+    /// How late each stream arrives after its own timestamps, as (picture, sound).
     late: Mutex<(VecDeque<f64>, VecDeque<f64>)>,
     pub dropped: AtomicU64,
     pub damaged: AtomicU64,
@@ -161,7 +161,7 @@ impl Pipe {
         })
     }
 
-    /// A line for the log: printed, and kept for tests and the launcher's diagnostics.
+    /// A line for the log. It's printed, and kept for tests and the launcher's diagnostics.
     pub fn say(&self, line: String) {
         println!("{line}");
         self.messages.lock().unwrap().push(line);
@@ -189,7 +189,7 @@ impl Pipe {
         self.stop.load(Ordering::SeqCst)
     }
 
-    /// No more frames: what's queued, then the end.
+    /// No more frames. What's queued goes out, then the end.
     pub fn end(&self) {
         self.q.end();
     }
@@ -202,8 +202,9 @@ impl Pipe {
         self.q.end();
     }
 
-    /// One frame as it came, `make` reading it into a Frame: Ok(None) for a short one (skipped, not numbered), Err
-    /// for one that can't be read (damaged: skipped, numbered). Err back when capture must stop.
+    /// One frame as it came, with `make` reading it into a Frame. `make` gives Ok(None) for a short one, which is
+    /// skipped and not numbered, and Err for one that can't be read, which is damaged, skipped and numbered. Returns
+    /// Err when capture must stop.
     pub fn frame(
         &self,
         t_arrival: f64,
@@ -231,7 +232,7 @@ impl Pipe {
         tick.t_source = t_src;
         tick.t_ready = Some(now());
         // Numbered as they come off the card, so a frame dropped from the queue below (the Mac behind for a moment)
-        // doesn't shift the count: Game frame rate 30 fps takes every other one as new (cadence.RhythmLock), and a
+        // doesn't shift the count. Game frame rate 30 fps takes every other one as new (cadence.RhythmLock), and a
         // shift by one made it move its beat later, a visible hitch.
         tick.extra.insert("seq".into(), json!(st.n));
         st.n += 1;
@@ -243,20 +244,21 @@ impl Pipe {
         Ok(())
     }
 
-    /// A frame macOS reported it couldn't deliver because of a break in the card's stream: as a damaged one.
+    /// A frame macOS reported it couldn't deliver because of a break in the card's stream, taken as a damaged one.
     pub fn os_damaged(&self, why: &str) -> Result<(), String> {
         let mut st = self.frames.lock().unwrap();
         self.damaged_frame(&mut st, why)
     }
 
-    /// A frame macOS dropped before handing it over (SmoovPlay late taking the one before): numbered all the same.
+    /// A frame macOS dropped before handing it over because SmoovPlay was late taking the one before. It's numbered
+    /// all the same.
     pub fn os_dropped(&self) {
         self.frames.lock().unwrap().n += 1;
         self.os_dropped.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// capture.py _damaged: a frame the card sent that can't be read, skipped and counted (cheap cards send the odd
-    /// broken JPEG, often the first one).
+    /// capture.py _damaged. A frame the card sent that can't be read is skipped and counted. Cheap cards send the odd
+    /// broken JPEG, often the first one.
     fn damaged_frame(&self, st: &mut Frames, why: &str) -> Result<(), String> {
         let t = now();
         let n = self.damaged.fetch_add(1, Ordering::Relaxed) + 1;
@@ -279,7 +281,8 @@ impl Pipe {
     }
 
     // ---- sound
-    /// A card's sound packet, as it arrives: its own time for its end (the session's clock), for how late it comes.
+    /// A card's sound packet as it arrives. `t_end_src` is its own time for its end on the session's clock, which tells
+    /// how late it comes.
     pub fn sound_live(&self, pcm: Vec<i16>, rate: u32, channels: u32, t_end_src: Option<f64>, t_arrival: f64) {
         if pcm.is_empty() || self.stopped() {
             return;
@@ -319,7 +322,7 @@ impl Pipe {
     }
 
     fn play(&self, pcm: Vec<i16>, rate: u32, channels: u32) {
-        // Timed like the picture it goes with: a card's sound comes this much later than its picture.
+        // Timed like the picture it goes with, since a card's sound comes this much later than its picture.
         let t = now() - self.sound_late_s();
         let mut lines: Vec<String> = Vec::new();
         {
@@ -357,8 +360,8 @@ impl Pipe {
         }
     }
 
-    /// capture.py _report_sound: how the sound played, once a minute when something went wrong, and for the whole
-    /// session at the end.
+    /// capture.py _report_sound. Says how the sound played, once a minute when something went wrong, and for the
+    /// whole session at the end.
     fn report_line(s: &mut SoundState, last: bool) -> Option<String> {
         let now = s.player.as_ref()?.stats()?;
         let since = if last { None } else { Some(s.seen.clone().unwrap_or_default()) };
@@ -369,7 +372,7 @@ impl Pipe {
         line.map(|l| format!("[capture] sound{}: {l}", if last { " this session" } else { ", last minute" }))
     }
 
-    /// The once-a-minute report, now (tests).
+    /// The once-a-minute report, now, for tests.
     pub fn report_sound(&self, last: bool) {
         let line = Self::report_line(&mut self.sound.lock().unwrap(), last);
         if let Some(l) = line {
@@ -377,7 +380,7 @@ impl Pipe {
         }
     }
 
-    /// How much later the sound arrives than the picture, after their own timestamps (0 if not known).
+    /// How much later the sound arrives than the picture, going by their own timestamps (0 if not known).
     pub fn sound_late_s(&self) -> f64 {
         let late = self.late.lock().unwrap();
         if late.0.len() < 10 || late.1.len() < 10 {
@@ -386,7 +389,7 @@ impl Pipe {
         median(&late.1) - median(&late.0)
     }
 
-    /// No sound after all (its device wouldn't open): the picture alone.
+    /// No sound after all because its device wouldn't open, so the picture plays alone.
     pub fn sound_off(&self) {
         let mut s = self.sound.lock().unwrap();
         (s.has, s.out) = (false, None);
@@ -397,7 +400,7 @@ impl Pipe {
         s.has && s.out.is_some()
     }
 
-    /// The pipeline's delay: the sound is held back this much less however much later it already comes.
+    /// The pipeline's delay. The sound is held back this much less however much later it already comes.
     pub fn set_audio_delay(&self, ms: f64) {
         let d = (ms / 1000.0 - self.sound_late_s()).max(0.0);
         let mut s = self.sound.lock().unwrap();
@@ -438,9 +441,9 @@ pub(crate) const NV12_VIDEO: u32 = fourcc(b"420v");
 pub(crate) const NV12_FULL: u32 = fourcc(b"420f");
 pub(crate) const BGRA: u32 = fourcc(b"BGRA");
 
-/// A picture from AVFoundation (a card's, or a file's standing in) as a frame: NV12 copied tightly into the
-/// converter's buffer and turned into BGRA8 with capture.py raw_to_bgr's maths (bilinear chroma, the matrix and
-/// range given), as the Python reads a card's raw frames; BGRA as it is.
+/// A picture from AVFoundation (a card's, or a file's standing in) as a frame. NV12 is copied tightly into the
+/// converter's buffer and turned into BGRA8 by capture.py raw_to_bgr's maths, with bilinear chroma and the matrix and
+/// range given, as the Python reads a card's raw frames. BGRA is taken as it is.
 pub(crate) fn convert_pixels(conv: &mut Converter, img: &CVPixelBuffer, bt709: bool, full_range: bool) -> Result<Option<Frame>, String> {
     let pf = CVPixelBufferGetPixelFormatType(img);
     let (w, h) = (CVPixelBufferGetWidth(img), CVPixelBufferGetHeight(img));
@@ -500,14 +503,15 @@ pub(crate) fn convert_pixels(conv: &mut Converter, img: &CVPixelBuffer, bt709: b
     Ok(Some(out))
 }
 
-/// Raw frame bytes as a card sends them (NV12, YUY2, UYVY or BGRA, tightly packed) as a frame; None for a short one
-/// (capture.py _convert_raw). 4:2:2 is taken to NV12 first (each pair of lines' chroma averaged), as sp-media has
-/// no 4:2:2 kernel: the same picture for flat colour, a touch softer at colour edges than capture.py's 4:2:2 path.
+/// Raw frame bytes as a card sends them (NV12, YUY2, UYVY or BGRA, tightly packed) as a frame, or None for a short
+/// one (capture.py _convert_raw). 4:2:2 is taken to NV12 first, averaging each pair of lines' chroma, because
+/// sp-media has no 4:2:2 kernel. That gives the same picture for flat colour, and a touch softer at colour edges
+/// than capture.py's 4:2:2 path.
 pub(crate) fn convert_raw(conv: &mut Converter, data: &[u8], fmt: &str, w: usize, h: usize, bt709: bool, full_range: bool) -> Result<Option<Frame>, String> {
     let bpp = crate::devices::bytes_per_pixel(fmt).ok_or_else(|| format!("can't convert {fmt}"))?;
     let n = (w as f64 * h as f64 * bpp) as usize;
     if data.len() < n {
-        return Ok(None); // a short packet (a format change mid-stream): skip it
+        return Ok(None); // a short packet from a format change mid-stream, so skip it
     }
     match fmt {
         "nv12" => {

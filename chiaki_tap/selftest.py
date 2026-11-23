@@ -46,7 +46,7 @@ def main() -> int:
     sound.end()
     proc = subprocess.Popen([str(exe)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     t_end = time.perf_counter() + 10
-    ages = []  # how long after the C writer stamped each frame (its clock) we read it (ours): the clocks agree
+    ages = []  # how long after the C writer stamped each frame (its clock) we read it (ours), to show the clocks agree
     for i in range(40):  # read each frame as it arrives, like ChiakiSource (the ring holds only 32)
         while time.perf_counter() < t_end and (not tap.header().live or tap.header().write_seq <= i):
             tap.wait(0.1)
@@ -91,10 +91,10 @@ def main() -> int:
     assert not sound.live(), "sound ring's end not marked"
     print(f"OK: 40 frames and 21 chunks of sound byte-identical, flags and timestamps right, keyframe request, "
           f"press and sound delay "
-          f"({out.strip()}); frames read {statistics.median(ages) * 1000:.2f} ms (median) after the writer stamped them")
+          f"({out.strip()}). Frames read {statistics.median(ages) * 1000:.2f} ms (median) after the writer stamped them")
     tap.close()
     sound.close()
-    unlink(NAME)  # (POSIX: the test's shared memory would otherwise stay until a restart)
+    unlink(NAME)  # on POSIX the test's shared memory would otherwise stay until a restart
     return 0
 
 

@@ -1,5 +1,5 @@
-//! The pipeline's clock, injectable so a run can be replayed deterministically (the parity traces, the tests).
-//! [`SystemClock`] is sp_core::clock (CLOCK_UPTIME_RAW, the frame tap's clock); [`FakeClock`] only moves when told.
+//! The pipeline's clock. It is injectable so the parity traces and the tests can replay a run deterministically.
+//! [`SystemClock`] is sp_core::clock (CLOCK_UPTIME_RAW, the frame tap's clock). [`FakeClock`] only moves when told.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -24,8 +24,8 @@ impl Clock for SystemClock {
     }
 }
 
-/// A clock that moves only when something says so: sleep() and advance() add to it, at_least() moves it forward
-/// to a time. The arithmetic is exactly the Python trace clock's (tools/sched_traces.py FakeClock), so both sides
+/// A clock that moves only when told. sleep() and advance() add to it, and at_least() moves it forward to a given
+/// time. The arithmetic is exactly the Python trace clock's (tools/sched_traces.py FakeClock), so both sides
 /// read the same times.
 #[derive(Debug)]
 pub struct FakeClock {

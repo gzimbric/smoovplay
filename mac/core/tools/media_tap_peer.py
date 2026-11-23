@@ -1,14 +1,15 @@
-"""The Python side of sp-tap's interop tests (mac/core/crates/sp-tap/tests/interop.rs): framegen/chiaki_tap.py's
-FrameTap and AudioTap reading what the Rust writer wrote, writing what the Rust reader checks, and racing it to create
-the shared memory.
+"""The Python side of sp-tap's interop tests (mac/core/crates/sp-tap/tests/interop.rs). framegen/chiaki_tap.py's
+FrameTap and AudioTap read what the Rust writer wrote, write what the Rust reader checks, and race it to create the
+shared memory.
 
     python mac/core/tools/media_tap_peer.py read NAME      # check the Rust writer's frames and sound, then ask back
     python mac/core/tools/media_tap_peer.py write NAME     # write frames and sound, answer the Rust reader's asks
     python mac/core/tools/media_tap_peer.py race NAME T    # open NAME at time T (perf_counter), write, wait for an ask
 
-Frame i (both directions): size 50000 + 1000 i (even i) or 1000 + i (odd), byte j = (31 i + j) & 255, frames_lost 2
-at i == 7, recovered at i == 8, flags new (even) / repeat (odd). Sound: 20 chunks of 1920 bytes and one of 20000, byte
-j of chunk k = (7 k + j) & 255, 48 kHz stereo. Prints one line starting "OK" on success.
+Frame i, in both directions, is 50000 + 1000 i bytes for even i or 1000 + i for odd i, with byte j = (31 i + j) & 255.
+frames_lost is 2 at i == 7, recovered is set at i == 8, and the flags say new for even i and repeat for odd. The sound
+is 20 chunks of 1920 bytes and one of 20000, with byte j of chunk k = (7 k + j) & 255, at 48 kHz stereo. Prints one
+line starting "OK" on success.
 """
 from __future__ import annotations
 
@@ -95,7 +96,7 @@ def write(name: str) -> int:
             raise SystemExit("FAIL: no sound delay")
         time.sleep(0.005)
     delay = tap.audio_delay_ms()
-    time.sleep(0.2)  # (the reader checks press_sent)
+    time.sleep(0.2)  # give the reader time to check press_sent
     tap.end()
     sound.end()
     print(f"OK wrote {FRAMES} frames; press {b} for {hold} ms; audio delay {delay} ms")

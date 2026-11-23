@@ -1,15 +1,15 @@
-//! The video window with a synthetic moving picture (no decoding), paced like the pipeline paces it, printing how
-//! frames reached the screen so pacing can be judged:
+//! Opens the video window with a synthetic moving picture (no decoding), paced the way the pipeline paces it, and
+//! prints how frames reached the screen so pacing can be judged.
 //!
 //!     cargo run --release -p sp-present --example play -- --hz 120 --seconds 10 [--vsync off] [--pacing min]
 //!         [--fullscreen] [--drawables 2] [--hdr] [--look cinematic] [--fill panorama] [--scaler bilinear]
 //!         [--thread] [--press m@2,down@2.5,f@4] [--shot /path/shot.png@3] [--size 1920x1080] [--detailed]
-//!         [--stall 3.5@2] (no frames for 3.5 s from 2 s: the "no picture" screen) [--busy 2@3] (busy() for 2 s)
-//!         [--real-keys] (--press as real key events through AppKit)
+//!         [--stall 3.5@2] (no frames for 3.5 s from 2 s, for the no-picture screen) [--busy 2@3] (busy() for 2 s)
+//!         [--real-keys] (sends --press as real key events through AppKit)
 //!
-//! --thread runs the "pipeline" on its own thread with the main thread in NSApp.run (the Swift app's layout);
-//! without it the pipeline runs on the main thread and write() pumps the window's events (io.py's layout).
-//! The picture: a scrolling checkerboard, a white bar sweeping across every 2 s, a circle, and the frame number in
+//! --thread runs the stand-in pipeline on its own thread with the main thread in NSApp.run, as the Swift app does.
+//! Without it the pipeline runs on the main thread and write() pumps the window's events, as io.py does.
+//! The picture has a scrolling checkerboard, a white bar sweeping across every 2 s, a circle, and the frame number in
 //! binary along the bottom. --hdr sends HDR10 frames (PQ, BT.2020) with patches at 100, 203, 400, 1000 and 4000 nits.
 
 use std::sync::Arc;
@@ -51,7 +51,7 @@ fragment float4 pattern(VOut in [[stage_in]], constant PatP& P [[buffer(0)]]) {
         c = ((P.frame >> (15u - bit)) & 1u) != 0u ? float3(1.0) : float3(0.08);
     }
     if (P.hdr == 0u) return float4(c, 1.0);
-    // HDR10: the picture with white at 203 nits (BT.2408), and patches along the top at fixed brightness
+    // HDR10 puts white at 203 nits (BT.2408), with patches along the top at fixed brightness
     float3 l709 = pow(c, 2.2) * 203.0;
     float3 lin = float3(dot(float3(0.627404, 0.329283, 0.043313), l709), dot(float3(0.069097, 0.919540, 0.011362), l709),
                         dot(float3(0.016391, 0.088013, 0.895595), l709));
@@ -91,11 +91,11 @@ struct Args {
     shots: Vec<(f64, String)>,
     size: (usize, usize),
     detailed: bool,
-    /// (from, seconds): no frames, as a live source that stopped (wait() every 0.1 s)
+    /// (from, seconds) with no frames, like a live source that stopped (wait() every 0.1 s)
     stall: Option<(f64, f64)>,
     /// --press goes through real key events (NSEvents in the app's queue, main thread only)
     real_keys: bool,
-    /// (at, seconds): busy() for that long, as a restart does
+    /// (at, seconds) in busy() for that long, as a restart does
     busy: Option<(f64, f64)>,
 }
 
@@ -208,7 +208,7 @@ fn sleep_until(t: f64) {
     }
 }
 
-/// The "pipeline": a frame every 1/hz on the clock, as the scheduler hands them over.
+/// The stand-in pipeline. It writes a frame every 1/hz on the clock, as the scheduler hands them over.
 fn play(p: &mut VideoPresenter, a: &Args) {
     let kind = if a.hdr { PixelKind::Rgba16f } else { PixelKind::Bgra8 };
     let frames: Vec<Frame> = (0..4).map(|_| Frame::new(a.size.0, a.size.1, kind)).collect();
@@ -216,7 +216,7 @@ fn play(p: &mut VideoPresenter, a: &Args) {
     let mut pat = Pattern { pipes: Pipelines::new().unwrap(), lib };
     let period = 1.0 / a.hz;
     let t0 = clock::now() + 0.3;
-    let warm = 1.0; // seconds left out of the numbers (the window opening)
+    let warm = 1.0; // seconds left out of the numbers while the window opens
     let mut from = None;
     let mut presses = a.press.clone();
     let mut shots = a.shots.clone();

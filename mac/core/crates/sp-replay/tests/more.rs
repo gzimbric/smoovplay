@@ -1,6 +1,6 @@
 //! What the Python's tests don't reach on a Mac: the GPU's NV12 against replay.py's sums (its CUDA check), HDR
-//! frames, "Looks in clips", a before & after that has to scale (side by side wider than 4096, the game's frames at
-//! another size), and saving while frames keep coming.
+//! frames, "Looks in clips", a before & after that has to scale, and saving while frames keep coming. The before &
+//! after has to scale when it's side by side wider than 4096 or the game's frames are another size.
 
 mod common;
 
@@ -43,7 +43,7 @@ fn mean(img: &[u8], w: usize, (y0, y1): (usize, usize), (x0, x1): (usize, usize)
 
 #[test]
 fn the_gpus_nv12_matches_replay_py() {
-    let (w, h) = (161usize, 97usize); // odd: cut to even
+    let (w, h) = (161usize, 97usize); // odd, so it's cut to even
     let mut rng = Rng::new(1);
     let img: Vec<u8> = (0..w * h * 3).map(|_| (rng.next() * 256.0) as u8).collect();
     let f = Frame::from_bgr(&img, w, h);
@@ -89,7 +89,7 @@ fn the_gpus_nv12_matches_replay_py() {
     assert!(worst <= 1, "the GPU's NV12 is {worst} off replay.py's sums");
 }
 
-/// f32 to IEEE half bits (normal numbers and zero; enough for 0..1).
+/// f32 to IEEE half bits. It handles normal numbers and zero, which is enough for 0 to 1.
 fn half(x: f32) -> u16 {
     if x == 0.0 {
         return 0;
@@ -111,7 +111,7 @@ fn pq_of_nits(nits: f64) -> f32 {
 fn hdr_frames_are_tone_mapped_as_sdr8_would_show_them() {
     let tmp = TempDir::new("hdr");
     let (w, h) = (128usize, 64usize);
-    // Left: a dim grey; right: a bright orange highlight (PQ, BT.2020, 0..1)
+    // A dim grey on the left and a bright orange highlight on the right (PQ, BT.2020, 0 to 1)
     let mut px = Vec::with_capacity(w * h * 4);
     for _ in 0..h {
         for x in 0..w {
@@ -141,7 +141,7 @@ fn hdr_frames_are_tone_mapped_as_sdr8_would_show_them() {
         let d = (0..3).map(|c| (a[c] - b[c]).abs()).fold(0.0, f64::max);
         println!("{name}: the clip has {a:?}, sdr8 {b:?}");
         assert!(d < 3.0, "{name}: the clip has {a:?}, sdr8 {b:?}");
-        // (and it's a picture: a mid grey, an orange with its blue lowest)
+        // and it's a real picture, a mid grey or an orange with its blue lowest
         assert!(if name == "grey" { b[1] > 60.0 && (b[0] - b[2]).abs() < 4.0 } else { b[2] > b[1] && b[1] > b[0] }, "{b:?}");
     }
     rec.close(0.0);
@@ -177,7 +177,7 @@ fn looks_go_in_the_smoovplay_side_only() {
 
 #[test]
 fn a_before_and_after_that_has_to_scale() {
-    // Side by side wider than 4096: both halves shrunk to fit
+    // Side by side wider than 4096, so both halves are shrunk to fit
     let tmp = TempDir::new("scale");
     let (w, h) = (2400usize, 128usize);
     let (rec, said) = recorder(tmp.path(), 2);
@@ -185,7 +185,7 @@ fn a_before_and_after_that_has_to_scale() {
         let t = 1000.0 + i as f64 / 60.0;
         rec.frame(&solid(w, h, [40, 160, 40], i * 3), t);
         if i % 2 == 0 {
-            // The game's frames at half the size: grown to fit
+            // The game's frames at half the size, grown to fit
             rec.real_frame(&solid(w / 2, h / 2, [160, 40, 40], i * 3), t - 0.04);
         }
     }

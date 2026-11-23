@@ -43,7 +43,7 @@ fn h32(xs: &[i64]) -> u64 {
     v
 }
 
-/// tools/sched_traces.py content(): HxWx3 BGR from a recipe.
+/// HxWx3 BGR from a recipe, as tools/sched_traces.py content() makes it.
 pub fn content(c: &Value, w: usize, h: usize) -> Vec<u8> {
     let mut img = vec![0i64; w * h * 3];
     if c.get("kind").and_then(|k| k.as_str()) == Some("menu") {
@@ -196,7 +196,7 @@ pub struct RemoteState {
     pub answers: bool,
     pub sends: bool,
     pub press: bool,
-    /// A capture card: sound to hold back, nothing to press (no press at all).
+    /// A capture card, with sound to hold back and nothing to press (no press at all).
     pub card: bool,
     pub audio: Vec<i64>,
 }
@@ -344,7 +344,7 @@ impl Source for TraceSource {
     }
 }
 
-/// framegen/sources.py TestMode: "Simulate a 30 fps game" over any 60 Hz source, following the setting.
+/// "Simulate a 30 fps game" over any 60 Hz source, following the setting (framegen/sources.py TestMode).
 pub struct TestMode<S: Source> {
     pub inner: S,
     pub settings: Arc<SharedLive>,
@@ -412,7 +412,7 @@ impl<S: Source> TestMode<S> {
             tick.truth_new = Some(false);
             tick.new_hint = Some(false);
         } else {
-            return None; // switched on at an odd frame: nothing to repeat yet
+            return None; // switched on at an odd frame, so there's nothing to repeat yet
         }
         Some(tick)
     }
@@ -427,8 +427,8 @@ impl<S: Source> Source for TestMode<S> {
     }
     fn next_event(&mut self) -> Option<Event> {
         loop {
-            // The Python's settings.watch switches it the moment the setting changes: here before the next frame (the
-            // pipeline turned it off) and after the inner source's own changes.
+            // The Python's settings.watch switches it the moment the setting changes. Here it follows the setting
+            // before the next frame (the pipeline turned it off) and after the inner source's own changes.
             self.follow();
             let ev = self.inner.next_event();
             self.follow();
@@ -627,8 +627,8 @@ impl<F: FnMut() -> Option<Event> + Send> Source for FnSource<F> {
     }
 }
 
-/// tests' _Sink: what was written (the frame's tag value, or the AI frame's blend of its two tags), the overlay, and
-/// the toasts; returns `cmds` in turn.
+/// The tests' _Sink. It records what was written (the frame's tag value, or the AI frame's blend of its two tags),
+/// the overlay and the toasts, and returns `cmds` in turn.
 #[derive(Default)]
 pub struct RecSink {
     pub values: Vec<f64>,
@@ -667,8 +667,8 @@ impl Presenter for RecSink {
     }
 }
 
-/// The tests' stand-in interpolator: it blends the tags of its two slots (so an output frame's value says which
-/// game time it shows) and costs `cost` seconds on the clock.
+/// The tests' stand-in interpolator. It blends the tags of its two slots, so an output frame's value says which game
+/// time it shows, and costs `cost` seconds on the clock.
 pub struct BlendInterp {
     pub clock: Arc<FakeClock>,
     pub cost: f64,

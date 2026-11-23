@@ -4,10 +4,10 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Instant replay on macOS (framegen/replay.py): the last 30 s to 5 min kept in memory, encoded by VideoToolbox, saved as MP4; the before & after video"
+description = "Instant replay on macOS (framegen/replay.py), keeping the last 30 s to 5 min in memory, encoded by VideoToolbox and saved as MP4, plus the before & after video"
 
 [[bin]]
-# The before & after maker on its own (the smoovplay binary runs the same code as `smoovplay replay-compose`).
+# The before & after maker on its own. The smoovplay binary runs the same code as `smoovplay replay-compose`.
 name = "sp-replay-compose"
 path = "src/bin/sp-replay-compose.rs"
 
@@ -25,8 +25,8 @@ objc2-core-video.workspace = true
 objc2-core-media.workspace = true
 objc2-video-toolbox.workspace = true
 thiserror.workspace = true
-# Not in the workspace's list (same objc2 0.6 family, as sp-present uses them): Core Text and Core Graphics for the
-# before & after labels.
+# Not in the workspace's list, though they're the same objc2 0.6 family and sp-present uses them too. Core Text and
+# Core Graphics draw the before & after labels.
 objc2-core-graphics = "0.3.2"
 objc2-core-text = "0.3.2"
 libc = "0.2.177"
