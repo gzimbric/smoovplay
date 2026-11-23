@@ -90,7 +90,7 @@ impl Layout {
 
 /// Messages for the user (the window's toasts): (text, seconds).
 pub type Notify = Arc<dyn Fn(&str, f64) + Send + Sync>;
-/// Where the "[replay] ..." lines go (Python's print).
+/// Where the `[replay] ...` lines go (Python's print).
 pub type Log = Arc<dyn Fn(&str) + Send + Sync>;
 /// Settings "Looks in clips": the frame with the look drawn on (the video window's baked()), for the SmoovPlay
 /// video only. Err: without the look (said once).

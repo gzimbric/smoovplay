@@ -10,12 +10,12 @@
 //! [`compose_main`] is the subcommand (`smoovplay replay-compose ...`, or `sp-replay-compose ...`) with the Python
 //! CLI's arguments: --after --before [--sound] --out [--layout split|side] [--labels BEFORE AFTER] [--encoder]
 //! [--cleanup FOLDER] [--mark FOLDER]. It runs at low priority (the recorder starts it at nice 10; it asks for the
-//! utility QoS too) and keeps FOLDER/<pid>.txt (the video's path) while it works; if it fails, the file stays, with
+//! utility QoS too) and keeps `FOLDER/<pid>.txt` (the video's path) while it works; if it fails, the file stays, with
 //! why.
 
 use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{Receiver, channel, sync_channel};
 use std::time::Duration;
 
 use objc2::rc::{Retained, autoreleasepool};
@@ -47,7 +47,7 @@ pub struct ComposeArgs {
     pub encoder: Option<String>,
     /// Deleted (the tracks) when done.
     pub cleanup: Option<PathBuf>,
-    /// FOLDER/<process id>.txt holds the video's path while it's made, for the launcher.
+    /// `FOLDER/<process id>.txt` holds the video's path while it's made, for the launcher.
     pub mark: Option<PathBuf>,
 }
 
@@ -229,8 +229,8 @@ pub fn compose(
             eprintln!("[replay] encoder {e} isn't on a Mac: VideoToolbox's H.264 instead");
         }
     let open = |p: &Path, what: &str| Mp4File::open(p).map_err(|e| Error::Other(format!("{what} ({}): {e}", p.display())));
-    let mut fa = open(after, "after")?;
-    let mut fb = open(before, "before")?;
+    let fa = open(after, "after")?;
+    let fb = open(before, "before")?;
     let va = fa.video().cloned().ok_or_else(|| Error::Other("no video in the after track".into()))?;
     let vb = fb.video().cloned().ok_or_else(|| Error::Other("no video in the before track".into()))?;
     let mut sin: Option<(Mp4File, ReadTrack)> = match sound {
@@ -244,7 +244,7 @@ pub fn compose(
         return Err(Error::Other("no frames in the clip".into()));
     }
     let tmp = part_path(out);
-    let r = autoreleasepool(|_| run(&mut fa, &va, &mut fb, &vb, sin.as_mut(), &tmp, layout, labels));
+    let r = autoreleasepool(|_| run(fa, &va, fb, &vb, sin.as_mut(), &tmp, layout, labels));
     match r {
         Ok(secs) => {
             std::fs::rename(&tmp, out)?;
@@ -257,11 +257,34 @@ pub fn compose(
     }
 }
 
+/// A video track decoded on a thread of its own, a few pictures ahead: (time on the 90 kHz clock, picture).
+fn decoding(mut file: Mp4File, track: ReadTrack) -> Result<Receiver<Result<(i64, Decoded)>>> {
+    let mut dec = Dec::new(&track)?;
+    let (tx, rx) = sync_channel(4);
+    std::thread::Builder::new().name("replay-decode".into()).spawn(move || {
+        for (i, s) in track.samples.iter().enumerate() {
+            let r = autoreleasepool(|_| file.read(s).map_err(Error::from).and_then(|b| dec.decode(&b)));
+            let sent = match r {
+                Ok(Some(p)) => tx.send(Ok((track.time90(i), p))),
+                Ok(None) => Ok(()),
+                Err(e) => {
+                    let _ = tx.send(Err(e));
+                    return;
+                }
+            };
+            if sent.is_err() {
+                return; // (the compose stopped)
+            }
+        }
+    })?;
+    Ok(rx)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run(
-    fa: &mut Mp4File,
+    fa: Mp4File,
     va: &ReadTrack,
-    fb: &mut Mp4File,
+    fb: Mp4File,
     vb: &ReadTrack,
     mut sin: Option<&mut (Mp4File, ReadTrack)>,
     tmp: &Path,
@@ -269,23 +292,13 @@ fn run(
     labels: (&str, &str),
 ) -> Result<f64> {
     let cache = TexCache::new()?;
-    let mut da = Dec::new(va)?;
-    let mut db = Dec::new(vb)?;
+    // Both tracks decode ahead on threads of their own while pictures are composed and encoded here
+    let ra = decoding(fa, va.clone())?;
+    let rb = decoding(fb, vb.clone())?;
     // The game's frames, each held until the next: (time, picture)
-    let mut jb = 0usize;
-    let mut next_b = |db: &mut Dec, fb: &mut Mp4File| -> Result<Option<(i64, Decoded)>> {
-        while jb < vb.samples.len() {
-            let s = vb.samples[jb];
-            let t = vb.time90(jb);
-            jb += 1;
-            if let Some(p) = db.decode(&fb.read(&s)?)? {
-                return Ok(Some((t, p)));
-            }
-        }
-        Ok(None)
-    };
+    let next_b = || -> Result<Option<(i64, Decoded)>> { rb.recv().ok().transpose() };
     let mut cur_b: Option<(i64, Decoded)> = None;
-    let mut nxt_b = next_b(&mut db, fb)?;
+    let mut nxt_b = next_b()?;
 
     struct Out {
         enc: VtEncoder,
@@ -302,7 +315,7 @@ fn run(
     let mut o: Option<Out> = None;
     let mut last = 0i64;
     let mut frames = 0usize;
-    let mut prof = [0f64; 5]; // decoding after, before; composing; encoding; finishing (SP_REPLAY_PROFILE)
+    let mut prof = [0f64; 5]; // waiting for after, before; composing; encoding; finishing (SP_REPLAY_PROFILE)
     let gpu = Gpu::shared();
 
     // Packets that have come out: video in, then the sound up to the last of them
@@ -333,10 +346,10 @@ fn run(
         Ok(())
     }
 
-    for (i, s) in va.samples.iter().enumerate() {
-        let t = va.time90(i);
+    loop {
         let tp = std::time::Instant::now();
-        let Some(fa_pic) = da.decode(&fa.read(s)?)? else { continue };
+        let Ok(item) = ra.recv() else { break };
+        let (t, fa_pic) = item?;
         prof[0] += tp.elapsed().as_secs_f64();
         if o.is_none() {
             let base = t;
@@ -413,7 +426,7 @@ fn run(
             }
             cur_b = nxt_b.take();
             let tp = std::time::Instant::now();
-            nxt_b = next_b(&mut db, fb)?;
+            nxt_b = next_b()?;
             prof[1] += tp.elapsed().as_secs_f64();
         }
         let fb_pic = cur_b.as_ref().or(nxt_b.as_ref()).map(|x| &x.1);
@@ -462,7 +475,7 @@ fn run(
     prof[4] += tp.elapsed().as_secs_f64();
     if std::env::var_os("SP_REPLAY_PROFILE").is_some() {
         eprintln!(
-            "[replay] compose of {frames} frames: decoding after {:.2} s, before {:.2} s, composing {:.2} s, encoding {:.2} s, finishing {:.2} s",
+            "[replay] compose of {frames} frames: waiting for after {:.2} s, before {:.2} s, composing {:.2} s, encoding {:.2} s, finishing {:.2} s",
             prof[0], prof[1], prof[2], prof[3], prof[4]
         );
     }

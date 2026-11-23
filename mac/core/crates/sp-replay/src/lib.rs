@@ -24,9 +24,22 @@
 //!   188-byte packet overhead (about 4% on video, a third on 430-byte AAC frames).
 //! - HDR frames (RGBA16F, PQ) are copied on the GPU at once, then tone-mapped to SDR by sp-media's
 //!   `Converter::pq16_to_8` ("sdr8"'s picture) on the replay's thread.
+//! - Saving empties the encoders first, so a clip has every frame shown up to the press (FFmpeg's VideoToolbox
+//!   wrapper, under the Python, still holds the last few).
 //!
-//! The before & after video ([`compose`]) is `smoovplay replay-compose` (or this crate's `sp-replay-compose`) with
-//! replay.py's `compose` arguments, at nice 10, writing replay.py's SAVING_DIR markers.
+//! The before & after video ([`compose()`]) is `smoovplay replay-compose` (or this crate's `sp-replay-compose`) with
+//! replay.py's `compose` arguments, at nice 10 and the utility QoS, writing replay.py's SAVING_DIR markers. Its
+//! --after / --before / --sound files are MP4s the recorder writes (the tracks on one timeline), not TS.
+//!
+//! Using it from the app:
+//! ```ignore
+//! let rec = Arc::new(Recorder::new(Options { length_s: 60, size: Some((w, h)), mark_dir: Some(saving_dir()), ..Default::default() }));
+//! rec.warm_up();                         // encoders open before play
+//! rec.set_hdr(Some(hdr_settings));       // when the window shows HDR
+//! let mut r: &Recorder = &rec;           // the pipeline: RunOptions { replay: Some(&mut r), .. }
+//! rec.save(None, None, false);           // R from anywhere (B: Some(Kind::Compare))
+//! rec.close(5.0);
+//! ```
 
 pub mod aac;
 pub mod compose;
