@@ -16,3 +16,9 @@ promo/
 notes/
 scripts/make_clips.py
 scripts/render_demo.py
+
+# macOS core (Rust) and app (Swift): build output and generated reference data
+mac/core/target*/
+mac/core/fixtures/
+mac/app/.build/
+mac/app/build/

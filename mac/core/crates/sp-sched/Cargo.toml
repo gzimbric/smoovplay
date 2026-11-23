@@ -1,0 +1,19 @@
+[package]
+name = "sp-sched"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "SmoovPlay's scheduling heart: repeat and cut detection, the cadence scheduler, the 60/90/120 Hz loop, even timing, dip smoothing, scoring and the reports (framegen/cadence.py, pipeline.py)"
+
+[dependencies]
+sp-core.workspace = true
+objc2.workspace = true
+objc2-foundation.workspace = true
+objc2-metal = { workspace = true, features = ["std", "MTLDevice", "MTLCommandQueue", "MTLCommandBuffer", "MTLTexture", "MTLResource", "MTLBuffer", "MTLLibrary", "MTLComputePipeline", "MTLComputeCommandEncoder", "MTLCommandEncoder", "MTLPixelFormat", "MTLTypes", "MTLAllocation"] }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+# Exact float parsing, so the fixtures' times read back bit for bit.
+serde_json = { workspace = true, features = ["float_roundtrip"] }

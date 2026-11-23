@@ -1,0 +1,12 @@
+SmoovPlay test results, 2026-11-22 17:52
+Stream: 1920x1080, played 0:12, 0:12 of it as a simulated 30 fps game
+Graphics card: Apple M5 Max
+Upscaler: AMD FSR 1
+
+AI engine: PyTorch, motion detail Full, RIFE 4.22.lite
+Output: 60 fps
+AI frame time: 15.8 ms on average, 19.1 ms for the slowest 5% (a 60 fps frame lasts 16.7 ms)
+Slow frames: 21.0% (151 of 720) took longer to make than a 60 fps frame lasts
+Delay: a real frame reached the screen 27 ms after it arrived (median)
+Quality: 3.4% of each AI frame was visibly off from the real frame it stood in for, against 5.0% when the last frame is repeated instead (no AI). Lower is closer to the real thing; visibly off means more than about 5% brighter or darker. Slow scenes score well either way; the gap shows in motion (359 frames measured, worst 3.8%)
+Verdict: this PC is falling behind at 60 fps. Try Motion detail: Half

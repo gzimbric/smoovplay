@@ -1,0 +1,28 @@
+[package]
+name = "sp-capture"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Capture cards on macOS: AVFoundation's devices and formats, the card as a source, and its sound played in step with the picture"
+
+[dependencies]
+sp-core.workspace = true
+sp-media = { path = "../sp-media" }
+objc2.workspace = true
+objc2-foundation.workspace = true
+objc2-core-foundation.workspace = true
+objc2-core-video.workspace = true
+objc2-core-media.workspace = true
+objc2-av-foundation.workspace = true
+block2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+# Not in the workspace's list (same objc2 0.6 family): libdispatch for the capture outputs' queue, and Core Audio's
+# output unit for the card's sound.
+dispatch2 = "0.3.0"
+objc2-avf-audio = { version = "0.3.2", default-features = false, features = ["std", "AVAudioSettings"] }
+objc2-audio-toolbox = { version = "0.3.2", default-features = false, features = ["std", "AUComponent", "AudioComponent", "AudioOutputUnit", "AudioUnitProperties", "objc2-core-audio", "objc2-core-audio-types"] }
+objc2-core-audio = "0.3.2"
+objc2-core-audio-types = "0.3.2"

@@ -33,8 +33,11 @@ RIFE weights download automatically into `models/` on first run. To build the in
 
 ### On a Mac (Experimental)
 
-SmoovPlay also runs from source on an Apple silicon Mac, from the command line: there's no installer or launcher
-for macOS yet. It needs macOS with Python 3.12, and [Homebrew](https://brew.sh) for chiaki-ng's build.
+There are two ways to run SmoovPlay on an Apple silicon Mac. The native one is a SwiftUI app with a Rust core on
+Metal, faster than the Python pipeline (90 and 120 fps at full motion detail on an M5 Max): see
+[mac/README.md](../mac/README.md). This section is the other: the Python pipeline itself, from the command line,
+which the app can also use as its core. It needs macOS with Python 3.12, and [Homebrew](https://brew.sh) for
+chiaki-ng's build.
 
 ```sh
 python3.12 -m venv .venv      # or: uv venv --python 3.12 .venv

@@ -1,0 +1,15 @@
+[package]
+name = "sp-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Shared types for SmoovPlay's macOS core: frames on the GPU, ticks, sources, the clock"
+
+[dependencies]
+objc2.workspace = true
+objc2-foundation.workspace = true
+objc2-metal = { workspace = true, features = ["std", "MTLDevice", "MTLCommandQueue", "MTLCommandBuffer", "MTLTexture", "MTLResource", "MTLBuffer", "MTLLibrary", "MTLComputePipeline", "MTLComputeCommandEncoder", "MTLCommandEncoder", "MTLPixelFormat", "MTLTypes", "MTLAllocation"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

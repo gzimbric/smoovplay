@@ -1,0 +1,23 @@
+[package]
+name = "sp-media"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Video in: VideoToolbox decoding of the frame tap's H.264/HEVC, NV12/P010 to Metal frames, and the sources"
+
+[dependencies]
+sp-core.workspace = true
+sp-tap = { path = "../sp-tap" }
+objc2.workspace = true
+objc2-foundation = { workspace = true }
+objc2-metal = { workspace = true }
+objc2-core-foundation = { workspace = true }
+objc2-core-video = { workspace = true }
+objc2-core-media = { workspace = true }
+objc2-video-toolbox = { workspace = true }
+objc2-av-foundation = { workspace = true, features = ["objc2-core-media", "objc2-core-video"] }
+block2.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+libc = "0.2.177"

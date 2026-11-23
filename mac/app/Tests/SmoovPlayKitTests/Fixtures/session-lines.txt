@@ -1,0 +1,38 @@
+[run] RIFE runs through PyTorch on Apple's GPU (Metal), Apple M5 Max
+[run] source: Video file as a PS5 30 fps game
+[run] 1920x1080  RIFE 4.22.lite scale=1.0 fp16 graphs=off  PyTorch + Metal kernels  output 60 Hz
+[display] Apple M5 Max: GPU->screen copy unavailable (PyTorch's CUDA runtime (cudart64_*.dll) not found); uploading frames from the CPU
+[display] upscaling with FSR 1 (sharpness 0.5); u cycles FSR 1 / bilinear; m opens the settings menu
+[run] scheduling: QoS user-interactive on, GPU priority normal, screen kept on yes
+[run] playing
+[pipeline] steady HUD OFF
+[pipeline] output 90 Hz
+[remote] can't set nonsense: unknown setting
+[remote] can't set fill: '"nope"' isn't one of its choices
+ticks=422  wall=7.0s  (59.9 ticks/s)
+actions: {'current': 212, 'interp': 210}
+game frames as they arrived: 211 new, usually 33.3 ms apart; 0.0% late (over 1.5x that), 0.0% bunched (under half); longest gap 33 ms
+processing, interp ticks       ms  p50= 20.32  p95= 22.90  p99= 26.43  max= 65.76
+processing, other ticks        ms  p50=  1.29  p95=  1.60  p99=  1.91  max= 25.31
+display/encode                 ms  p50=  5.74  p95= 11.22  p99= 14.86  max= 57.65
+queueing (backlog)             ms  p50=  9.96  p95= 31.34  p99= 56.43  max= 67.42
+real frame arrival->presented  ms  p50= 40.58  p95= 60.17  p99= 81.29  max= 90.38
+ticks over the 16.7 ms budget (processing + display): 131
+extra in-between frames (90/120 Hz) shown 120 of 180 (67%); the rest fell back to 60 Hz because it was behind
+dedup vs truth: {'tp': 211, 'tn': 211}
+[run] restarting for settings: RIFE 4.22.lite scale=1.0 fp16 graphs=off  PyTorch + Metal kernels
+[run] playing
+[pipeline] steady HUD OFF
+[display] GPU time to draw each frame: bilinear + look 3200x1800 p50 0.61 / p95 0.74 ms (n=452); FSR 1 3200x1800 p50 0.41 / p95 0.47 ms (n=300); bilinear 3200x1800 p50 0.00 / p95 0.00 ms (n=167)
+ticks=288  wall=4.8s  (59.7 ticks/s)
+actions: {'current': 145, 'interp': 143}
+game frames as they arrived: 144 new, usually 33.3 ms apart; 0.0% late (over 1.5x that), 0.0% bunched (under half); longest gap 33 ms
+processing, interp ticks       ms  p50= 21.01  p95= 23.51  p99= 25.80  max= 25.95
+processing, other ticks        ms  p50=  1.28  p95=  1.48  p99=  1.59  max=  2.71
+display/encode                 ms  p50=  6.70  p95= 13.01  p99= 15.44  max= 17.25
+queueing (backlog)             ms  p50= 10.93  p95= 18.84  p99= 22.99  max= 24.63
+real frame arrival->presented  ms  p50= 42.11  p95= 47.67  p99= 50.65  max= 51.67
+stale frames skipped at start (queued before this run): 10
+ticks over the 16.7 ms budget (processing + display): 94
+extra in-between frames (90/120 Hz) shown 89 of 143 (62%); the rest fell back to 60 Hz because it was behind
+dedup vs truth: {'tp': 144, 'tn': 144}

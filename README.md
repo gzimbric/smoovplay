@@ -79,7 +79,7 @@ There's nothing to install on the console, and it's free and open source.
 | **HDR** from a PS5 | *Experimental.* A contributor has played a real PS5 HDR stream with HDR all the way to an HDR monitor. Since 0.3.2, fullscreen keeps Windows' HDR on. |
 | **Xbox and other streaming apps**, by capturing the app's window | *Experimental.* Recognises the current Xbox app since 0.3.1, from a player's report; a real Xbox stream isn't confirmed yet. |
 | **AMD Radeon and Intel Arc**, through DirectML | *Experimental.* The same frames, about 1.7× more slowly. Not on a real card yet. |
-| **A Mac with Apple silicon**, from source | *Experimental.* PS5 Remote Play through a patched chiaki-ng built for macOS, RIFE on Apple's GPU: 60 fps at full motion detail or 90 at half on an M5 Max, with a stand-in PS5 stream. No installer yet, and not with a real PS5 yet. See [On a Mac](docs/DEVELOPING.md#on-a-mac-experimental). |
+| **A Mac with Apple silicon**, from source | *Experimental.* A native app with a Rust core on Metal, and PS5 Remote Play through a patched chiaki-ng built for macOS: 90 and 120 fps at full motion detail on an M5 Max, with a stand-in PS5 stream. Built from source for now, and not with a real PS5 yet. See [mac/README.md](mac/README.md). |
 
 **How it's checked:** each release passes SmoovPlay's automated tests (340 for 0.3.2, with a stand-in PS5 stream,
 stand-in capture cards and stand-in HDR frames) and installs as an update over the previous version before it ships.

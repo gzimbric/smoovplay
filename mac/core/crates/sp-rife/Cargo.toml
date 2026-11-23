@@ -1,0 +1,20 @@
+[package]
+name = "sp-rife"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "RIFE frame interpolation on Apple's GPU (Metal and MPSGraph)"
+
+[dependencies]
+sp-core.workspace = true
+objc2.workspace = true
+objc2-foundation.workspace = true
+objc2-metal = { workspace = true, features = ["std", "MTLDevice", "MTLCommandQueue", "MTLCommandBuffer", "MTLTexture", "MTLResource", "MTLBuffer", "MTLLibrary", "MTLComputePipeline", "MTLComputeCommandEncoder", "MTLCommandEncoder", "MTLPixelFormat", "MTLTypes", "MTLAllocation"] }
+objc2-metal-performance-shaders-graph.workspace = true
+objc2-metal-performance-shaders.workspace = true
+half = "2"
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
