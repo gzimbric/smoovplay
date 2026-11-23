@@ -316,14 +316,35 @@ def test_looks_in_clips_only_on_the_smoovplay_side(tmp_path):
         r.close()
 
 
-# ---- the shaders, held to the reference (needs OpenGL 4.5: skipped without a graphics card)
+def test_shaders_are_rewritten_for_a_macs_opengl_4_1_and_left_as_they_are_elsewhere():
+    import sys
+
+    from framegen import fsr, glsl
+    from framegen.looks_gl import stage_source
+    src = stage_source(looks.stages(normalize({"nodes": [node("lut", file="Test.cube"), node("grain")]}))[0], True)
+    assert "layout(binding = 2) uniform sampler3D lut0;" in src
+    assert glsl.source(src, None) == (src, {})  # Windows and Linux compile GLSL 4.50 as written
+    out, units = glsl.source(src, 410)
+    assert out.startswith("#version 410 core\n") and "#version 450" not in out and "layout(" not in out
+    assert units == {"src": 0, "glow": 1, "lut0": 2} and "uniform sampler3D lut0;" in out
+    easu = fsr._source("#define FSR_EASU_F 1\n", fsr._EASU)
+    out, units = glsl.source(easu, 410)
+    assert units == {"src": 0} and "#define packHalf2x16 smoov_packHalf2x16" in out  # GLSL 4.20's, written out
+    assert out.count("#version") == 1
+    assert glsl.TARGET == (410 if sys.platform == "darwin" else None)
+
+
+# ---- the shaders, held to the reference (needs OpenGL 4.5, or 4.1 on a Mac: skipped without a graphics card)
 @pytest.fixture(scope="module")
 def gl():
     glfw = pytest.importorskip("glfw")
     from OpenGL import GL
+
+    from framegen.glsl import context_hints
     if not glfw.init():
         pytest.skip("no OpenGL")
     glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+    context_hints(glfw)  # OpenGL 4.1 core on a Mac
     win = glfw.create_window(64, 64, "test", None, None)
     if not win:
         glfw.terminate()

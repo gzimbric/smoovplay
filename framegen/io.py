@@ -522,6 +522,7 @@ class GLWindowSink:
         import glfw
         from OpenGL import GL
 
+        from .glsl import context_hints
         from .menu import Menu
         from .settings import Settings
 
@@ -542,6 +543,7 @@ class GLWindowSink:
                                     (glfw.FOCUSED, glfw.FALSE), (glfw.FOCUS_ON_SHOW, glfw.FALSE),
                                     (glfw.MOUSE_PASSTHROUGH, glfw.TRUE)):
                     glfw.window_hint(hint, value)
+            context_hints(glfw)  # OpenGL 4.1 core on a Mac, for the shaders
             self.win = self.glwin = glfw.create_window(min(w, 1600), min(h, 900), "SmoovPlay", None, None)
             glfw.default_window_hints()
             glfw.make_context_current(self.win)

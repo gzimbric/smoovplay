@@ -62,7 +62,8 @@ def _source(defines: str, body: str) -> str:
 
 
 class FsrScaler:
-    """FSR 1 upscaling of a GL texture into a rectangle of a framebuffer. Needs a current GL 4.5 context."""
+    """FSR 1 upscaling of a GL texture into a rectangle of a framebuffer. Needs a current GL 4.5 context (on a Mac,
+    the 4.1 core one framegen/glsl.py asks for)."""
 
     def __init__(self, GL, sharpness: float = 0.5, denoise: bool = True, hdr: bool = False) -> None:
         """hdr: the picture is HDR10 (PQ values, framegen/hdr.py), so EASU's output is kept in half floats rather
@@ -80,11 +81,8 @@ class FsrScaler:
         self.mid_size = (0, 0)
 
     def _program(self, frag: str) -> int:
-        from OpenGL.GL import shaders
-
-        GL = self.GL
-        return shaders.compileProgram(shaders.compileShader(_VERT, GL.GL_VERTEX_SHADER),
-                                      shaders.compileShader(frag, GL.GL_FRAGMENT_SHADER), validate=False)
+        from .glsl import program
+        return program(self.GL, _VERT, frag)
 
     def _mid(self, w: int, h: int) -> None:
         """The EASU output: an RGBA8 (HDR: RGBA16F) texture at the upscaled size, re-made when the window size

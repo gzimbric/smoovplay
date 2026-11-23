@@ -22,7 +22,7 @@ def main() -> int:
     import glfw
     from OpenGL import GL
 
-    from framegen import looks
+    from framegen import glsl, looks
     from framegen.fsr import GpuTimer
     from framegen.looks_gl import LookRenderer
 
@@ -31,6 +31,7 @@ def main() -> int:
     a = ap.parse_args()
     if not glfw.init():
         raise SystemExit("glfw init failed")
+    glsl.context_hints(glfw)  # a 4.1 core context on a Mac
     glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
     win = glfw.create_window(64, 64, "looks timing", None, None)
     glfw.make_context_current(win)
