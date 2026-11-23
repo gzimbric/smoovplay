@@ -7,12 +7,13 @@ import time
 import numpy as np
 import pytest
 
-pytestmark = pytest.mark.skipif(sys.platform != "win32" and not sys.platform.startswith("linux"),
-                                reason="the frame tap is Windows and Linux only")
+pytestmark = pytest.mark.skipif(sys.platform not in ("win32", "darwin") and not sys.platform.startswith("linux"),
+                                reason="the frame tap is Windows, Linux and macOS only")
 
-from framegen.chiaki_tap import (CAPACITY, FEATURE_VARIABLE, FLAG_NEW, FLAG_REPEAT, SLOT_SIZE, SLOTS,  # noqa: E402
-                                 FrameTap, raw_layout)
+from framegen.chiaki_tap import (AUDIO_SUFFIX, CAPACITY, FEATURE_VARIABLE, FLAG_NEW, FLAG_REPEAT,  # noqa: E402
+                                 SLOT_SIZE, SLOTS, FrameTap, raw_layout)
 from framegen.io import Tick, Waiting  # noqa: E402
+from framegen.tapsys import unlink  # noqa: E402
 
 NAME = "Local\\smoovplay-tap-test"
 
@@ -24,6 +25,7 @@ def tap():
     yield t
     t.end()
     t.close()
+    unlink(NAME, NAME + AUDIO_SUFFIX)
 
 
 def test_raw_layout_fits_the_same_memory():

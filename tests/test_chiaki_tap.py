@@ -3,10 +3,11 @@ import sys
 import numpy as np
 import pytest
 
-pytestmark = pytest.mark.skipif(sys.platform != "win32" and not sys.platform.startswith("linux"),
-                                reason="the frame tap is Windows and Linux only")
+pytestmark = pytest.mark.skipif(sys.platform not in ("win32", "darwin") and not sys.platform.startswith("linux"),
+                                reason="the frame tap is Windows, Linux and macOS only")
 
 from framegen.chiaki_tap import SLOTS, FrameTap, SizeRepeatDetector, is_keyframe  # noqa: E402
+from framegen.tapsys import unlink  # noqa: E402
 
 
 @pytest.fixture
@@ -14,6 +15,7 @@ def tap():
     t = FrameTap("Local\\chiaki-frametap-test", "Local\\chiaki-frametap-test-frame")
     yield t
     t.close()
+    unlink("Local\\chiaki-frametap-test")
 
 
 def test_roundtrip(tap):
@@ -119,6 +121,7 @@ def test_sound_ring_roundtrip_split_and_times():
         assert a.read_new() == [] and a.next is None
     finally:
         a.close()
+        unlink(r"Local\chiaki-frametap-test-audio")
 
 
 def test_the_patch_asks_chiaki_ng_for_opengl_once_and_only_when_told(tmp_path):

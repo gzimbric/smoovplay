@@ -11,11 +11,12 @@ import cv2
 import numpy as np
 import pytest
 
-pytestmark = pytest.mark.skipif(sys.platform != "win32" and not sys.platform.startswith("linux"),
-                                reason="the frame tap is Windows and Linux only")
+pytestmark = pytest.mark.skipif(sys.platform not in ("win32", "darwin") and not sys.platform.startswith("linux"),
+                                reason="the frame tap is Windows, Linux and macOS only")
 
-from framegen.chiaki_tap import ChiakiSource, FrameTap  # noqa: E402
+from framegen.chiaki_tap import AUDIO_SUFFIX, ChiakiSource, FrameTap  # noqa: E402
 from framegen.io import Waiting  # noqa: E402
+from framegen.tapsys import unlink  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 W, H = 128, 96
@@ -69,7 +70,7 @@ def _take(it, n: int, out: list) -> None:
 
 
 def test_a_pipeline_ready_quickly_starts_at_the_streams_first_picture(clip, made):
-    tap = f"Local\\sp-test-start-quick-{os.getpid()}"
+    tap = f"Local\\sp-test-quick-{os.getpid()}"  # short enough for macOS with "-audio" (31 characters)
     fake = _fake(clip, tap)
     try:
         src = ChiakiSource("sw", wait_s=20, tap_name=tap)
@@ -81,6 +82,7 @@ def test_a_pipeline_ready_quickly_starts_at_the_streams_first_picture(clip, made
         src.close()
     finally:
         out = fake.communicate(timeout=30)[0].decode(errors="replace")
+        unlink(tap, tap + AUDIO_SUFFIX)
     assert len(made) == 1 and made[0] >= t_go, out
     assert len(ticks) >= 340, out  # every frame (360), from the first
     assert src.idr_requests == 0 and src.skipped == 0, out
@@ -106,6 +108,7 @@ def test_a_pipeline_ready_later_gets_a_refresh_frame_and_so_does_a_restart(clip,
         src.close()
     finally:
         out = fake.communicate(timeout=30)[0].decode(errors="replace")
+        unlink(tap, tap + AUDIO_SUFFIX)
     assert len(made) == 1, out  # one decoder, made once the pipeline asked for frames; kept through the restart
     assert len(first) == 40 and asked >= 1, out
     assert first[0].damaged  # held until the refresh frame has made the picture whole
@@ -138,3 +141,4 @@ def test_the_no_picture_hints(monkeypatch):
         assert "decoder has stopped" in src.why()  # the reader's loop hasn't gone round for 5 s
     finally:
         src.tap.close()
+        unlink(name)
