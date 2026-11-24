@@ -320,3 +320,16 @@ def test_durations_and_names():
     assert replay._dur(30) == "30 s" and replay._dur(60) == "60 s" and replay._dur(120) == "2 min"
     assert replay._dur(300) == "5 min" and replay._dur(150) == "2.5 min"
     assert replay._snap_fps(29.6) == 30 and replay._snap_fps(88.9) == 90 and replay._snap_fps(37) == 37
+
+
+def test_two_saves_in_one_second_get_different_names(tmp_path):
+    """Both saves checked only that the clip's name was free, while the writing goes to name.part: the second one
+    now finds the first's .part and takes "(2)"."""
+    from framegen.replay import _unique
+    p = tmp_path / "SmoovPlay 2026-11-23 01-02-03.mp4"
+    first, second = _unique(p), _unique(p)
+    assert first == p
+    assert second == tmp_path / "SmoovPlay 2026-11-23 01-02-03 (2).mp4"
+    assert (tmp_path / (first.name + ".part")).exists() and (tmp_path / (second.name + ".part")).exists()
+    (tmp_path / (first.name + ".part")).rename(first)  # the first save finished
+    assert _unique(p) == tmp_path / "SmoovPlay 2026-11-23 01-02-03 (3).mp4"
