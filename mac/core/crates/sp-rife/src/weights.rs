@@ -28,11 +28,15 @@ pub type Weights = HashMap<String, Tensor>;
 /// Where framegen/interpolator.py downloads checkpoints from (its WEIGHTS_URL).
 pub const WEIGHTS_URL: &str = "https://github.com/HolyWu/vs-rife/releases/download/model/flownet_v{version}.pkl";
 
-/// The repo's models/ folder (framegen/interpolator.py DEFAULT_MODEL_DIR), found from this crate's location, or
-/// $SMOOVPLAY_MODELS if set.
+/// Where the checkpoints are: $SMOOVPLAY_MODELS if set, the app's own `Resources/models` when this runs from
+/// inside SmoovPlay.app, or else the repo's models/ folder (framegen/interpolator.py DEFAULT_MODEL_DIR), found from
+/// this crate's location.
 pub fn default_model_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("SMOOVPLAY_MODELS") {
         return PathBuf::from(dir);
+    }
+    if let Some(res) = sp_core::bundle::resources_dir() {
+        return res.join("models");
     }
     // four levels up from mac/core/crates/sp-rife is the repo root
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../models")
@@ -46,10 +50,24 @@ pub fn ensure_weights(version: &str, dir: &Path) -> Result<PathBuf> {
 
 /// ensure_weights with another URL template ("{version}" is replaced), for tests and mirrors.
 pub fn ensure_weights_from(version: &str, dir: &Path, url_template: &str) -> Result<PathBuf> {
-    let path = dir.join(format!("flownet_v{version}.pkl"));
+    let name = format!("flownet_v{version}.pkl");
+    let path = dir.join(&name);
     if path.exists() {
         return Ok(path);
     }
+    // A packaged app never writes into itself, so a model it doesn't ship goes to the data folder instead.
+    let fallback;
+    let dir = if sp_core::bundle::contains(dir) {
+        fallback = sp_core::bundle::data_dir().join("models");
+        let path = fallback.join(&name);
+        if path.exists() {
+            return Ok(path);
+        }
+        fallback.as_path()
+    } else {
+        dir
+    };
+    let path = dir.join(&name);
     std::fs::create_dir_all(dir)?;
     let url = url_template.replace("{version}", version);
     eprintln!("[rife] downloading {url}");

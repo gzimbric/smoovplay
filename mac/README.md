@@ -26,6 +26,15 @@ otherwise. A real identity matters because macOS ties permissions to the signatu
 Screen Recording permission and chiaki-ng keeps its Local Network permission when you rebuild. Set `SIGN_IDENTITY`
 to use another identity, or `-` for ad hoc.
 
+## Packaging
+
+Once chiaki-ng is built, `mac/package.sh` makes one app that runs on its own, with no checkout, Python or Homebrew
+needed. It builds the core and the app, then puts the core in `Contents/Helpers/smoovplay`, chiaki-ng in
+`Contents/Helpers/chiaki-ng.app`, and RIFE's weights and the looks preview's pictures in `Contents/Resources`. The
+result is `build/package/SmoovPlay.app`, about 450 MB, and a disk image `build/SmoovPlay-macOS.dmg` to drag it into
+Applications from. Both are signed the same way as the builds above. That's enough for your own Macs, but sharing it
+with other people would need a Developer ID certificate, the hardened runtime and notarisation.
+
 ## How the pieces fit
 
 The app starts the core with `--control` and the source's flags. It reads the core's `[settings-state]` lines and

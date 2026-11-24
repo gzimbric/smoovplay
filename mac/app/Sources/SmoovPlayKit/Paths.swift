@@ -25,7 +25,8 @@ public enum CoreKind: String, CaseIterable, Sendable {
 }
 
 public struct AppPaths: Sendable {
-    public var repo: URL
+    public var repo: URL  // the checkout, or a packaged app's Resources folder
+    public var packaged = false  // running from an app made by mac/package.sh, with the core and chiaki-ng inside
     public var python: URL
     public var coreKind: CoreKind
     public var coreBinary: URL?  // rust or custom
@@ -49,8 +50,12 @@ public struct AppPaths: Sendable {
                               bundle: Bundle = .main, coreChoice: String? = nil) -> AppPaths {
         let fm = FileManager.default
         func dir(_ s: String) -> URL { URL(fileURLWithPath: (s as NSString).expandingTildeInPath, isDirectory: true) }
-        var repo: URL?
-        if let r = env["SMOOVPLAY_APP"], !r.isEmpty { repo = dir(r) }
+        // A packaged app (mac/package.sh) carries the Rust core as Contents/Helpers/smoovplay and chiaki-ng under
+        // Contents/Helpers, and needs no checkout or Python. SMOOVPLAY_APP still points it at a checkout instead.
+        let bundledCore = bundle.bundleURL.appendingPathComponent("Contents/Helpers/smoovplay")
+        let packaged = (env["SMOOVPLAY_APP"] ?? "").isEmpty && fm.isExecutableFile(atPath: bundledCore.path)
+        var repo: URL? = packaged ? bundle.resourceURL : nil
+        if !packaged, let r = env["SMOOVPLAY_APP"], !r.isEmpty { repo = dir(r) }
         if repo == nil, let r = bundle.object(forInfoDictionaryKey: "SmoovPlayRepo") as? String,
            fm.fileExists(atPath: r + "/run.py") { repo = dir(r) }
         if repo == nil {  // the folders above the app (mac/app/build/SmoovPlay.app) or the binary (mac/app/.build/...)
@@ -70,8 +75,10 @@ public struct AppPaths: Sendable {
         let root = repo ?? dir("~/dev/smoovplay")
         let python = env["SMOOVPLAY_PYTHON"].map { URL(fileURLWithPath: $0) } ?? root.appendingPathComponent(".venv/bin/python")
 
-        let rustCore = root.appendingPathComponent("mac/core/target/release/smoovplay")
-        let choice = env["SMOOVPLAY_CORE"] ?? coreChoice
+        let rustCore = packaged ? bundledCore : root.appendingPathComponent("mac/core/target/release/smoovplay")
+        // There's no Python in a packaged app, so a saved choice of run.py doesn't apply there.
+        let saved = packaged && ["python", "run.py"].contains((coreChoice ?? "").lowercased()) ? nil : coreChoice
+        let choice = env["SMOOVPLAY_CORE"] ?? saved
             ?? (fm.isExecutableFile(atPath: rustCore.path) ? "rust" : "python")
         var kind = CoreKind.python
         var binary: URL?
@@ -87,7 +94,8 @@ public struct AppPaths: Sendable {
         let logs = env["SMOOVPLAY_LOGS"].map { dir($0) }
             ?? fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/SmoovPlay", isDirectory: true)
         let chiaki = env["SMOOVPLAY_CHIAKI"].map { dir($0) }
-            ?? root.appendingPathComponent("build/chiaki-ng-frametap/chiaki-ng.app", isDirectory: true)
+            ?? (packaged ? bundle.bundleURL.appendingPathComponent("Contents/Helpers/chiaki-ng.app", isDirectory: true)
+                : root.appendingPathComponent("build/chiaki-ng-frametap/chiaki-ng.app", isDirectory: true))
         // framegen/looks.py looks in $APPDATA/framegen/looks. A Mac has no APPDATA, so that's ~/framegen/looks, not
         // the data folder the settings are in. Every Python process the app starts gets this one instead, so the
         // looks sit beside the settings and the core and the Looks page agree.
@@ -96,7 +104,7 @@ public struct AppPaths: Sendable {
         childEnv["SMOOVPLAY_LOOKS_DIR"] = looks.path
         childEnv["PYTHONUNBUFFERED"] = "1"  // lines arrive as they're printed
         childEnv["PYTHONIOENCODING"] = "utf-8"
-        return AppPaths(repo: root, python: python, coreKind: kind, coreBinary: binary,
+        return AppPaths(repo: root, packaged: packaged, python: python, coreKind: kind, coreBinary: binary,
                         runArgs: split(env["SMOOVPLAY_RUN_ARGS"] ?? ""),
                         settingsFile: settings ?? dataDir.appendingPathComponent("settings.json"),
                         settingsOverridden: settings != nil, prefsFile: prefs, logs: logs, chiakiApp: chiaki,

@@ -13,6 +13,7 @@
 //! The Python pipeline (`framegen/`) is the reference. Names and meanings follow it, so its docs and tests describe
 //! these too.
 
+pub mod bundle;
 pub mod clock;
 pub mod frame;
 pub mod gpu;

@@ -272,6 +272,9 @@ pub fn samples_dir() -> PathBuf {
     if let Some(d) = std::env::var_os("SMOOVPLAY_SAMPLES") {
         return PathBuf::from(d);
     }
+    if let Some(res) = sp_core::bundle::resources_dir() {
+        return res.join("samples");
+    }
     let d = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../framegen/samples");
     std::fs::canonicalize(&d).unwrap_or(d)
 }
