@@ -74,6 +74,9 @@ def raw_layout(fmt: str, width: int, height: int) -> tuple[int, int]:
     return count, size
 # The game's sound, in a mapping of its own (frametap.h, "Sound ring")
 AUDIO_SUFFIX = "-audio"
+# A live header whose newest frame is older than this was left by a writer that stopped without end(): POSIX shared
+# memory outlives chiaki-ng, where a Windows mapping died with it. A stream sends a frame every 33 ms or less.
+STALE_S = 5.0
 AUDIO_MAGIC = 0x41544643  # 'CFTA'
 AUDIO_HEADER, AUDIO_SLOT_HEADER, AUDIO_SLOTS, AUDIO_SLOT_SIZE = 64, 32, 512, 8192
 AUDIO_TOTAL = AUDIO_HEADER + AUDIO_SLOTS * AUDIO_SLOT_SIZE
@@ -462,7 +465,7 @@ class ChiakiSource:
     app, tag = False, "[chiaki]"  # chiaki-ng's frames (__init__: or another app's, through framegen/tap.py)
 
     def __init__(self, decoder: str = "sw", wait_s: float = 120.0, log_path: str | None = None,
-                 tap_name: str = NAME, test=None, app: bool = False) -> None:
+                 tap_name: str = NAME, test=None, app: bool = False, stale_s: float = STALE_S) -> None:
         """test: a framegen.sources.TestMode ("Simulate a 30 fps game"), applied as frames are decoded, before
         the queue, so a frame dropped from a full queue never shifts which frames it keeps. app: another app writes
         chiaki-ng's layout (framegen/tap.py open_tap): the log and notes say "[tap]" and "the app", not chiaki-ng."""
@@ -476,9 +479,17 @@ class ChiakiSource:
         self._header_file = Path(tempfile.gettempdir()) / (tap_name.split("\\")[-1] + "-header.bin")
         self.decoder_kind = decoder
         t_end = time.perf_counter() + wait_s
-        printed = False
-        while not (h := self.tap.header()).live:
-            if not printed:
+        printed = stale_said = False
+        while True:
+            h = self.tap.header()
+            stale = h.live and not app and self._stale(h, stale_s)
+            if h.live and not stale:
+                break
+            if stale and not stale_said:
+                print("[chiaki] the frame tap holds a stream header left by a chiaki-ng that stopped without ending "
+                      "its stream (its last frame is old): waiting for a new stream")
+                stale_said = True
+            elif not stale and not printed:
                 print("[tap] waiting for an app to start sending frames..." if app else
                       "[chiaki] waiting for chiaki-ng to start a stream (run it with CHIAKI_FRAMETAP=1)...")
                 printed = True
@@ -733,6 +744,16 @@ class ChiakiSource:
         self._last_idr = now
         self.tap.request_idr()
         self.idr_requests += 1
+
+    def _stale(self, h: Header, stale_s: float) -> bool:
+        """A live header whose newest frame is older than stale_s: its writer stopped without end(). On a Mac the
+        shared memory outlives chiaki-ng (a Windows mapping died with it), so after a crash the header still read
+        live, and taking it meant the old size and "stream size changed" once the real stream began. A header with no
+        frames yet can't be told from a writer about to send, so it counts as live."""
+        if h.write_seq == 0 or stale_s <= 0:
+            return False
+        p = self.tap.read(h.write_seq - 1, h.qpc_freq, h.slots, h.slot_size)
+        return p is not None and time.perf_counter() - p.t_arrival > stale_s
 
     def _save_header(self, session: int, codec: int, params: bytes) -> None:
         try:
