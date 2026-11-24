@@ -114,6 +114,7 @@ public final class WindowCapture: NSObject, SCStreamOutput, SCStreamDelegate, @u
     public let tapName: String
     private var tap: FrameTapWriter?
     private var stream: SCStream?
+    private var dirtyRectsSeen = false  // the form of the changed-areas list is logged once, on the capture queue
     private let queue = DispatchQueue(label: "smoovplay.capture", qos: .userInteractive)
     private let statsLock = NSLock()
     private var _stats = Stats()
@@ -167,6 +168,7 @@ public final class WindowCapture: NSObject, SCStreamOutput, SCStreamDelegate, @u
     /// a screen has no title bar, so all of it is copied. Apps that draw under their title bar (a browser's tabs,
     /// QuickTime) want it off.
     public func start(_ target: CaptureWindow, leaveOutTitleBar: Bool = true) async throws {
+        if stream != nil { await stop() }  // a second start replaces the first, rather than leaving it running
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         guard let w = content.windows.first(where: { $0.windowID == target.id }) else {
             throw FrameTapWriter.TapError(description: "the \(target.app) window isn't there any more. Press Look again")
@@ -222,6 +224,19 @@ public final class WindowCapture: NSObject, SCStreamOutput, SCStreamDelegate, @u
         finish()
     }
 
+    /// Whether ScreenCaptureKit's list of changed areas says the picture didn't change: true for an empty list,
+    /// false for one with rectangles, and nil when there's no list or it's in a form this doesn't know, so the core
+    /// compares the pictures itself. SCStream.h says the list holds CGRects in NSValues; some notes describe
+    /// dictionaries, so both are read. (Reading it as dictionaries alone failed on NSValues, and an empty result
+    /// then flagged every picture as a repeat.)
+    static func nothingChanged(_ dirtyRects: Any?) -> Bool? {
+        guard let dirtyRects else { return nil }
+        if let values = dirtyRects as? [NSValue] { return values.isEmpty }
+        if let dicts = dirtyRects as? [NSDictionary] { return dicts.isEmpty }
+        if let list = dirtyRects as? [Any] { return list.isEmpty ? true : nil }
+        return nil
+    }
+
     private func finish() {
         queue.sync {
             tap?.end()
@@ -250,8 +265,12 @@ public final class WindowCapture: NSObject, SCStreamOutput, SCStreamDelegate, @u
             return
         }
         guard let pb = CMSampleBufferGetImageBuffer(sb) else { return }
-        let dirty = (info[.dirtyRects] as? [NSDictionary]) ?? []
-        let unchanged = info[.dirtyRects] != nil && dirty.isEmpty
+        let rects = info[.dirtyRects]
+        if !dirtyRectsSeen, let rects {
+            dirtyRectsSeen = true
+            log("[capture] ScreenCaptureKit lists the changed areas as \(Swift.type(of: rects))")  // `type` is the parameter here
+        }
+        let unchanged = WindowCapture.nothingChanged(rects) == true
         CVPixelBufferLockBaseAddress(pb, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(pb, .readOnly) }
         guard let base = CVPixelBufferGetBaseAddress(pb), CVPixelBufferGetWidth(pb) == tap.width,

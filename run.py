@@ -532,7 +532,9 @@ def main() -> int:
     # fit a frame (an RTX 20 card at 60 fps), Auto is half
     from framegen.autodetect import LAPTOP_SHARE, MAC_PRESENT_MS, SHARE, auto_scale, saved_full_ms
     card = gpu_name()
-    card_full_ms = None if a.settings.lower() == "none" else saved_full_ms(Path(a.settings), card)
+    # On a Mac the Rust core shares the file and times with its own engine ("metal"), so only this pipeline's count
+    card_full_ms = None if a.settings.lower() == "none" else saved_full_ms(Path(a.settings), card,
+                                                                           engine="torch" if mac_mode else None)
     if mac_mode and card_full_ms is not None:  # each frame shown also goes through the CPU to OpenGL there
         card_full_ms += MAC_PRESENT_MS
     card_share = LAPTOP_SHARE if "laptop" in card.lower() else SHARE

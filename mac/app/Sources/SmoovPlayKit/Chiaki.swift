@@ -6,7 +6,7 @@ import AppKit
 import IOKit.pwr_mgt
 
 public final class Chiaki: @unchecked Sendable {
-    public let app: URL
+    public var app: URL  // follows AppPaths when the core choice changes
     public let bundleID = AppPaths.chiakiBundleID
     /// The copy SmoovPlay opened (the Windows launcher keeps runtime\chiaki.pid for the same).
     public private(set) var ours: NSRunningApplication?

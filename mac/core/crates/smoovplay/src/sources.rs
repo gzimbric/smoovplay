@@ -263,6 +263,7 @@ pub fn open(a: &Args, kind: &str, test: &Option<SharedTestMode>) -> Result<Opene
                 log_path: log,
                 test: test.clone(),
                 app: false,
+                stale_s: sp_media::STALE_S,
             };
             match ChiakiSource::open(opts) {
                 Ok(s) => Ok(chiaki(s, "chiaki")),

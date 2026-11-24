@@ -68,12 +68,18 @@ def save_timing(settings_path: Path, gpu: str, timing: dict) -> None:
         pass
 
 
-def saved_full_ms(settings_path: Path, gpu: str) -> float | None:
+def saved_full_ms(settings_path: Path, gpu: str, engine: str | None = None) -> float | None:
     """The last test's time at full motion detail on this graphics card, in ms; None if there's none, or it was
-    another card's."""
+    another card's. engine: only a time measured with that engine counts. On a Mac the Rust core writes the same
+    file with its own engine ("metal") and its own times, which don't apply to this pipeline."""
     try:
         saved = json.loads(timing_path(settings_path).read_text(encoding="utf-8"))
-        return float(saved["timing"]["full"]["ms"]) if saved.get("gpu") == gpu else None
+        if saved.get("gpu") != gpu:
+            return None
+        full = saved["timing"]["full"]
+        if engine is not None and full.get("engine") != engine:
+            return None
+        return float(full["ms"])
     except (OSError, ValueError, KeyError, TypeError):
         return None
 

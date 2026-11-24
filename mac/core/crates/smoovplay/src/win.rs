@@ -8,7 +8,7 @@
 //! - `overlay <x> <y> <w> <h>` or `overlay none`: sit over the copied app window, or be a normal window again.
 //! - "menu_open" in the state, published again whenever the menu opens or closes.
 
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -131,8 +131,10 @@ pub fn read_commands(tx: LineSender, input: impl Read + Send + 'static) {
                 Ok(_) => tx.send(&String::from_utf8_lossy(&buf)),
             }
         }
-        println!("[remote] the launcher closed its link: quitting");
+        // Quit first. With the app gone, stdout has no reader, and a plain println! panics this thread on the broken
+        // pipe (Rust ignores SIGPIPE), which left the core running with a dead window. The line is best effort.
         tx.send("quit");
+        let _ = writeln!(std::io::stdout(), "[remote] the launcher closed its link: quitting");
     });
 }
 

@@ -336,3 +336,25 @@ fn ps5_sim_noise_and_realtime() {
     let mean = d.iter().sum::<i32>() as f64 / d.len() as f64;
     assert!(sd > 3.0 && sd < 4.5 && mean.abs() < 0.2, "noise sd {sd}, mean {mean}");
 }
+
+/// POSIX shared memory outlives chiaki-ng, so a crash leaves a live header behind. One whose newest frame is old
+/// isn't taken as a stream (it gave the old size, then "stream size changed"); the next real stream is.
+#[test]
+fn a_header_left_by_a_dead_writer_is_waited_out() {
+    let n = format!("Local\\sp-stale-{}", std::process::id() % 10000);
+    sp_tap::unlink(&n);
+    let tap = sp_tap::FrameTap::open(&n).unwrap();
+    tap.begin(1, 1280, 720, 60, 0, None).unwrap();
+    tap.push(b"\x00\x00\x01old-frame", 0, false, None);
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    let opts = |stale_s| sp_media::ChiakiOptions { tap_name: n.clone(), wait_s: 0.5, stale_s, ..Default::default() };
+    match sp_media::ChiakiSource::open(opts(0.1)) {
+        Err(sp_media::OpenError::Timeout(_)) => {}
+        other => panic!("a stale header was taken as a stream: {:?}", other.map(|_| ())),
+    }
+    tap.begin(1, 1920, 1080, 60, 0, None).unwrap(); // chiaki-ng started again: a new session, with a fresh frame
+    tap.push(b"\x00\x00\x01new-frame", 0, false, None);
+    let mut src = sp_media::ChiakiSource::open(opts(0.1)).expect("a fresh stream opens");
+    sp_core::Source::close(&mut src);
+    sp_tap::unlink(&n);
+}

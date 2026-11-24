@@ -394,7 +394,7 @@ pub(crate) fn open(mtm: MainThreadMarker, w: usize, h: usize, title: &str, drawa
 
 /// Runs `cmd` on the main thread. It runs now if this is the main thread, or else it's queued on the main dispatch
 /// queue.
-pub(crate) fn on_main(cmd: WindowCmd) {
+pub fn on_main(cmd: WindowCmd) {
     if let Some(mtm) = MainThreadMarker::new() {
         apply(mtm, cmd);
     } else {

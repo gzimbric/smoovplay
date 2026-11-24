@@ -23,7 +23,7 @@ pub mod tap_source;
 pub mod test_mode;
 pub mod vt;
 
-pub use chiaki::{ChiakiOptions, ChiakiSource, OpenError};
+pub use chiaki::{ChiakiOptions, ChiakiSource, OpenError, STALE_S};
 pub use clock60::{Clock60, QueuedSource};
 pub use colour::{FrameInfo, Tags};
 pub use convert::{Converter, HdrOut, HdrSettings};

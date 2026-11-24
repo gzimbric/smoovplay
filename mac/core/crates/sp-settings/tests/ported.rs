@@ -973,12 +973,12 @@ fn test_auto_motion_is_half_where_full_doesnt_fit_this_card() {
 #[test]
 fn test_the_tests_times_are_kept_for_that_card_only() {
     let settings = tmp_dir("timing").join("framegen").join("settings.json"); // its folder isn't there yet
-    assert_eq!(autodetect::saved_full_ms(&settings, "NVIDIA GeForce RTX 2080 Ti"), None);
+    assert_eq!(autodetect::saved_full_ms(&settings, "NVIDIA GeForce RTX 2080 Ti", None), None);
     autodetect::save_timing(&settings, "NVIDIA GeForce RTX 2080 Ti", &timing(19.7, 14.5).to_value());
-    assert_eq!(autodetect::saved_full_ms(&settings, "NVIDIA GeForce RTX 2080 Ti"), Some(19.7));
-    assert_eq!(autodetect::saved_full_ms(&settings, "NVIDIA GeForce RTX 4070"), None); // another card since
+    assert_eq!(autodetect::saved_full_ms(&settings, "NVIDIA GeForce RTX 2080 Ti", None), Some(19.7));
+    assert_eq!(autodetect::saved_full_ms(&settings, "NVIDIA GeForce RTX 4070", None), None); // another card since
     std::fs::write(settings.with_file_name("card-timing.json"), "{not json").unwrap();
-    assert_eq!(autodetect::saved_full_ms(&settings, "NVIDIA GeForce RTX 2080 Ti"), None);
+    assert_eq!(autodetect::saved_full_ms(&settings, "NVIDIA GeForce RTX 2080 Ti", None), None);
 }
 
 #[test]
@@ -987,12 +987,12 @@ fn test_detect_saves_its_times_only_when_it_measured_them() {
     let mut st = settings_at(&path);
     let made_up = detect_on("", "621.24");
     autodetect::finish(&mut st, &path, &made_up, false, false, false); // made-up times (--timing) aren't kept
-    assert_eq!(autodetect::saved_full_ms(&path, "NVIDIA GeForce RTX 4070"), None);
+    assert_eq!(autodetect::saved_full_ms(&path, "NVIDIA GeForce RTX 4070", None), None);
     let machine = Machine { gpu: "NVIDIA GeForce RTX 4070".into(), ..Machine::mac("x", 0.0, None) };
     let measured = autodetect::detect(&st.values(), &Machine { mac_mode: false, ..machine }, &timing(19.7, 14.5), None);
     let lines = autodetect::finish(&mut st, &path, &measured, true, false, false);
     assert!(lines.is_empty());
-    assert_eq!(autodetect::saved_full_ms(&path, "NVIDIA GeForce RTX 4070"), Some(19.7));
+    assert_eq!(autodetect::saved_full_ms(&path, "NVIDIA GeForce RTX 4070", None), Some(19.7));
 }
 
 #[test]

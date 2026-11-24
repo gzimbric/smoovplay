@@ -446,7 +446,8 @@ pub fn main(argv: &[String]) -> i32 {
     }
 
     // Auto motion detail also goes by Auto-detect's last time at full detail on this GPU, plus the window's cost
-    let card_full_ms = settings_path.as_ref().and_then(|p| saved_full_ms(p, &gpu)).map(|ms| ms + PRESENT_MS);
+    // Only this core's own times ("metal"): the Python core shares the file under the same GPU name
+    let card_full_ms = settings_path.as_ref().and_then(|p| saved_full_ms(p, &gpu, Some("metal"))).map(|ms| ms + PRESENT_MS);
     let card_share = if gpu.to_lowercase().contains("laptop") { LAPTOP_SHARE } else { SHARE };
     let hz = settings.get_i64("hz");
     let (w, h) = (opened.w, opened.h);
@@ -595,7 +596,17 @@ pub fn main(argv: &[String]) -> i32 {
     let play = Play { a, opened, settings: shared, ctx, rules, test, cfg, interp, window, hdr_out, gpu, replay };
     match (play.window.is_some(), mtm) {
         (true, Some(mtm)) => {
-            let worker = std::thread::Builder::new().name("pipeline".into()).spawn(move || run_sessions(play));
+            let worker = std::thread::Builder::new().name("pipeline".into()).spawn(move || {
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_sessions(play))) {
+                    Ok(rc) => rc,
+                    Err(_) => {
+                        // The pipeline thread died (the panic is on stderr). Close the window so sp_present::run
+                        // returns and the core exits, instead of a dead window that stays until it's closed by hand.
+                        sp_present::window::on_main(sp_present::window::WindowCmd::Close);
+                        1
+                    }
+                }
+            });
             let worker = match worker {
                 Ok(w) => w,
                 Err(e) => {

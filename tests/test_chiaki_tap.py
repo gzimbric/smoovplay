@@ -56,6 +56,28 @@ def test_new_session_and_idr_flag(tap):
     assert tap.header().session == s + 1 and tap.header().write_seq == 0
 
 
+def test_a_header_left_by_a_dead_writer_is_waited_out(tap):
+    """POSIX shared memory outlives chiaki-ng, so a crash leaves a live header behind. One whose newest frame is old
+    isn't taken as a stream (it gave the old size, then "stream size changed"); the next real stream is."""
+    import time
+
+    from framegen.chiaki_tap import ChiakiSource
+    name = "Local\\chiaki-frametap-test"
+    tap.begin(1, 1280, 720, 60)
+    tap.push(b"\x00\x00\x01old-frame")
+    time.sleep(0.15)
+    try:
+        with pytest.raises(TimeoutError):
+            ChiakiSource("sw", wait_s=0.5, tap_name=name, stale_s=0.1)
+        tap.begin(1, 1920, 1080, 60)  # chiaki-ng started again: a new session, with a fresh frame
+        tap.push(b"\x00\x00\x01new-frame")
+        src = ChiakiSource("sw", wait_s=0.5, tap_name=name, stale_s=0.1)
+        assert (src.w, src.h) == (1920, 1080)
+        src.close()
+    finally:
+        unlink(name + "-audio")
+
+
 def test_keyframes():
     assert is_keyframe(b"\x00\x00\x00\x01\x67sps\x00\x00\x01\x68pps\x00\x00\x01\x65idr", "h264")
     assert not is_keyframe(b"\x00\x00\x01\x41p-slice", "h264")

@@ -395,6 +395,7 @@ impl<I: Interpolator> Pipeline<I> {
                 if l.interp != enabled {
                     enabled = l.interp;
                     sched = CadenceScheduler::new();
+                    timeline = FrameTimeline::new(12); // afresh too: its frames are from before interpolation went off
                     quarter_due = false;
                     ov_next = 0.0;
                     log(&format!("[pipeline] interpolation {}", if enabled { "ON" } else { "OFF" }));
@@ -546,8 +547,10 @@ impl<I: Interpolator> Pipeline<I> {
                 timeline.set_at_arrival(dipping);
                 let added = timeline.tick(is_new, is_cut, Some(tick.frame.clone()), tick.t_arrival);
                 let was_timed = timed;
-                timed = dipping
-                    || (timeline.uneven && has_sink && !gt_on && live.as_ref().is_none_or(|l| l.even_out));
+                // Not before the timeline has a frame (framegen/pipeline.py): interpolation turned on at a repeat
+                // tick, while the game was already dipping, asked place() for frames it didn't have.
+                timed = !timeline.frames.is_empty()
+                    && (dipping || (timeline.uneven && has_sink && !gt_on && live.as_ref().is_none_or(|l| l.even_out)));
                 if timed != was_timed {
                     if timed && dipping {
                         unshown = None;

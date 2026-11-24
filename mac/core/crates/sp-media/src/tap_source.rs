@@ -17,7 +17,7 @@ use sp_tap::{
     codec_name, colour_of, AudioTap, Codec, FrameTap, Header, RawFormat, FEATURE_VARIABLE, FLAG_NEW, FLAG_REPEAT,
 };
 
-use crate::chiaki::{ChiakiOptions, ChiakiSource, OpenError};
+use crate::chiaki::{ChiakiOptions, ChiakiSource, OpenError, STALE_S};
 use crate::clock60::{Clock60, QueuedSource};
 use crate::convert::Converter;
 use crate::queue::{TickQueue, Ticker};
@@ -335,7 +335,7 @@ pub fn open_tap(
     if Codec::of_tap(h.codec).is_none() {
         return Err(OpenError::Timeout(format!("the app sends frames in a format SmoovPlay doesn't know (codec {})", h.codec)));
     }
-    let mut src = ChiakiSource::open(ChiakiOptions { tap_name: name.into(), wait_s, log_path, test, app: true })?;
+    let mut src = ChiakiSource::open(ChiakiOptions { tap_name: name.into(), wait_s, log_path, test, app: true, stale_s: STALE_S })?;
     let mut info = src.info().clone();
     info.name = "Frame tap".into();
     info.audio = "The app plays its own sound".into();

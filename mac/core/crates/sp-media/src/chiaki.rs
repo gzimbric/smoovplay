@@ -40,11 +40,27 @@ pub struct ChiakiOptions {
     pub test: Option<SharedTestMode>,
     /// Another app writes chiaki-ng's layout, so messages say "[tap]" and "the app".
     pub app: bool,
+    /// A live header whose newest frame is older than this is a dead writer's, not a stream (STALE_S; 0 = never).
+    pub stale_s: f64,
+}
+
+/// A live header whose newest frame is older than this was left by a writer that stopped without `end()`: POSIX
+/// shared memory outlives chiaki-ng, where a Windows mapping died with it. A stream sends a frame every 33 ms or less.
+pub const STALE_S: f64 = 5.0;
+
+/// framegen/chiaki_tap.py ChiakiSource._stale. After a chiaki-ng crash the header still read live, and taking it
+/// meant the old size and "stream size changed" once the real stream began. A header with no frames yet can't be
+/// told from a writer about to send, so it counts as live.
+fn stale_header(tap: &FrameTap, h: &sp_tap::Header, stale_s: f64) -> bool {
+    if h.write_seq == 0 || stale_s <= 0.0 {
+        return false;
+    }
+    tap.read(h.write_seq - 1, h).is_some_and(|p| now() - p.t_arrival > stale_s)
 }
 
 impl Default for ChiakiOptions {
     fn default() -> Self {
-        ChiakiOptions { tap_name: NAME.into(), wait_s: 120.0, log_path: None, test: None, app: false }
+        ChiakiOptions { tap_name: NAME.into(), wait_s: 120.0, log_path: None, test: None, app: false, stale_s: STALE_S }
     }
 }
 
@@ -143,13 +159,22 @@ impl ChiakiSource {
         let tap = FrameTap::open(&opts.tap_name)?;
         let sound = AudioTap::open(&opts.tap_name)?;
         let t_end = now() + opts.wait_s;
-        let mut printed = false;
+        let (mut printed, mut stale_said) = (false, false);
         let h = loop {
             let h = tap.header();
-            if h.live() {
+            let stale = h.live() && !opts.app && stale_header(&tap, &h, opts.stale_s);
+            if h.live() && !stale {
                 break h;
             }
-            if !printed {
+            if stale {
+                if !stale_said {
+                    stale_said = true;
+                    println!(
+                        "[chiaki] the frame tap holds a stream header left by a chiaki-ng that stopped without ending its \
+                         stream (its last frame is old): waiting for a new stream"
+                    );
+                }
+            } else if !printed {
                 println!(
                     "{}",
                     if opts.app {

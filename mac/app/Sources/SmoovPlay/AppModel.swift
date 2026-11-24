@@ -83,7 +83,12 @@ final class AppModel: ObservableObject {
     @Published var lookHidden = false
     @Published var lookOpen: [String: Set<Int>] = [:]
     @Published var samples: [LookSample] = []
-    lazy var preview: LookPreview = {
+    lazy var preview: LookPreview = makePreview()
+    private var previewMade = false
+
+    /// The preview runs the core's helper, so it's made again when the core choice changes (coreChoice.didSet).
+    private func makePreview() -> LookPreview {
+        previewMade = true
         let p = LookPreview(paths: paths)
         p.onPicture = { [weak self] url, sample in
             Task { @MainActor in
@@ -98,7 +103,7 @@ final class AppModel: ObservableObject {
         p.trace = { Trace.log("look preview: " + $0) }
         p.onSamples = { [weak self] s in Task { @MainActor in if self?.samples.isEmpty == true { self?.samples = s } } }
         return p
-    }()
+    }
     private var lookSendDue = false, lookTimer: Timer?, lookSaveDue: String?, lookSaveAt = Date()
     private weak var lookShownTo: CoreSession?
     var previewPixels = (640, 360)
@@ -123,6 +128,8 @@ final class AppModel: ObservableObject {
     @Published var keyListening: String?
     @Published var keysProblem: String?
     @Published var heldKeys: [String] = []  // what's held while playing, for the Play page
+    private var replayKeysTried = false  // takeKeys() went for the replay keys (held or not), so no retry per state line
+    private var captureStarts = 0  // counts window-capture starts, so a Stop during one cancels it
     private var keyMonitor: Any?
     private var navKeys: [UInt32] = []  // the menu's own keys, held while it's open (App window mode)
 
@@ -135,6 +142,12 @@ final class AppModel: ObservableObject {
         didSet {
             UserDefaults.standard.set(coreChoice, forKey: "core")
             paths = AppPaths.detect(coreChoice: coreChoice)
+            // chiaki and preview were made from the old paths: the preview runs the old core's helper otherwise
+            chiaki.app = paths.chiakiApp
+            if previewMade {
+                preview.stop()
+                preview = makePreview()
+            }
         }
     }
 
@@ -335,12 +348,19 @@ final class AppModel: ObservableObject {
                 return
             }
             setPlayState(.starting)
+            captureStarts += 1
+            let thisStart = captureStarts
             Task {
                 do {
                     try await capture.start(w, leaveOutTitleBar: !prefs.has("window-keep-title"))
+                    // Stop pressed, or Play again, while the capture was starting: this start is off
+                    guard thisStart == captureStarts, playState == .starting else {
+                        await capture.stop()
+                        return
+                    }
                     start(test: false)
                 } catch {
-                    setPlayState(.error("Couldn't copy the window: \(error.localizedDescription)"))
+                    if thisStart == captureStarts { setPlayState(.error("Couldn't copy the window: \(error.localizedDescription)")) }
                 }
             }
         default:
@@ -389,6 +409,7 @@ final class AppModel: ObservableObject {
 
     func stop() {
         guard let s = session, s.running else {
+            captureStarts += 1  // a window capture still starting won't start the core when it's done
             if playState.running { setPlayState(.stopped) }
             Task { await capture.stop() }
             return
@@ -519,6 +540,7 @@ final class AppModel: ObservableObject {
         navKeys = []
         guard let s = session else { return }
         let replayOn = (settingValue("replay")?.double ?? 0) > 0
+        replayKeysTried = replayOn
         if replayOn {
             for r in WindowKeys.replay {
                 guard let c = try? KeyCombo.parse(r.combo) else { continue }
@@ -532,8 +554,8 @@ final class AppModel: ObservableObject {
             keysTaken = taken
             for a in WindowKeys.actions {
                 guard let name = got[a.id] ?? nil, let c = try? KeyCombo.parse(name) else { continue }
-                Hotkeys.shared.register(c, action: { [weak self] in self?.windowAction(a, s) })
-                heldKeys.append(c.name)
+                if Hotkeys.shared.register(c, action: { [weak self] in self?.windowAction(a, s) }) != nil { heldKeys.append(c.name) }
+                else { launcherLog("[launcher] \(c.name) is taken by another app or macOS, so \(a.id) has no key from other apps") }
             }
             launcherLog("[launcher] App window keys: " + WindowKeys.actions.map { "\($0.id) \((got[$0.id] ?? nil) ?? "none")" }.joined(separator: ", "))
         }
@@ -543,6 +565,7 @@ final class AppModel: ObservableObject {
         Hotkeys.shared.unregisterAll()
         heldKeys = []
         navKeys = []
+        replayKeysTried = false
     }
 
     /// In App window mode, while the video window's menu is open, its keys (arrows, Return, Esc, Delete) are taken
@@ -565,8 +588,9 @@ final class AppModel: ObservableObject {
     private func afterStateChange() {
         guard playState == .playing, let s = session else { return }
         let replayOn = (settingValue("replay")?.double ?? 0) > 0
-        let holding = heldKeys.contains("Control-Option-R")
-        if replayOn != holding { takeKeys() }
+        // Keys are taken again only when replay was turned on or off, not on every state line while a replay key
+        // is held by another app (that re-registered every key and logged the clash each time).
+        if replayOn != replayKeysTried { takeKeys() }
         navKeysFollowMenu(s)
     }
 

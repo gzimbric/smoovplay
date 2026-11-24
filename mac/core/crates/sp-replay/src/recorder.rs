@@ -960,7 +960,7 @@ impl Inner {
         let stamp = stamp();
         let mut saved = Vec::new();
         if kind.video() {
-            let path = unique(&folder.join(format!("SmoovPlay {stamp}.mp4")));
+            let path = unique(&folder.join(format!("SmoovPlay {stamp}.mp4")))?;
             let t0 = Instant::now();
             write_clip(&path, &afmt, &after, sound.as_ref(), base, end)?;
             let mb = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) as f64 / 1e6;
@@ -981,7 +981,7 @@ impl Inner {
                 format!("Original {} fps", snap_fps((n_b.saturating_sub(1)).max(1) as f64 / span_b)),
                 format!("SmoovPlay {} fps", snap_fps((after.len() - 1) as f64 / secs.max(1e-6))),
             ];
-            let path = unique(&folder.join(format!("SmoovPlay {stamp} before and after.mp4")));
+            let path = unique(&folder.join(format!("SmoovPlay {stamp} before and after.mp4")))?;
             let tmp = temp_dir("smoovplay-replay-")?;
             // The three tracks on one timeline, as the compose step reads them
             let origin = [Some(after[0].pts), Some(before[0].pts), sound.as_ref().and_then(|s| s.1.first().map(|p| p.pts))]
@@ -1120,7 +1120,7 @@ pub(crate) fn write_clip(
     base: i64,
     end: i64,
 ) -> Result<()> {
-    let tmp = path.with_file_name(format!("{}.part", path.file_name().unwrap().to_string_lossy()));
+    let tmp = crate::part_of(path); // claimed by unique(), so it exists and is ours
     let v: Vec<Piece> = after.iter().filter(|p| base <= p.pts && p.pts <= end).cloned().collect();
     let mut tracks = vec![(spec_of(video, v[0].pts - base, 0), samples(&v, true))];
     let s: Vec<Piece>;

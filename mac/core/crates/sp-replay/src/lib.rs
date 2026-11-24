@@ -111,17 +111,37 @@ pub fn saving_dir() -> PathBuf {
     sp_settings::paths::data_dir().join("saving")
 }
 
-/// `path`, or "name (2).mp4", "name (3).mp4" and so on if it's taken.
-pub fn unique(path: &Path) -> PathBuf {
+/// `path`, or "name (2).mp4", "name (3).mp4" and so on if it's taken. Its ".part" file (part_of) is made here,
+/// exclusively, so two saves started in the same second (R pressed twice) can't write the same file; the writer
+/// fills that .part and moves it over the path. Checking that the path exists alone wasn't enough, because the
+/// writing goes to the .part, and both saves saw a free name.
+pub fn unique(path: &Path) -> std::io::Result<PathBuf> {
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     let ext = path.extension().map(|s| format!(".{}", s.to_string_lossy())).unwrap_or_default();
     let mut out = path.to_path_buf();
     let mut n = 2;
-    while out.exists() {
+    loop {
+        if !out.exists() {
+            let part = part_of(&out);
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&part) {
+                Ok(_) => {
+                    if !out.exists() {
+                        return Ok(out);
+                    }
+                    let _ = std::fs::remove_file(&part); // finished by another save between the two checks
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {} // another save is writing it
+                Err(e) => return Err(e),
+            }
+        }
         out = path.with_file_name(format!("{stem} ({n}){ext}"));
         n += 1;
     }
-    out
+}
+
+/// The file a clip is written to before it's moved over `path`: "name.mp4.part".
+pub fn part_of(path: &Path) -> PathBuf {
+    path.with_file_name(format!("{}.part", path.file_name().map(|s| s.to_string_lossy()).unwrap_or_default()))
 }
 
 /// A length such as "30 s", "2 min" or "2.5 min" (replay.py _dur).

@@ -702,7 +702,7 @@ fn detect_results_and_the_timing_file() {
             }
             c.eq(
                 format!("saved_full_ms({:?}, {gpu})", r[0]),
-                dumps(&autodetect::saved_full_ms(&sp, gpu).into()),
+                dumps(&autodetect::saved_full_ms(&sp, gpu, None).into()),
                 dumps(want),
             );
         }

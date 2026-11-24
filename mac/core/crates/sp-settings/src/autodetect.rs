@@ -542,14 +542,22 @@ pub fn save_timing(settings_path: &Path, gpu: &str, timing: &Value) {
     let _ = std::fs::write(&path, json::dumps(&json::obj([("gpu", gpu.into()), ("timing", timing.clone())])));
 }
 
-/// The last test's time at full motion detail on this GPU, in ms. None if there's none or it was another GPU's.
-pub fn saved_full_ms(settings_path: &Path, gpu: &str) -> Option<f64> {
+/// The last test's time at full motion detail on this GPU, in ms. None if there's none, it was another GPU's, or,
+/// with `engine`, it was timed with another engine: on a Mac the Python core writes the same file with "torch"
+/// times under the same GPU name, and those don't apply to this core's "metal" ones (nor the other way round).
+pub fn saved_full_ms(settings_path: &Path, gpu: &str, engine: Option<&str>) -> Option<f64> {
     let text = crate::py::read_text(&timing_path(settings_path)).ok()?;
     let saved = json::loads(&text).ok()?;
     if !saved.get("gpu").is_some_and(|g| g.py_eq(&Value::from(gpu))) {
         return None;
     }
-    match saved.get("timing")?.get("full")?.get("ms")? {
+    let full = saved.get("timing")?.get("full")?;
+    if let Some(e) = engine
+        && !full.get("engine").is_some_and(|g| g.py_eq(&Value::from(e)))
+    {
+        return None;
+    }
+    match full.get("ms")? {
         Value::Str(s) => crate::py::float_from_str(s),
         v @ (Value::Bool(_) | Value::Int(_) | Value::Float(_)) => v.as_f64(),
         _ => None,
