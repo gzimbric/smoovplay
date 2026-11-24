@@ -541,6 +541,7 @@ class Pipeline:
                     st.simulated += 1
                 if settings.interp != enabled:
                     enabled, sched, quarter_due, ov_next = settings.interp, CadenceScheduler(), False, 0.0
+                    timeline = FrameTimeline()  # afresh too: its frames are from before interpolation went off
                     print(f"[pipeline] interpolation {'ON' if enabled else 'OFF'}")
                 if settings.steady_hud != steady:
                     steady = settings.steady_hud
@@ -670,8 +671,11 @@ class Pipeline:
                 timeline.set_at_arrival(dipping)
                 added = timeline.tick(is_new, is_cut, tick.frame, tick.t_arrival)
                 was_timed = timed
-                timed = dipping or (timeline.uneven and sink is not None and gt_fn is None
-                                    and (settings is None or getattr(settings, "even_out", True)))
+                # Not before the timeline has a frame: interpolation turned on at a repeat tick, while the game was
+                # already dipping, asked place() for frames it didn't have (and the timeline was never fed while
+                # interpolation was off, so it held frames from before; it starts afresh at the toggle now).
+                timed = bool(timeline.frames) and (dipping or (timeline.uneven and sink is not None and gt_fn is None
+                                                               and (settings is None or getattr(settings, "even_out", True))))
                 if timed != was_timed:
                     if timed and dipping:
                         unshown = None
@@ -849,6 +853,7 @@ class Pipeline:
                     else:
                         enabled = not enabled
                         sched = CadenceScheduler()
+                        timeline = FrameTimeline()  # afresh too: its frames are from before interpolation went off
                         print(f"[pipeline] interpolation {'ON' if enabled else 'OFF'}")
 
         st.wall_s = time.perf_counter() - t_start
