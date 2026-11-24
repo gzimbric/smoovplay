@@ -295,12 +295,25 @@ def videos_folder() -> Path:
 
 
 def _unique(path: Path) -> Path:
+    """`path`, or "name (2).mp4", "name (3).mp4" and so on if it's taken. Its ".part" file is made here, exclusively,
+    so two saves started in the same second (R pressed twice) can't write the same file; the writer fills that .part
+    and moves it over `path`. Checking that `path` exists alone wasn't enough, because the writing goes to the
+    .part, and both saves saw a free name."""
     n = 2
     out = path
-    while out.exists():
+    while True:
+        if not out.exists():
+            part = out.with_name(out.name + ".part")
+            try:
+                with open(part, "x"):
+                    pass
+                if not out.exists():
+                    return out
+                part.unlink(missing_ok=True)  # finished by another save between the two checks
+            except FileExistsError:
+                pass  # another save is writing it
         out = path.with_name(f"{path.stem} ({n}){path.suffix}")
         n += 1
-    return out
 
 
 def _dur(secs: float) -> str:
