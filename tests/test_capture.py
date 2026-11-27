@@ -526,3 +526,33 @@ def test_a_compressed_cards_queue_is_a_few_frames_not_seconds():
     o = c.open_options(c.Mode("mjpeg", False, 3840, 2160, 30, 60))
     assert o["vcodec"] == "mjpeg" and int(o["rtbufsize"]) <= 10_000_000  # was 99.5 MB: 1-3 s of 4K MJPEG
     assert int(c.open_options(c.Mode("nv12", True, 3840, 2160, 60, 60))["rtbufsize"]) == 3840 * 2160 * 3 // 2 * 4
+
+
+# ---- the card's sound: said when none comes, or only silence (#41)
+def _sound_packet(level):
+    import av
+    pcm = np.full((1, 960 * 2), level, dtype=np.int16)  # 20 ms of 48 kHz stereo, every sample at `level`
+    fr = av.AudioFrame.from_ndarray(pcm, format="s16", layout="stereo")
+    fr.sample_rate = 48000
+    return types.SimpleNamespace(size=pcm.nbytes, decode=lambda: [fr])
+
+
+@pytest.mark.parametrize("level, said", [(None, "no sound came from"), (0, "was silent"), (40, "was silent"),
+                                         (2000, None)])
+def test_the_log_says_when_a_cards_sound_is_missing_or_silent(level, said, capsys, monkeypatch):
+    monkeypatch.setattr(c, "SOUND_CHECK_S", 0.3)
+    name = "Digital Audio Interface (USB3. 0 capture)"
+    src = c.CardSource(_LiveCard([_blocks(seed=80)[0]], seconds=1.0), "a stick", live=True, device="cpu",
+                       colour=(False, False), sound_name=name)
+    src.astream = object()  # (as if its sound device had opened with it)
+    if level is not None:
+        for _ in range(5):
+            src._sound(_sound_packet(level), time.perf_counter())
+    ticks = _frames_of(src)  # about 1 s: checked at 0.3 s, and at the end
+    out = capsys.readouterr().out
+    assert len(ticks) > 30
+    if said is None:
+        assert "no sound came" not in out and "silent" not in out
+    else:
+        assert out.count(said) == 2 and out.count(name) == 2  # (the device named)
+        assert "in 0.3 s" in out and "this session" in out

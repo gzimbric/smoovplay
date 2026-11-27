@@ -48,6 +48,8 @@ BYTES_PER_PIXEL = {"nv12": 1.5, "yuv420p": 1.5, "yuyv422": 2, "uyvy422": 2, "bgr
 # as raw (3 bytes a pixel), the queue held 50 to 200 frames, one to three seconds of delay once the PC fell behind.
 COMPRESSED_BYTES_PER_PIXEL = 0.3
 CONVERTIBLE = ("nv12", "yuyv422", "uyvy422")  # converted here; anything else raw goes through PyAV's own conversion
+SOUND_CHECK_S = 10.0  # how long after starting a card's sound is checked for, once (CardSource._say_sound)
+HEARD_LEVEL = 64  # a 16-bit sample above this (of 32767, about -54 dBFS) is sound, not a silent line
 # A frame that comes off DirectShow more than this many frames later than the card's frames usually do: the PC has
 # fallen behind the card, and frames are skipped until it catches up (CatchUp).
 BEHIND_FRAMES = 2.5
@@ -562,7 +564,8 @@ class CardSource:
     """
 
     def __init__(self, container, name: str, live: bool, test=None, device: str | None = "auto",
-                 colour="auto", range_hint: str = "", queue_size: int = 3, decode_to: str = "", audio=None) -> None:
+                 colour="auto", range_hint: str = "", queue_size: int = 3, decode_to: str = "", audio=None,
+                 sound_name: str = "") -> None:
         from .sources import source_info
         self.container, self.live, self.test = container, live, test
         self.stream = container.streams.video[0]
@@ -610,10 +613,13 @@ class CardSource:
         if not self.raw and not self._gpu_jpeg:
             print(f"[capture] {self.fmt.upper()} is compressed: each frame is decoded on the CPU, which can stutter. "
                   "If the card offers NV12 or YUY2 at this size, that's better.")
+        # The sound, watched so the log says when none came, or only silence (#41): count, heard, said yet
+        self.sound_name = sound_name or "the card"
+        self._sound_n, self._heard, self._sound_checked, self._t_go = 0, False, False, None
         if self.astream is not None:
             cc = self.astream.codec_context
-            print(f"[capture] sound: {cc.sample_rate} Hz, {cc.channels} channel(s), played on this PC, held back to "
-                  "meet the picture")
+            print(f"[capture] sound from {self.sound_name}: {cc.sample_rate} Hz, {cc.channels} channel(s), played on "
+                  "this PC, held back to meet the picture")
         threading.Thread(target=self._reader, daemon=True, name="capture").start()
 
     # ---- opening
@@ -651,8 +657,9 @@ class CardSource:
                 continue
             if refused:
                 print(f"[capture] {device} took {what}")
+            has_sound = bool(getattr(getattr(container, "streams", None), "audio", None))
             return cls(container, f"Capture card ({device})", live=True, range_hint=m.range if m else "",
-                       audio=audio, **kw)
+                       audio=audio, sound_name=audio_device if audio_device and has_sound else "", **kw)
         offers = ", ".join(m.label() for m in card_modes()) or "nothing it lists"
         raise RuntimeError(f"{device} refused every video format SmoovPlay tried. Close Elgato's apps (4K Capture "
                            "Utility, Studio, Camera Hub: also in the tray by the clock) and OBS, then press Play "
@@ -835,6 +842,9 @@ class CardSource:
                 behind = self._catch is not None and self._catch.behind(t_arrival, t_arrival - t_src)
             if self.live and not self._go.is_set():
                 continue  # the pipeline is loading or restarting: not read, and nothing on the GPU (class docs)
+            if not self._sound_checked and self._t_go is not None and t_arrival - self._t_go >= SOUND_CHECK_S:
+                self._sound_checked = True
+                self._say_sound(f"in {SOUND_CHECK_S:g} s")
             if behind:
                 self._caught_up()
                 yield None, t_arrival, None  # numbered as a frame the card sent, as a damaged one is
@@ -870,9 +880,24 @@ class CardSource:
             if self.live:
                 if fr.time is not None:
                     self._late_a = (self._late_a + [t_arrival - (fr.time + fr.samples / fr.sample_rate)])[-120:]
+                self._sound_n += 1
+                if not self._heard and np.abs(np.frombuffer(pcm, dtype=np.int16)).max() > HEARD_LEVEL:
+                    self._heard = True
                 self._play(pcm)
             else:
                 self._audio_wait.append((fr.time if fr.time is not None else 0.0, pcm))
+
+    def _say_sound(self, when: str) -> None:
+        """Into the log, if the card's sound was opened but none came, or only silence (#41: a stick that worked,
+        with no sound and nothing in the log to say why)."""
+        if self.astream is None or self._heard:
+            return
+        if self._sound_n == 0:
+            print(f"[capture] no sound came from {self.sound_name} {when}: pick the card's sound device on the Play "
+                  "page, and check Windows' sound settings (Input) show its level moving")
+        else:
+            print(f"[capture] the sound from {self.sound_name} was silent {when}: on the console, send the sound out "
+                  "over HDMI (on a PS5: Settings > Sound > Audio Output), with nothing plugged into the controller")
 
     def _play(self, pcm: bytes) -> None:
         from .io import Sound
@@ -979,6 +1004,8 @@ class CardSource:
 
     def __iter__(self):
         self.dropped = 0  # frames dropped while the pipeline was loading don't count
+        if self._t_go is None:
+            self._t_go = time.perf_counter()
         self._go.set()
         from .io import queue_ticks
         yield from queue_ticks(self.q, "the capture card")
@@ -1006,6 +1033,8 @@ class CardSource:
         if self.player is not None:
             self.player.close()
             self._report_sound(final=True)
+        if self._t_go is not None:
+            self._say_sound("this session")
         print(f"[capture] dropped frames: {self.dropped}"
               + (f", skipped to catch up with the card: {self.caught_up}" if self.caught_up else "")
               + (f", damaged frames from the card skipped: {self.damaged}" if self.damaged else ""))

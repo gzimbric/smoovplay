@@ -945,6 +945,9 @@ namespace SmoovPlay
         static readonly object gate = new object();
         // Names that are likely a capture card rather than a webcam (also the PC check's, in Checks.cs)
         public const string CardPattern = "capture|cam link|elgato|avermedia|hdmi|usb video|ms2130|live gamer|magewell|razer ripsaw";
+        /// <summary>Sound devices named like a card, for diagnostics: cheap USB sticks call theirs "Digital Audio Interface (...)"
+        /// or "USB Digital Audio" (#41).</summary>
+        public const string CardSoundPattern = CardPattern + "|digital audio interface|usb digital audio";
 
         public static void Load(Paths p)
         {
@@ -991,7 +994,7 @@ namespace SmoovPlay
         {
             var sb = new StringBuilder();
             sb.AppendLine("Capture devices (DirectShow): " + (Video.Count == 0 ? "no video device" : string.Join("; ", Video.Select(Diagnostics.NoOwner))));
-            var cardAudio = Audio.Where(n => Regex.IsMatch(n, CardPattern, RegexOptions.IgnoreCase)).ToList();
+            var cardAudio = Audio.Where(n => Regex.IsMatch(n, CardSoundPattern, RegexOptions.IgnoreCase)).ToList();
             sb.AppendLine("Capture sound: " + (cardAudio.Count == 0 ? "none named like a card" : string.Join("; ", cardAudio.Select(Diagnostics.NoOwner)))
                           + (Audio.Count > cardAudio.Count ? $" (and {Audio.Count - cardAudio.Count} other sound devices)" : ""));
             if (Error != null) sb.AppendLine((Failed ? "Capture device list failed: " : "Capture device list: ") + Error);
