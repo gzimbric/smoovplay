@@ -333,3 +333,14 @@ def test_two_saves_in_one_second_get_different_names(tmp_path):
     assert (tmp_path / (first.name + ".part")).exists() and (tmp_path / (second.name + ".part")).exists()
     (tmp_path / (first.name + ".part")).rename(first)  # the first save finished
     assert _unique(p) == tmp_path / "SmoovPlay 2026-11-23 01-02-03 (3).mp4"
+
+
+def test_a_save_that_fails_leaves_no_part_file(tmp_path):
+    """_unique makes the clip's .part before anything is written: when the remux fails (here, on video that isn't
+    MPEG-TS), that empty .part goes too, rather than staying beside the clips."""
+    from framegen.replay import _unique, to_mp4
+    p = _unique(tmp_path / "SmoovPlay 2026-11-27 01-02-03.mp4")
+    assert (tmp_path / (p.name + ".part")).exists()
+    with pytest.raises(Exception):
+        to_mp4(p, (b"not a video", [(0, 0, b"nor this")]), None, 0, 1)
+    assert list(tmp_path.iterdir()) == []

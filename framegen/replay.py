@@ -335,8 +335,18 @@ def _snap_fps(fps: float) -> int:
 
 
 def to_mp4(path: Path, video: tuple, sound: tuple | None, base: int, end: int) -> None:
-    """Remux a video stretch (head, pieces) and its sound into an MP4, timestamps from `base`, without re-encoding."""
+    """Remux a video stretch (head, pieces) and its sound into an MP4, timestamps from `base`, without re-encoding.
+    If it fails, its .part goes too, even the empty one _unique made before anything was written."""
     tmp = path.with_name(path.name + ".part")
+    try:
+        _remux(tmp, video, sound, base, end)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    os.replace(tmp, path)
+
+
+def _remux(tmp: Path, video: tuple, sound: tuple | None, base: int, end: int) -> None:
     vin = av.open(_Chunks(*video), "r", format="mpegts")
     sin = av.open(_Chunks(*sound), "r", format="mpegts") if sound is not None and sound[1] else None
     out = av.open(str(tmp), "w", format="mp4", container_options={"movflags": "+faststart"})
@@ -365,7 +375,6 @@ def to_mp4(path: Path, video: tuple, sound: tuple | None, base: int, end: int) -
         vin.close()
         if sin is not None:
             sin.close()
-    os.replace(tmp, path)
 
 
 def _write_ts(path: Path, head: bytes, pieces) -> None:
