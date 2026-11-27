@@ -74,13 +74,13 @@ There's nothing to install on the console, and it's free and open source.
 | | Status |
 |---|---|
 | **PS5**, over Remote Play | **Tested** with real games, including ones locked at 30 fps like Gotham Knights. The recommended way. |
-| **NVIDIA GeForce RTX 30, 40 and 50 series** | **Tested** on an RTX 4070 Ti SUPER (Windows 10), and by a contributor on an RTX 5070 Ti (Windows 11). RTX 20 cards and laptops aren't tested yet. |
-| **Any console over HDMI**, through a capture card | *Experimental.* A player's AVerMedia Live Gamer 4K (GC573) works since 0.3.1; its sound came in 0.3.2, waiting on their word. Other cards are tested with recordings standing in for one. |
+| **NVIDIA GeForce RTX 30, 40 and 50 series** | **Tested** on an RTX 4070 Ti SUPER (Windows 10), and by a contributor on an RTX 5070 Ti (Windows 11). Players report it working on others, from an RTX 4060 laptop to an RTX 5080. On an RTX 2080 Ti, 60 fps only just keeps up, at Half motion detail. |
+| **Any console over HDMI**, through a capture card | *Experimental.* Players report it working with Elgato's HD60 X, Neo, 4K S and Cam Link 4K, AVerMedia's Live Gamer 4K (GC573) and a cheap USB stick. 0.3.14 fixes a crash at start on some cards, cards that refused SmoovPlay's frame rate, and the delay that built up at 4K. |
 | **HDR** from a PS5 | *Experimental.* A contributor has played a real PS5 HDR stream with HDR all the way to an HDR monitor. Since 0.3.2, fullscreen keeps Windows' HDR on. |
-| **Xbox and other streaming apps**, by capturing the app's window | *Experimental.* Recognises the current Xbox app since 0.3.1, from a player's report; a real Xbox stream isn't confirmed yet. |
-| **AMD Radeon and Intel Arc**, through DirectML | *Experimental.* The same frames, about 1.7× more slowly. Not on a real card yet. |
+| **Xbox and other streaming apps**, by capturing the app's window | *Experimental.* Players have played real Xbox streams through the Xbox app, on NVIDIA and AMD cards. 0.3.11 fixes a freeze ("Python is not responding") that cut many of those sessions short. |
+| **AMD Radeon and Intel Arc**, through DirectML | *Experimental.* The same frames, more slowly, so 60 fps is the place to start. Players have played on Radeon cards, including the RX 9070 XT. Intel Arc isn't tested yet. |
 
-**How it's checked:** each release passes SmoovPlay's automated tests (340 for 0.3.2, with a stand-in PS5 stream,
+**How it's checked:** each release passes SmoovPlay's automated tests (458 for 0.3.14, with a stand-in PS5 stream,
 stand-in capture cards and stand-in HDR frames) and installs as an update over the previous version before it ships.
 Real-hardware results come from the developer's PC, contributors and player reports, and the table says which. The
 comparison clips are labelled simulated (a recording played as a stream) or live (captured from real play).
@@ -195,7 +195,8 @@ The timeline shows 90 fps. At 60 fps there's one AI frame between each pair of r
   it are shown. The console, the network and your screen add their own delay; press **L** in the video window for
   the delay test, which times button presses all the way to the screen.
 - **60 and 90 fps are what's been shown and measured live.** 120 fps works the same way, with three in-between
-  frames, but no 120 fps clip or live measurement is published yet.
+  frames, and players report it running well on an RTX 5080, but no 120 fps clip or live measurement is
+  published yet.
 - **1080p.** Remote Play arrives at 1080p, so the picture is a little softer than HDMI straight from the console.
 - **HDR** (*Experimental*, Settings → HDR, off by default). For a PS5 streaming in HDR: pick the H.265 HDR codec in
   chiaki-ng, then turn HDR on. **On, shown in SDR** gives the stream its real colours on any monitor. **On, HDR
@@ -209,7 +210,8 @@ The timeline shows 90 fps. At 60 fps there's one AI frame between each pair of r
   PC is. Plug the PS5 and the PC into the router if you can.
 - **Some wobble.** HUD text over fast motion, very fast camera turns and thin objects crossing each other can wobble
   a little. Press **I** to compare with frame generation off.
-- **Sound stays in step.** chiaki-ng holds the sound back by as long as the picture spends in SmoovPlay.
+- **Sound stays in step** with a PS5 or a capture card: it's held back by as long as the picture spends in
+  SmoovPlay. Capturing an app's window, the app plays its own sound, which comes a little ahead of the picture.
 - **60 fps games pass through unchanged:** there are no gaps to fill. Try one anyway with
   [test mode](#only-have-60-fps-games-use-test-mode).
 - **Games between 40 and 60 fps** stutter over a 60 Hz stream. **Even out 40-60 fps** (on by default, Experimental)
@@ -228,8 +230,8 @@ SmoovPlay is new, so finding what breaks is the most useful help right now:
 - **Other games:** anything with a 30 fps Quality or Fidelity mode, or one that runs between 40 and 60 fps.
 - **Your setup:** Wi-Fi or wired, and your monitor's refresh rate.
 - **The Experimental options:** an Xbox through the Xbox app, a capture card, HDR on your monitor, another app's
-  window, or an AMD or Intel card. Most have met only one or two real setups so far, so any report helps, even "it
-  didn't start".
+  window, or an AMD or Intel card. Each has met only a few real setups so far, so any report helps, even "it didn't
+  start".
 
 Report bugs and feedback in [Issues](https://github.com/smoovplay/smoovplay/issues). In the app, **Help → Copy
 diagnostics** copies your PC and settings details: paste them in with the game and what happened.
@@ -263,9 +265,9 @@ paste it into an [issue](https://github.com/smoovplay/smoovplay/issues).
 <summary><b>Does it work with AMD or Intel graphics cards?</b></summary>
 
 Yes, as an Experimental option, through DirectML on any DirectX 12 card; Radeon RX 6000, 7000 and 9000 and Intel Arc
-are the ones to try. It draws the same frames as the NVIDIA engine, about 1.7 times more slowly, so expect 60 fps,
-and 90 on a fast card. It hasn't met a game on a real AMD or Intel card yet: press **Send feedback** on the Help
-page after playing.
+are the ones to try. It draws the same frames as the NVIDIA engine, more slowly, so start at 60 fps. Over PS5
+Remote Play, a player's RX 9070 XT held 90 fps from a 30 fps game, at Half motion detail; Intel Arc hasn't met a
+game yet. Either way, **Send feedback** on the Help page after playing helps.
 </details>
 
 <details>
@@ -273,12 +275,16 @@ page after playing.
 
 As Experimental options. For any console with HDMI, pick **Capture card** on the Play page. For Xbox, pick **App
 window**: SmoovPlay captures the window of the app you stream with (the Xbox app, Sony's PS Remote Play app,
-Moonlight or a cloud game in a browser) and shows the smooth picture over it. A player's AVerMedia Live Gamer 4K
-works; the Xbox app and other cards are waiting on reports, so please [send feedback](#help-test-it).
+Moonlight or a cloud game in a browser) and shows the smooth picture over it. Players have played Xbox streams
+through the Xbox app, and capture cards including Elgato's HD60 X and Neo and AVerMedia's Live Gamer 4K. It's
+still Experimental, so please [send feedback](#help-test-it).
 
 A capture card is read at 1080p by default. **Capture card resolution** (Settings, Picture) can ask for 1440p or 4K,
 which is sharper on a screen that big, but every new frame is drawn at that size: 1440p is about twice the work of
-1080p (60 fps on most cards), 4K about four times. Both can run quite sluggish.
+1080p (60 fps on most cards), 4K about four times. Both can run quite sluggish: when the PC can't keep up, SmoovPlay
+skips the card's frames (since 0.3.14) rather than letting the delay grow, and 1440p is the place to start. Some
+USB cards send only compressed video (MJPEG): an NVIDIA card decodes it, but on AMD and Intel the processor does,
+which can stutter.
 </details>
 
 <details>
@@ -334,6 +340,9 @@ py -3.12 -m venv .venv
 # A 60 fps recording played as a 30 fps game, live:
 .venv\Scripts\python run.py testdata\clip_1080p60.mp4 --realtime --display
 ```
+
+**macOS and Linux** run from source as Experimental, community-run options: [docs/macos.md](docs/macos.md) and
+[docs/linux.md](docs/linux.md). They're contributed and tested by players; we don't test or support them.
 
 **[docs/DEVELOPING.md](docs/DEVELOPING.md)** has the rest: every command and tool, settings and hotkeys, how Instant
 replay and Looks work inside, the scheduler, upscaling, NVIDIA VFG, measured results and known limits.

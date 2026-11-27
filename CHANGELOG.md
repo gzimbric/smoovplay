@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.3.14
+
+**Capture card** (Experimental)
+- **No more delay piling up at 4K** ([#68](https://github.com/smoovplay/smoovplay/issues/68),
+  [#70](https://github.com/smoovplay/smoovplay/issues/70)). Reading a 4K frame could take longer than the card takes
+  to send the next, and the card's frames queued up in Windows, adding up to two seconds of delay. SmoovPlay now skips
+  the frames it can't keep up with, so the delay stays low. The log says when it does, and what keeps up (1440p, or
+  Quarter motion detail).
+- **No more crash at start on some cards** ([#73](https://github.com/smoovplay/smoovplay/issues/73)). The card's
+  frames were read on the graphics card while SmoovPlay was still getting its AI frames ready, and the two could
+  collide. It now waits until they're ready, and again while it restarts.
+- **Cards that refused SmoovPlay's frame rate open now** ([#72](https://github.com/smoovplay/smoovplay/issues/72)). A
+  card that runs at exactly 60 fps (or 59.94) was asked for a hair faster than that, and refused. SmoovPlay now asks
+  for the card's own rate. If a card still refuses, it tries the card's other formats before giving up, and says what
+  it tried and what the card offers.
+- **The sound no longer drifts later and later** ([#71](https://github.com/smoovplay/smoovplay/pull/71), maybe
+  [#44](https://github.com/smoovplay/smoovplay/issues/44) too). On some cards, like Elgato's HD60 X, the picture's
+  timestamps drift against the sound's by about 40 ms a minute, and the sound was held back more and more, by over a
+  second in long sessions. The difference is now measured once at the start. Thanks to
+  [@gamachec](https://github.com/gamachec) for the find, the fix and a 2.5-hour test!
+- **The log says when the card's sound is missing or silent**
+  ([#41](https://github.com/smoovplay/smoovplay/issues/41)), and names the sound device it opened. Copy diagnostics
+  also lists sound devices named "Digital Audio Interface", as cheap USB sticks name theirs.
+
+**Instant replay**
+- **Two saves in the same second no longer clash** ([#64](https://github.com/smoovplay/smoovplay/pull/64)). Pressing R
+  twice quickly wrote both clips to the same file, damaging one. Thanks to [@gzimbric](https://github.com/gzimbric)!
+
+**Smoothness**
+- **Turning frame generation off and on while a game dips is safe now**
+  ([#65](https://github.com/smoovplay/smoovplay/pull/65)). With Dip smoothing on, it could end the session, or show a
+  picture from before it was turned off. Thanks to [@gzimbric](https://github.com/gzimbric)!
+
 ## 0.3.13
 
 **Install**
