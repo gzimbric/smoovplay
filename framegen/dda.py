@@ -15,6 +15,7 @@ from __future__ import annotations
 import ctypes
 from ctypes import POINTER, byref, c_int, c_long, c_size_t, c_uint, c_void_p
 
+from .sync import CAPTURE_LOCK
 from .dxgi_present import (D3D11_BIND_SHADER_RESOURCE, D3D11_SDK_VERSION, D3D11_USAGE_DEFAULT,
                            D3D_DRIVER_TYPE_UNKNOWN, DEVICE_CREATE_TEXTURE2D, DXGI_FORMAT_B8G8R8A8_UNORM,
                            FACTORY_ENUM_ADAPTERS1, IID_ID3D11Texture2D, IID_IDXGIFactory1, GUID, Texture2DDesc,
@@ -198,20 +199,23 @@ class DdaCapture:
                 _release(tex)
         finally:
             _release(resource)
-        stream = torch.cuda.current_stream()
-        s = c_void_p(stream.cuda_stream)
-        res = byref(self.res)
-        _cuda(self.rt.cudaGraphicsMapResources(1, res, s), "map")  # waits for the copy above
-        try:
-            arr = c_void_p()
-            _cuda(self.rt.cudaGraphicsSubResourceGetMappedArray(byref(arr), self.res, 0, 0), "mapped array")
-            _cuda(self.rt.cudaMemcpy2DFromArrayAsync(c_void_p(self.bgra.data_ptr()), self.w * 4, arr, 0, 0,
-                                                     self.w * 4, self.h, _MEMCPY_DEVICE_TO_DEVICE, s), "copy")
-        finally:
-            _cuda(self.rt.cudaGraphicsUnmapResources(1, res, s), "unmap")
-        self._release_frame()  # Windows can reuse its picture now: ours is copied
-        frame = to_bgr(self.bgra, self.out_w, self.out_h)
-        stream.synchronize()  # the frame is complete before another thread (the pipeline's) reads it
+        # On the GPU from this (the window reader's) thread: not while the pipeline captures its CUDA graphs, as
+        # when it restarts (sync.CAPTURE_LOCK).
+        with CAPTURE_LOCK:
+            stream = torch.cuda.current_stream()
+            s = c_void_p(stream.cuda_stream)
+            res = byref(self.res)
+            _cuda(self.rt.cudaGraphicsMapResources(1, res, s), "map")  # waits for the copy above
+            try:
+                arr = c_void_p()
+                _cuda(self.rt.cudaGraphicsSubResourceGetMappedArray(byref(arr), self.res, 0, 0), "mapped array")
+                _cuda(self.rt.cudaMemcpy2DFromArrayAsync(c_void_p(self.bgra.data_ptr()), self.w * 4, arr, 0, 0,
+                                                         self.w * 4, self.h, _MEMCPY_DEVICE_TO_DEVICE, s), "copy")
+            finally:
+                _cuda(self.rt.cudaGraphicsUnmapResources(1, res, s), "unmap")
+            self._release_frame()  # Windows can reuse its picture now: ours is copied
+            frame = to_bgr(self.bgra, self.out_w, self.out_h)
+            stream.synchronize()  # the frame is complete before another thread (the pipeline's) reads it
         self.copies += 1
         t_present = info.LastPresentTime / self._qpf  # QueryPerformanceCounter, as time.perf_counter on Windows
         return frame, t_acquired, (t_present if abs(t_present - t_acquired) < 1.0 else None)

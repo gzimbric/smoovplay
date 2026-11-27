@@ -1,6 +1,10 @@
 """Capture cards (framegen.capture): reading DirectShow's listings, picking a format, converting raw frames, and the
 whole source with a raw video file standing in for a card. CPU only: no card, no GPU."""
 
+import time
+import types
+from fractions import Fraction
+
 import cv2
 import numpy as np
 import pytest
@@ -356,3 +360,111 @@ def test_frames_keep_the_cards_numbers_when_the_queue_drops_some(tmp_path):
     seqs = [t.extra["seq"] for t in ticks]
     assert len(ticks) < len(frames)
     assert seqs == sorted(set(seqs)) and seqs == [round(t.t_source * 240) for t in ticks]
+
+
+# ---- a live card: reading behind it, and not reading while the pipeline loads
+class _Packet(bytes):
+    """A DirectShow packet: the frame's bytes, with its stream, size and timestamp."""
+
+
+class _LiveCard:
+    """A live card standing in: raw NV12 frames at `fps` on the card's own clock. A packet comes when the reader asks
+    for it, but never before its time; when the reader is behind, the ones already due come at once, late against
+    their timestamps, as DirectShow's queue hands them over."""
+
+    def __init__(self, frames, fps=60.0, seconds=None):
+        h, w = frames[0].shape[:2]
+        self.fps, self.data = fps, [_to_nv12(f).tobytes() for f in frames]
+        self.n = int(seconds * fps) if seconds else len(frames)
+        cc = types.SimpleNamespace(width=w, height=h, name="rawvideo", format=types.SimpleNamespace(name="nv12"))
+        self.video = types.SimpleNamespace(codec_context=cc, average_rate=fps, base_rate=fps, guessed_rate=fps)
+        self.streams = types.SimpleNamespace(video=[self.video], audio=[])
+        self.closed = False
+
+    def demux(self, *streams):
+        t0 = time.perf_counter()
+        for k in range(self.n):
+            if self.closed:
+                return
+            if (wait := t0 + k / self.fps - time.perf_counter()) > 0:
+                time.sleep(wait)
+            p = _Packet(self.data[k % len(self.data)])
+            p.stream, p.size, p.pts, p.time_base = self.video, len(p), k * 1000, Fraction(1, round(self.fps * 1000))
+            yield p
+
+    def close(self):
+        self.closed = True
+
+
+def _slow_reads(monkeypatch, seconds):
+    """Reading each frame takes `seconds` (a 4K frame on a busy GPU); returns the count of frames read."""
+    read, convert = [0], c.CardSource._convert_raw
+
+    def slow(self, data):
+        read[0] += 1
+        time.sleep(seconds)
+        return convert(self, data)
+    monkeypatch.setattr(c.CardSource, "_convert_raw", slow)
+    return read
+
+
+def test_catch_up_follows_a_cards_drifting_clock_and_sees_a_queue_building():
+    up = c.CatchUp(60.0)
+    t = 0.0
+    for k in range(600):  # 10 s: a little jitter, and the clock drifting 40 ms a minute
+        t = k / 60
+        assert not up.behind(t, 0.005 + 0.004 * (k % 3) + 0.040 * t / 60)
+    late = [up.behind(t + k / 60, 0.012 + 0.008 * k) for k in range(1, 12)]  # reading falls behind, 8 ms a frame
+    # usually 5 ms late: behind once over 5 + 41.7 ms (2.5 frames), so from the 5th (52 ms) on
+    assert late.index(True) == 4 and all(late[4:])
+    assert not up.behind(t + 0.3, 0.012)  # and caught up
+
+
+def test_a_live_card_read_slower_than_it_sends_keeps_the_delay_low(monkeypatch, capsys):
+    """Reading each frame takes 25 ms against the card's 16.7: DirectShow's queue grew by a frame every three, which
+    at 4K was 1-2 s of delay (#68, #70). Frames that come too late are now skipped, unread, until it catches up."""
+    frames = [_blocks(seed=s)[0] for s in range(60, 64)]
+    read = _slow_reads(monkeypatch, 0.025)
+    card = _LiveCard(frames, seconds=2.0)
+    src = c.CardSource(card, "a 4K card", live=True, device="cpu", colour=(False, False))
+    ticks = _frames_of(src)
+    delays = [t.t_ready - t.t_source for t in ticks]
+    delays = [d - min(delays) for d in delays]
+    assert len(ticks) > 40 and src.caught_up > 20 and read[0] == len(ticks)
+    assert max(delays) < 0.15, max(delays)  # without catching up: about 1 s by the end
+    seqs = [t.extra["seq"] for t in ticks]  # still numbered as the card sent them, skipped ones counted
+    assert len({round(t.t_source * 60) - s for t, s in zip(ticks, seqs)}) == 1
+    out = capsys.readouterr().out
+    assert "behind the card" in out and "skipped to catch up with the card:" in out
+
+
+def test_a_live_card_isnt_read_until_the_pipeline_is_ready_nor_while_it_restarts(monkeypatch):
+    """Reading a frame means GPU work on another thread, which breaks the pipeline's CUDA graph captures (#73: the
+    graphs are captured after the card opens). So nothing is read before iterating, nor in hold(), and a read waits
+    for CAPTURE_LOCK; the card's frames still come and go meanwhile, and their timing is still measured."""
+    from framegen.sync import CAPTURE_LOCK
+    frames = [_blocks(seed=s)[0] for s in range(70, 74)]
+    read = _slow_reads(monkeypatch, 0.0)
+    src = c.CardSource(_LiveCard(frames, seconds=5.0), "a card", live=True, device="cpu", colour=(False, False))
+    time.sleep(0.25)
+    assert read[0] == 0 and src.q.empty() and len(src._late_v) > 5
+    with CAPTURE_LOCK:  # the graphs being captured
+        src._go.set()
+        time.sleep(0.15)
+        assert read[0] <= 1 and src.q.empty()
+    it = iter(src)
+    assert next(it).frame is not None
+    src.hold(True)
+    time.sleep(0.05)
+    before = read[0]
+    time.sleep(0.2)
+    assert read[0] <= before + 1
+    src.hold(False)
+    assert next(it).frame is not None and read[0] > before
+    src.close()
+
+
+def test_a_compressed_cards_queue_is_a_few_frames_not_seconds():
+    o = c.open_options(c.Mode("mjpeg", False, 3840, 2160, 30, 60))
+    assert o["vcodec"] == "mjpeg" and int(o["rtbufsize"]) <= 10_000_000  # was 99.5 MB: 1-3 s of 4K MJPEG
+    assert int(c.open_options(c.Mode("nv12", True, 3840, 2160, 60, 60))["rtbufsize"]) == 3840 * 2160 * 3 // 2 * 4

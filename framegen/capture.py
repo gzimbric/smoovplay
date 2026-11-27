@@ -36,12 +36,20 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 
+from .sync import CAPTURE_LOCK
+
 # Raw formats, best first: NV12 is the smallest uncompressed format (4:2:0), YUY2/UYVY are 4:2:2 (more USB bandwidth,
 # same picture after 4:2:0 HDMI sources). Anything compressed comes after all of them, MJPEG last but one.
 RAW_RANK = {"nv12": 0, "yuyv422": 1, "uyvy422": 2, "yuv420p": 3, "bgr24": 4, "bgr0": 4, "rgb24": 4}
 COMPRESSED_RANK = {"mjpeg": 10}
 BYTES_PER_PIXEL = {"nv12": 1.5, "yuv420p": 1.5, "yuyv422": 2, "uyvy422": 2, "bgr24": 3, "rgb24": 3, "bgr0": 4}
+# A compressed frame's size, for sizing DirectShow's queue (open_options): a generous MJPEG frame, 2.5 MB at 4K. Read
+# as raw (3 bytes a pixel), the queue held 50 to 200 frames, one to three seconds of delay once the PC fell behind.
+COMPRESSED_BYTES_PER_PIXEL = 0.3
 CONVERTIBLE = ("nv12", "yuyv422", "uyvy422")  # converted here; anything else raw goes through PyAV's own conversion
+# A frame that comes off DirectShow more than this many frames later than the card's frames usually do: the PC has
+# fallen behind the card, and frames are skipped until it catches up (CatchUp).
+BEHIND_FRAMES = 2.5
 DAMAGED = object()  # a compressed frame the decoder couldn't read: skipped (CardSource._damaged)
 # No frame readable for this long: the card's frames aren't readable at all, and capture stops. Generous, as a stick
 # can send broken frames for a moment while it settles on the signal.
@@ -392,10 +400,12 @@ CALIBRATION_N = 100  # packets of each (about 2 s) that sound_late_s() is measur
 
 def open_options(mode: Mode, fps: float = 60.0, queue_frames: int = 4) -> dict:
     """av.open options for a mode. rtbufsize caps DirectShow's own queue at a few frames: it only fills when we fall
-    behind, and frames dropped there are counted by FFmpeg ("real-time buffer too full")."""
+    behind, and frames dropped there are counted by FFmpeg ("real-time buffer too full"). A compressed format's frames
+    are counted at COMPRESSED_BYTES_PER_PIXEL."""
     rate = min(fps, mode.fps_max) if mode.fps_max >= fps - 0.5 else mode.fps_max
+    per_pixel = BYTES_PER_PIXEL.get(mode.fmt, 3) if mode.raw else COMPRESSED_BYTES_PER_PIXEL
     opts = {"video_size": f"{mode.w}x{mode.h}", "framerate": f"{rate:g}",
-            "rtbufsize": str(int(mode.w * mode.h * BYTES_PER_PIXEL.get(mode.fmt, 3) * queue_frames))}
+            "rtbufsize": str(int(mode.w * mode.h * per_pixel * queue_frames))}
     opts["pixel_format" if mode.raw else "vcodec"] = mode.fmt
     return opts
 
@@ -448,9 +458,35 @@ def raw_to_bgr_cpu(raw: np.ndarray, fmt: str, w: int, h: int) -> np.ndarray:
 
 
 # ----------------------------------------------------------------------------- the source
+class CatchUp:
+    """Whether the PC has fallen behind a card. A card's frames don't wait: when reading one takes longer than a frame
+    (4K at full motion detail), DirectShow queues the rest, and the delay grows by a frame every few until its queue
+    is full. So each frame's lateness (when it came off DirectShow, against its own timestamp) is compared with the
+    least of the last WINDOW_S seconds, and one more than BEHIND_FRAMES later than that is behind: the reader skips
+    reading it, which empties DirectShow's queue in a moment. The window follows a card's clock as it drifts (about
+    40 ms a minute on some, see sound_late_raw_s)."""
+
+    WINDOW_S = 10.0
+
+    def __init__(self, fps: float) -> None:
+        self.limit = max(BEHIND_FRAMES / max(fps, 1.0), 0.030)
+        self._lows: deque = deque()  # (time, lateness), the lateness rising: the window's least is first
+
+    def behind(self, now: float, late: float) -> bool:
+        while self._lows and self._lows[-1][1] >= late:
+            self._lows.pop()
+        self._lows.append((now, late))
+        while self._lows[0][0] < now - self.WINDOW_S:
+            self._lows.popleft()
+        return late - self._lows[0][1] > self.limit
+
+
 class CardSource:
     """Frames from a capture card as Ticks: read on a thread and queued (not "latest only", which would break repeat
-    detection); when the pipeline falls behind, the oldest frame goes and is counted in `dropped`.
+    detection); when the pipeline falls behind, the oldest frame goes and is counted in `dropped`. When the reading
+    itself falls behind the card (CatchUp), frames are skipped before they're read, counted in `caught_up`. A card's
+    frames are read on the GPU only once the pipeline is ready (iterating), and not while it restarts (hold): its CUDA
+    graphs are captured then, and GPU work on another thread breaks the capture (sync.CAPTURE_LOCK).
 
     Open a card with CardSource.open(name). Two kinds of file stand in for one, played at their own rate from when
     the pipeline starts reading: CardSource.raw_file(path, w, h, fmt, fps), raw frames read exactly as a card's are
@@ -492,6 +528,10 @@ class CardSource:
         self.dropped = 0
         self.damaged = 0  # frames the decoder couldn't read, skipped (_damaged)
         self._damaged_since: float | None = None  # when the current run of them began
+        # A live card's frames skipped to catch up with it (CatchUp). Only where each frame stands alone (raw, MJPEG):
+        # a skipped H.264 frame would break the ones after it.
+        self.caught_up = 0
+        self._catch = CatchUp(self.fps) if live and (self.raw or self.fmt == "mjpeg") else None
         self._stop = False
         self._go = threading.Event()
         self.q: queue.Queue = queue.Queue(maxsize=queue_size)
@@ -607,6 +647,15 @@ class CardSource:
                 return self._damaged(e)
         return self._convert_raw(np.frombuffer(packet, dtype=np.uint8))
 
+    def _caught_up(self) -> None:
+        """A frame skipped because the reading fell behind the card (CatchUp): counted, and said once."""
+        self.caught_up += 1
+        if self.caught_up == 1:
+            fix = ("Capture card resolution 1440p, or Quarter motion detail, keeps up" if self.w * self.h > 2560 * 1440
+                   else "a lower Capture card resolution or motion detail keeps up")
+            print(f"[capture] this PC is behind the card at {self.w}x{self.h}: frames are skipped to keep the delay "
+                  f"low ({fix})")
+
     def _damaged(self, e: Exception):
         """A frame the decoder can't read, skipped and counted: cheap cards send the odd broken JPEG, often the first
         one. Capture stops only when none can be read for DAMAGED_GIVE_UP_S, and says so."""
@@ -651,8 +700,8 @@ class CardSource:
                     now_s = (t_src if t_src is not None else n / self.fps) + 1 / self.fps
                     while self._audio_wait and self._audio_wait[0][0] <= now_s:
                         self._play(self._audio_wait.pop(0)[1])
-                if frame is None:  # a damaged frame, skipped: numbered all the same, as a frame the card sent
-                    n += 1
+                if frame is None:  # a damaged frame, or one skipped to catch up: numbered all the same, as a frame
+                    n += 1         # the card sent
                     continue
                 tick = Tick(frame, t_arrival, 0, t_source=t_src, t_ready=time.perf_counter())
                 # Numbered as they come off the card, so a frame dropped from the queue below (the PC behind for a
@@ -691,7 +740,8 @@ class CardSource:
                     t_arrival = time.perf_counter()
                     start = fr.time if start is None else start
                     raw = fr.reformat(format=self.decode_to, dst_colorspace=space, dst_color_range=rng)
-                    frame = self._convert_raw(raw.to_ndarray().ravel())
+                    with CAPTURE_LOCK:
+                        frame = self._convert_raw(raw.to_ndarray().ravel())
                     if frame is not None:
                         yield frame, t_arrival, fr.time
             return
@@ -702,15 +752,24 @@ class CardSource:
             if packet.stream is not self.stream:
                 self._sound(packet, t_arrival)
                 continue
-            frame = self._convert(packet)
+            t_src = float(packet.pts * packet.time_base) if packet.pts is not None else None
+            behind = False
+            if t_src is not None:
+                self._late_v = (self._late_v + [t_arrival - t_src])[-120:]
+                behind = self._catch is not None and self._catch.behind(t_arrival, t_arrival - t_src)
+            if self.live and not self._go.is_set():
+                continue  # the pipeline is loading or restarting: not read, and nothing on the GPU (class docs)
+            if behind:
+                self._caught_up()
+                yield None, t_arrival, None  # numbered as a frame the card sent, as a damaged one is
+                continue
+            with CAPTURE_LOCK:
+                frame = self._convert(packet)
             if frame is DAMAGED:
                 yield None, t_arrival, None
                 continue
             if frame is not None:
                 self._damaged_since = None
-                t_src = float(packet.pts * packet.time_base) if packet.pts is not None else None
-                if t_src is not None:
-                    self._late_v = (self._late_v + [t_arrival - t_src])[-120:]
                 yield frame, t_arrival, t_src
 
     # ---- sound
@@ -848,6 +907,19 @@ class CardSource:
         from .io import queue_ticks
         yield from queue_ticks(self.q, "the capture card")
 
+    def hold(self, on: bool) -> None:
+        """Stop reading while the pipeline restarts (on): a card's frames still come and go, but nothing is read on
+        the GPU. Off: start again from the next frame (the queued ones are stale by now)."""
+        if on:
+            self._go.clear()
+            return
+        while True:
+            try:
+                self.q.get_nowait()
+            except queue.Empty:
+                break
+        self._go.set()
+
     def close(self) -> None:
         self._stop = True
         self._go.set()
@@ -859,6 +931,7 @@ class CardSource:
             self.player.close()
             self._report_sound(final=True)
         print(f"[capture] dropped frames: {self.dropped}"
+              + (f", skipped to catch up with the card: {self.caught_up}" if self.caught_up else "")
               + (f", damaged frames from the card skipped: {self.damaged}" if self.damaged else ""))
 
 
