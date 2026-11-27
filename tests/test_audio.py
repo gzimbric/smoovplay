@@ -389,12 +389,13 @@ def test_no_sound_on_the_video_device_plays_the_picture_alone(monkeypatch, capsy
     name = "AVerMedia HD Capture GC573 1"
     tried = []
 
-    def fake_open(url, **kw):
-        tried.append(url)
+    def fake_open(device, opts, audio_device=None):
+        if audio_device is None:
+            return "picture only"
+        tried.append(f"video={device}:audio={audio_device}")
         raise av.error.OSError(5, "Could not find audio only device with name")
 
-    monkeypatch.setattr(av, "open", fake_open)
-    monkeypatch.setattr(c, "_open_card", lambda device, opts: "picture only")
+    monkeypatch.setattr(c, "_open_card", fake_open)
     monkeypatch.setattr(c.CardSource, "__init__", lambda self, container, *a, **kw: setattr(self, "container", container))
     src = c.CardSource.open(name, mode=c.Mode("nv12", True, 1920, 1080, 60.0, 60.0), audio_device=name, audio=object())
     assert tried == [f"video={name}:audio={name}"] and src.container == "picture only"

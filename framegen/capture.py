@@ -32,6 +32,7 @@ import sys
 import threading
 import time
 from collections import deque
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass
 
 import numpy as np
@@ -335,23 +336,65 @@ def open_failure(device: str, log: str, error: str) -> str:
     return ""
 
 
-def _open_card(device: str, opts: dict):
-    """av.open for a card's picture, with a plain-words reason when it fails (open_failure)."""
+class FormatRefused(RuntimeError):
+    """The card wouldn't take the format asked for ("Could not set video options"): another may do (CardSource.open)."""
+
+
+def _open_card(device: str, opts: dict, audio_device: str | None = None):
+    """av.open for a card's picture (and its sound device, if given), with a plain-words reason when it fails
+    (open_failure); FormatRefused when it's the format the card turned down."""
     import av
     import av.logging
     old = av.logging.get_level()
     av.logging.set_level(av.logging.WARNING)
+    url = f"video={device}" + (f":audio={audio_device}" if audio_device else "")
     try:
         with av.logging.Capture() as logs:
             try:
-                return av.open(f"video={device}", format="dshow", options=opts)
+                return av.open(url, format="dshow", options=opts)
             except Exception as e:  # noqa: BLE001 - reworded below when FFmpeg's messages say why
-                why = open_failure(device, "".join(msg for _, name, msg in logs if name == "dshow"), str(e))
+                log = "".join(msg for _, name, msg in logs if name == "dshow")
+                why = open_failure(device, log, str(e))
+                if "Could not set video options" in f"{log}\n{e}":
+                    raise FormatRefused(why) from e
                 if why:
                     raise RuntimeError(why) from e
                 raise
     finally:
         av.logging.set_level(old)
+
+
+def _open_with_sound(device: str, opts: dict, audio_device: str | None):
+    """The card's picture, with its sound device when there is one and it opens; FormatRefused goes to the caller."""
+    if audio_device:
+        try:  # a small sound buffer: DirectShow's default is half a second or more
+            return _open_card(device, {**opts, "audio_buffer_size": "20"}, audio_device)
+        except FormatRefused:
+            raise
+        except Exception as e:  # noqa: BLE001 - busy, gone, or no sound: the picture on its own
+            if audio_device == device:
+                print(f"[capture] no sound from the card itself ({str(e)[:120]}): playing without sound; pick "
+                      "a sound device in the launcher, or with --capture-audio (see --list-devices)")
+            else:
+                print(f"[capture] couldn't open the sound device ({str(e)[:120]}); playing without sound")
+    return _open_card(device, opts)
+
+
+def open_tries(mode: Mode, fps: float,
+               modes: Callable[[], list[Mode]]) -> Iterator[tuple[str, Mode | None, dict]]:
+    """(what, mode, av.open options) to open a card with, in order, for when it refuses one (#72): the mode picked;
+    one interval slower (the card's listing is rounded); at the format's own rate; the card's other formats at that
+    size, in pick_mode's order (`modes()` lists them, only if it comes to that); and whatever the card sends."""
+    yield mode.label(), mode, open_options(mode, fps)
+    yield f"{mode.label()} one step slower", mode, open_options(mode, fps, slower=1)
+    own = open_options(mode, fps)
+    del own["framerate"]
+    yield f"{mode.label()} at its own rate", mode, own
+    others = [m for m in modes() if (m.w, m.h) == (mode.w, mode.h) and m != mode
+              and (m.fmt in RAW_RANK or m.fmt in COMPRESSED_RANK)]
+    for m in sorted(others, key=lambda m: (RAW_RANK.get(m.fmt, COMPRESSED_RANK.get(m.fmt, 99)), -m.fps_max)):
+        yield m.label(), m, open_options(m, fps)
+    yield "the card's own format", None, {"rtbufsize": own["rtbufsize"]}
 
 
 def list_modes(device: str) -> list[Mode]:
@@ -394,17 +437,37 @@ def pick_mode(modes: list[Mode], w: int = 1920, h: int = 1080, fps: float = 60.0
     return best, "; ".join(notes)
 
 
+def frame_interval(mode: Mode, rate: float) -> int:
+    """The time between frames, in DirectShow's 100 ns units, for `rate` in a mode, kept within the mode's own range.
+    A card lists its range as intervals, which FFmpeg prints as rates to 6 digits ("59.9999" for 166667), so the
+    interval is worked back from those (#72: asking for 59.9999 meant 166666, faster than the card goes, and it
+    refused)."""
+    fastest = round(1e7 / mode.fps_max) if mode.fps_max > 0 else 1
+    slowest = round(1e7 / mode.fps_min) if mode.fps_min > 0 else fastest
+    return min(max(round(1e7 / rate), fastest), max(slowest, fastest))
+
+
+def exact_rate(interval: int) -> str:
+    """A frame rate for FFmpeg's DirectShow input that it turns back into exactly `interval`. It keeps the rate's
+    numerator and denominator at 1001000 at most, as a "num:den" pair (a decimal goes through a double first), then
+    works out den * 10^7 // num, rounding down, which must land on the interval: so the largest den that keeps num in
+    bounds, and the num that gives the interval."""
+    den = max(1, 1_001_000 * interval // 10_000_000)
+    num = den * 10_000_000 // interval
+    return f"{num}:{den}"
+
+
 MAX_SOUND_LATE_S = 0.080  # the most sound_late_s() takes off (or adds to) the sound's delay
 CALIBRATION_N = 100  # packets of each (about 2 s) that sound_late_s() is measured on, once, at the start
 
 
-def open_options(mode: Mode, fps: float = 60.0, queue_frames: int = 4) -> dict:
+def open_options(mode: Mode, fps: float = 60.0, queue_frames: int = 4, slower: int = 0) -> dict:
     """av.open options for a mode. rtbufsize caps DirectShow's own queue at a few frames: it only fills when we fall
     behind, and frames dropped there are counted by FFmpeg ("real-time buffer too full"). A compressed format's frames
-    are counted at COMPRESSED_BYTES_PER_PIXEL."""
+    are counted at COMPRESSED_BYTES_PER_PIXEL. slower: that many 100 ns steps more between frames (open_tries)."""
     rate = min(fps, mode.fps_max) if mode.fps_max >= fps - 0.5 else mode.fps_max
     per_pixel = BYTES_PER_PIXEL.get(mode.fmt, 3) if mode.raw else COMPRESSED_BYTES_PER_PIXEL
-    opts = {"video_size": f"{mode.w}x{mode.h}", "framerate": f"{rate:g}",
+    opts = {"video_size": f"{mode.w}x{mode.h}", "framerate": exact_rate(frame_interval(mode, rate) + slower),
             "rtbufsize": str(int(mode.w * mode.h * per_pixel * queue_frames))}
     opts["pixel_format" if mode.raw else "vcodec"] = mode.fmt
     return opts
@@ -557,30 +620,43 @@ class CardSource:
     @classmethod
     def open(cls, device: str, w: int = 1920, h: int = 1080, fps: float = 60.0, mode: Mode | None = None,
              audio_device: str | None = None, audio=None, **kw) -> "CardSource":
-        """audio_device: the card's sound device (pick_audio), opened with the video; audio: what plays it."""
-        import av
+        """audio_device: the card's sound device (pick_audio), opened with the video; audio: what plays it. If the card
+        refuses the format, the next of open_tries is tried, each said in the log."""
+        modes: list[Mode] | None = None
         note = ""
         if mode is None:
-            mode, note = pick_mode(list_modes(device), w, h, fps)
+            modes = list_modes(device)
+            mode, note = pick_mode(modes, w, h, fps)
             if mode is None:
                 raise RuntimeError(f"capture card {device!r}: {note}")
         if note:
             print(f"[capture] {note}")
-        opts = open_options(mode, fps)
-        container = None
-        if audio_device and audio is not None:
-            try:  # a small sound buffer: DirectShow's default is half a second or more
-                container = av.open(f"video={device}:audio={audio_device}", format="dshow",
-                                    options={**opts, "audio_buffer_size": "20"})
-            except Exception as e:  # noqa: BLE001 - busy, gone, or no sound: the picture on its own
-                if audio_device == device:
-                    print(f"[capture] no sound from the card itself ({str(e)[:120]}): playing without sound; pick "
-                          "a sound device in the launcher, or with --capture-audio (see --list-devices)")
-                else:
-                    print(f"[capture] couldn't open the sound device ({str(e)[:120]}); playing without sound")
-        if container is None:
-            container = _open_card(device, opts)
-        return cls(container, f"Capture card ({device})", live=True, range_hint=mode.range, audio=audio, **kw)
+
+        def card_modes() -> list[Mode]:
+            nonlocal modes
+            if modes is None:
+                try:
+                    modes = list_modes(device)
+                except Exception:  # noqa: BLE001 - only for trying more formats
+                    modes = []
+            return modes
+
+        refused = []
+        for what, m, opts in open_tries(mode, fps, card_modes):
+            try:
+                container = _open_with_sound(device, opts, audio_device if audio is not None else None)
+            except FormatRefused:
+                refused.append(what)
+                print(f"[capture] {device} refused {what}")
+                continue
+            if refused:
+                print(f"[capture] {device} took {what}")
+            return cls(container, f"Capture card ({device})", live=True, range_hint=m.range if m else "",
+                       audio=audio, **kw)
+        offers = ", ".join(m.label() for m in card_modes()) or "nothing it lists"
+        raise RuntimeError(f"{device} refused every video format SmoovPlay tried. Close Elgato's apps (4K Capture "
+                           "Utility, Studio, Camera Hub: also in the tray by the clock) and OBS, then press Play "
+                           f"again; if it still refuses, try with HDR off on the console. The card offers: {offers}")
 
     @classmethod
     def raw_file(cls, path: str, w: int, h: int, fmt: str, fps: float = 60.0, **kw) -> "CardSource":

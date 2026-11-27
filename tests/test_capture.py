@@ -123,10 +123,68 @@ def test_pick_prefers_raw_at_the_size_and_rate_asked_for():
 
 
 def test_open_options():
-    o = c.open_options(c.Mode("nv12", True, 1920, 1080, 59.94, 59.94))
-    assert o["video_size"] == "1920x1080" and o["pixel_format"] == "nv12" and o["framerate"] == "59.94"
+    o = c.open_options(c.Mode("nv12", True, 1920, 1080, 59.9402, 59.9402))
+    assert o["video_size"] == "1920x1080" and o["pixel_format"] == "nv12"
     assert int(o["rtbufsize"]) == 1920 * 1080 * 3 // 2 * 4
     assert c.open_options(c.Mode("mjpeg", False, 1920, 1080, 30, 60))["vcodec"] == "mjpeg"
+
+
+def _dshow_interval(framerate):
+    """What FFmpeg's DirectShow input asks the card for: the rate as num:den (av_parse_video_rate), then
+    den * 10^7 // num, rounded down (dshow.c), which must be within the card's [Min, Max]FrameInterval."""
+    num, den = map(int, framerate.split(":"))
+    assert num <= 1_001_000 and den <= 1_001_000  # FFmpeg would round a bigger one
+    return den * 10_000_000 // num
+
+
+@pytest.mark.parametrize("interval", [166666, 166667, 166833, 166834, 333333, 333334, 83333, 200000])
+def test_the_rate_asked_for_is_one_the_card_takes(interval):
+    """#72: a card that goes exactly 60 fps lists 166667 (100 ns units), which FFmpeg prints as 59.9999. Asking
+    for 59.9999 meant 166666, faster than the card goes, and it refused ("Could not set video options"); 59.94
+    cards the same. A fixed rate gets its own interval, and a range up to it gets 60 fps within it."""
+    listed = float(f"{1e7 / interval:g}")
+    fixed = c.open_options(c.Mode("nv12", True, 1920, 1080, listed, listed))
+    assert _dshow_interval(fixed["framerate"]) == interval
+    ranged = c.open_options(c.Mode("nv12", True, 1920, 1080, 25.0, listed))
+    assert interval <= _dshow_interval(ranged["framerate"]) <= 400000
+    assert _dshow_interval(ranged["framerate"]) == max(interval, 166667)  # 60 fps where the card goes that fast
+
+
+def test_a_refused_format_is_followed_by_the_next_way_to_open_the_card(monkeypatch, capsys):
+    """open_tries' order, as CardSource.open goes down it while the card refuses: the same format one step slower,
+    at its own rate, the card's other formats at that size (raw first), then whatever it sends by default."""
+    modes = [c.Mode("nv12", True, 1920, 1080, 59.9999, 59.9999), c.Mode("mjpeg", False, 1920, 1080, 30, 60),
+             c.Mode("yuyv422", True, 1920, 1080, 30, 60), c.Mode("nv12", True, 1280, 720, 60, 60)]
+    tried = []
+
+    def refuse(device, opts, audio_device=None):
+        tried.append(dict(opts))
+        raise c.FormatRefused(f"{device} refused the video format SmoovPlay asked for")
+    monkeypatch.setattr(c, "list_modes", lambda device: modes)
+    monkeypatch.setattr(c, "_open_card", refuse)
+    with pytest.raises(RuntimeError, match="refused every video format") as e:
+        c.CardSource.open("Game Capture HD60 S+", 1920, 1080, 60.0)
+    assert "Elgato" in str(e.value) and "HDR off" in str(e.value)
+    assert "The card offers: 1920x1080 59.9999 fps nv12, 1920x1080 30-60 fps MJPEG" in str(e.value)  # for the log
+    assert [t.get("pixel_format", t.get("vcodec")) for t in tried] == ["nv12", "nv12", "nv12", "yuyv422", "mjpeg",
+                                                                      None]
+    assert _dshow_interval(tried[1]["framerate"]) == _dshow_interval(tried[0]["framerate"]) + 1
+    assert "framerate" not in tried[2] and set(tried[-1]) == {"rtbufsize"}
+    out = capsys.readouterr().out
+    assert out.count("refused") == 6
+
+    def third_time(device, opts, audio_device=None):  # takes it at the format's own rate
+        tried.append(dict(opts))
+        if len(tried) < 3:
+            raise c.FormatRefused("refused")
+        return types.SimpleNamespace(opened=opts)
+    tried.clear()
+    monkeypatch.setattr(c, "_open_card", third_time)
+    monkeypatch.setattr(c, "CardSource", type("Card", (c.CardSource,), {"__init__": lambda self, container, *a, **k:
+                                                                          setattr(self, "container", container)}))
+    src = c.CardSource.open("Game Capture HD60 S+", 1920, 1080, 60.0)
+    assert len(tried) == 3 and "framerate" not in src.container.opened
+    assert "took 1920x1080 59.9999 fps nv12 at its own rate" in capsys.readouterr().out
 
 
 # ---- conversion
