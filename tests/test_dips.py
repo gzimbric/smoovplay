@@ -194,3 +194,27 @@ def test_a_frame_counts_as_shown_when_it_is_drawn_as_itself(hz):
                 counted[f.frame] = n
     assert len(counted) > 280
     assert [a for a, n in drawn.items() if a > 60 and counted[a] != n] == []
+
+
+def _toggling(game, settings, at):
+    """The game's ticks, with interpolation switched (off, on, off...) at the tick numbers in `at`."""
+    for n, tick in enumerate(game):
+        if n in at:
+            settings.override("interp", not settings.interp)
+        yield tick
+
+
+@pytest.mark.parametrize("hz", [60, 90])
+@pytest.mark.parametrize("even_dips", [False, True])
+def test_interpolation_switched_off_and_on_while_the_game_dips(hz, even_dips):
+    """The timeline (and which of its frames are in the interpolator's slots) starts afresh when interpolation is
+    toggled. It used to keep the frames from before it went off: switched on again at a repeat tick while the game
+    dipped, the pipeline asked it for frames it didn't have and raised, or showed a seconds-old picture."""
+    s = Settings({"hz": hz, "overlay": False, "even_dips": even_dips})
+    at = {300, 333, 410, 425, 500, 561, 640, 655}  # off, then on again 15-61 ticks later (most of them repeats)
+    sink = _Sink()
+    st = _pipeline(_Interp()).run(_toggling(_dipping_game(400, 0.15, hold=3, steady=40), s, at), sink,
+                                  label="RIFE", settings=s)
+    assert s.interp  # (an even number of switches)
+    assert not even_dips or st.dip_ticks > 100
+    assert _backward_steps(sink.shown) == 0

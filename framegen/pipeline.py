@@ -431,6 +431,8 @@ class Pipeline:
         delay_test, test_mark = None, 0  # the delay test while it runs, and where its stretch of real_delay_ms starts
         # A 40-60 fps game: its frames' own timing, and evenly spaced frames from it (FrameTimeline). in_slot: which
         # frame (TimedFrame.id) is in each of the interpolator's two slots; timed frames go in only when needed.
+        # Both start afresh when interpolation is toggled: a new timeline numbers its frames from 0 again, so a
+        # slot still holding an old id could pass for a new frame and pair it with a picture from before.
         timeline, timed, in_slot = FrameTimeline(), False, [-1, -1]
         # A 30 fps game dipping below 30 (Dip smoothing): its frames timed as they arrive, on the same
         # timeline. dipping: the setting is on and DipWatch says the game is dipping now.
@@ -541,7 +543,7 @@ class Pipeline:
                     st.simulated += 1
                 if settings.interp != enabled:
                     enabled, sched, quarter_due, ov_next = settings.interp, CadenceScheduler(), False, 0.0
-                    timeline = FrameTimeline()  # afresh too: its frames are from before interpolation went off
+                    timeline, in_slot = FrameTimeline(), [-1, -1]  # afresh too: its frames are from before
                     print(f"[pipeline] interpolation {'ON' if enabled else 'OFF'}")
                 if settings.steady_hud != steady:
                     steady = settings.steady_hud
@@ -853,7 +855,7 @@ class Pipeline:
                     else:
                         enabled = not enabled
                         sched = CadenceScheduler()
-                        timeline = FrameTimeline()  # afresh too: its frames are from before interpolation went off
+                        timeline, in_slot = FrameTimeline(), [-1, -1]  # afresh too: its frames are from before
                         print(f"[pipeline] interpolation {'ON' if enabled else 'OFF'}")
 
         st.wall_s = time.perf_counter() - t_start
