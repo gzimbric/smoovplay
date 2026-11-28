@@ -54,10 +54,12 @@ class _Gl:
         import glfw
         from OpenGL import GL
 
+        from .glsl import context_hints
         from .looks_gl import LookRenderer
         if not glfw.init():
             raise RuntimeError("no OpenGL")
         glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+        context_hints(glfw)
         self.win = glfw.create_window(64, 64, "SmoovPlay look preview", None, None)
         glfw.default_window_hints()
         if not self.win:

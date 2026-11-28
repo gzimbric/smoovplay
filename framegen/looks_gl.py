@@ -242,7 +242,8 @@ class _Targets:
 
 
 class LookRenderer:
-    """Needs a current GL 4.5 context, the one the window draws with. lut_of(name) -> looks.Lut or None."""
+    """Needs a current GL 4.5 context (on a Mac, the 4.1 core one framegen/glsl.py asks for), the one the window
+    draws with. lut_of(name) -> looks.Lut or None."""
 
     def __init__(self, GL, lut_of) -> None:
         self.GL, self.lut_of = GL, lut_of
@@ -261,10 +262,8 @@ class LookRenderer:
         self.broken: str | None = None  # why looks can't be drawn here (a shader didn't compile), or None
 
     def _compile(self, frag: str) -> int:
-        from OpenGL.GL import shaders
-        GL = self.GL
-        return shaders.compileProgram(shaders.compileShader(_VERT, GL.GL_VERTEX_SHADER),
-                                      shaders.compileShader(frag, GL.GL_FRAGMENT_SHADER), validate=False)
+        from .glsl import program
+        return program(self.GL, _VERT, frag)
 
     # ---- what to draw
     def plan(self, look: dict | None, rev: int):
