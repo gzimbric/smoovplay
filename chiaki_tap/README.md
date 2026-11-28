@@ -37,6 +37,8 @@ Other apps can write the same shared memory, compressed or decoded frames: see [
 | `selftest.py`, `selftest.c` | builds a small writer with MSYS2's gcc and checks it against the Python reader byte for byte, including the press, the sound delay and the sound ring. Uses its own tap name, so it runs while chiaki-ng streams |
 | `build_windows.sh` | full Windows build in MSYS2, mirroring chiaki-ng's own CI, plus the patch |
 | `run_chiaki_frametap.bat` | starts the built chiaki-ng with the tap on |
+| `build_macos.sh` | full macOS build with Homebrew, mirroring chiaki-ng's own macOS CI, plus the patch (see Build on macOS) |
+| `run_chiaki_frametap.command` | starts the built chiaki-ng with the tap on, on macOS |
 | `../framegen/chiaki_tap.py` | the reader: `FrameTap` (shared memory), `AudioTap` (the sound ring), `ChiakiSource` (decode, size-based repeats) |
 | `../scripts/frametap_fake.py` | a fake PS5 for testing without a console: streams a video file through the tap |
 
@@ -55,6 +57,57 @@ C:\msys64\usr\bin\bash.exe -lc "bash chiaki_tap/build_windows.sh /c/src/chiaki-n
 Re-running only rebuilds chiaki-ng. For a newer chiaki-ng, check out its tag in the source folder first; if
 `apply_patch.py` stops with "expected the anchor exactly once", the code it hooks into moved: each edit is one
 line, so find where that line went in the new streamsession.cpp and update its anchor.
+
+## Build on macOS
+
+Experimental. You need an Apple silicon Mac with Xcode or its command line tools (`xcode-select --install`) and
+[Homebrew](https://brew.sh). `build_macos.sh` installs the rest from Homebrew, using the packages chiaki-ng's own
+macOS CI uses plus SDL3, sdl2-compat and MoltenVK. It applies the patch, then builds and bundles the app the way the
+CI does. It needs no sudo, and apart from Homebrew packages it only writes into the two folders you give it. From the
+repo root (the example puts the source in `~/src/chiaki-ng` and the build in `~/src/chiaki-ng-frametap`):
+
+```sh
+git clone --branch v1.10.1 --recurse-submodules https://github.com/streetpea/chiaki-ng.git ~/src/chiaki-ng
+bash chiaki_tap/build_macos.sh ~/src/chiaki-ng ~/src/chiaki-ng-frametap
+```
+
+The app ends up at `~/src/chiaki-ng-frametap/chiaki-ng.app`, with `run_chiaki_frametap.command` beside it. Running
+the script again rebuilds only what changed and bundles the app again.
+
+For now the tap itself is a no-op on macOS (see `frametap.c` in the table above). The app builds and plays like
+stock chiaki-ng, but doesn't feed `run.py --chiaki` yet.
+
+The app is self-contained. Qt, FFmpeg, SDL and the rest are copied in, and so is MoltenVK, chiaki-ng's Vulkan driver
+on macOS. MoltenVK goes in `Contents/Resources/vulkan/icd.d`, where the Vulkan loader looks first, so Homebrew's copy
+is never loaded. The script assembles the app in `chiaki-ng.new/` and signs it from the inside out, in this order:
+every library, the WebEngine helper, each framework, then the app. It signs with your Apple Development identity if
+the keychain has one, so macOS keeps chiaki-ng's Local Network permission across rebuilds, and ad hoc otherwise.
+`SIGN_IDENTITY` picks another identity, or `-` for ad hoc. Only once the signature checks out and nothing in the app
+loads from Homebrew does it swap the new app in, so a running chiaki-ng never sees a half-built one. Quit chiaki-ng
+before running the script, which won't replace an app that's running.
+
+To start chiaki-ng with the tap on, double-click `run_chiaki_frametap.command` in Finder, or run it from a terminal:
+
+```sh
+~/src/chiaki-ng-frametap/run_chiaki_frametap.command
+CHIAKI_FRAMETAP_NAME=mytest ~/src/chiaki-ng-frametap/run_chiaki_frametap.command   # another tap name
+```
+
+It starts the app through `open`, so chiaki-ng keeps running when the terminal closes, and passes on
+`CHIAKI_FRAMETAP=1` and every other `CHIAKI_*` variable you set. An app started by `open` doesn't get the shell's
+environment otherwise. It won't start a second chiaki-ng if one is already running.
+
+chiaki-ng draws with Vulkan through MoltenVK, which runs on Metal, and falls back to OpenGL 4.1.
+`CHIAKI_FRAMETAP_RENDERER=opengl` still switches it to OpenGL, but there's no reason to set it on a Mac. The crash
+it works around was chiaki-ng's Vulkan on an AMD card under Windows. The Windows launcher sets it whenever there's
+no NVIDIA card, which on a Mac would be always, so a Mac launcher shouldn't copy that rule.
+
+If Vulkan fails to start once, chiaki-ng switches to OpenGL for good and says so in a dialog. Switch back under
+Settings, Video, Renderer Backend, or with `defaults write com.chiaki.Chiaki settings.render_backend vulkan`.
+
+Homebrew won't install Qt 6 while `qt@5` is linked with `brew link --force`, and the script stops and says so.
+`brew unlink qt@5` fixes it. Qt 5 stays installed, with its tools in `$(brew --prefix)/opt/qt@5/bin`. A linked
+`openssl@4` is fine, because the script puts the headers of `openssl@3` first.
 
 ## Testing with a PS5
 
