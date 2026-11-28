@@ -4,8 +4,9 @@
 //
 // Enabled only when the environment variable CHIAKI_FRAMETAP=1 is set; otherwise every call is a no-op.
 // CHIAKI_FRAMETAP_NAME, if set, replaces the shared memory's name (tests run beside a real stream that way).
-// Windows (named file mapping + named event) and Linux (POSIX shared memory /dev/shm/<name after the last
-// backslash> + a futex on write_seq's low word); a no-op elsewhere.
+// Windows (named file mapping + named event), Linux (POSIX shared memory /dev/shm/<name after the last
+// backslash> + a futex on write_seq's low word) and macOS (POSIX shared memory too, but no futex, so the reader
+// polls write_seq). A no-op elsewhere. On macOS "/", the name and "-audio" must fit in 31 characters.
 //
 // Layout (all little-endian, must match framegen/chiaki_tap.py):
 //   header, 4096 bytes:

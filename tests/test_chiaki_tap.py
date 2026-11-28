@@ -3,10 +3,11 @@ import sys
 import numpy as np
 import pytest
 
-pytestmark = pytest.mark.skipif(sys.platform != "win32" and not sys.platform.startswith("linux"),
-                                reason="the frame tap is Windows and Linux only")
+pytestmark = pytest.mark.skipif(sys.platform not in ("win32", "darwin") and not sys.platform.startswith("linux"),
+                                reason="the frame tap is Windows, Linux and macOS only")
 
 from framegen.chiaki_tap import SLOTS, FrameTap, SizeRepeatDetector, is_keyframe  # noqa: E402
+from framegen.tapsys import unlink  # noqa: E402
 
 
 @pytest.fixture
@@ -14,6 +15,7 @@ def tap():
     t = FrameTap("Local\\chiaki-frametap-test", "Local\\chiaki-frametap-test-frame")
     yield t
     t.close()
+    unlink("Local\\chiaki-frametap-test")
 
 
 def test_roundtrip(tap):
@@ -119,6 +121,7 @@ def test_sound_ring_roundtrip_split_and_times():
         assert a.read_new() == [] and a.next is None
     finally:
         a.close()
+        unlink(r"Local\chiaki-frametap-test-audio")
 
 
 def test_the_patch_asks_chiaki_ng_for_opengl_once_and_only_when_told(tmp_path):
@@ -137,3 +140,25 @@ def test_the_patch_asks_chiaki_ng_for_opengl_once_and_only_when_told(tmp_path):
     assert "\r\n" in text and "\n" not in text.replace("\r\n", "")  # chiaki-ng's line endings kept
     assert text.index('== QLatin1String("opengl")') < text.index("CHIAKI_FORCE_VULKAN_FALLBACK")
     assert "pending_renderer_fallback_reason.clear();" in text  # no dialog
+
+
+def test_a_header_left_by_a_dead_writer_is_waited_out(tap):
+    """POSIX shared memory outlives chiaki-ng, so a crash leaves a live header behind. One whose newest frame is old
+    isn't taken as a stream (it gave the old size, then "stream size changed"); the next real stream is."""
+    import time
+
+    from framegen.chiaki_tap import ChiakiSource
+    name = "Local\\chiaki-frametap-test"
+    tap.begin(1, 1280, 720, 60)
+    tap.push(b"\x00\x00\x01old-frame")
+    time.sleep(0.15)
+    try:
+        with pytest.raises(TimeoutError):
+            ChiakiSource("sw", wait_s=0.5, tap_name=name, stale_s=0.1)
+        tap.begin(1, 1920, 1080, 60)  # chiaki-ng started again: a new session, with a fresh frame
+        tap.push(b"\x00\x00\x01new-frame")
+        src = ChiakiSource("sw", wait_s=0.5, tap_name=name, stale_s=0.1)
+        assert (src.w, src.h) == (1920, 1080)
+        src.close()
+    finally:
+        unlink(name + "-audio")
