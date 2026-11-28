@@ -16,7 +16,7 @@ def test_queue_ticks_says_waiting_while_nothing_comes():
 
     def feed():
         q.put(Tick(np.zeros((2, 2, 3), np.uint8), time.perf_counter(), 99))
-        time.sleep(WAIT_POLL_S * 3.5)  # a stall
+        time.sleep(WAIT_POLL_S * 8)  # a stall, long enough for two waits on a slow machine (one at 3.5 polls, 28 Nov)
         q.put(Tick(np.zeros((2, 2, 3), np.uint8), time.perf_counter(), 99))
         q.put(None)
 
@@ -28,7 +28,7 @@ def test_queue_ticks_says_waiting_while_nothing_comes():
     ticks = [x for x in got if isinstance(x, Tick)]
     waits = [x for x in got if isinstance(x, Waiting)]
     assert [t.index for t in ticks] == [0, 1]  # numbered, Waiting not counted
-    assert 2 <= len(waits) <= 5
+    assert 2 <= len(waits) <= 10
     assert all(w.what == "the PS5" for w in waits)
     assert [round(w.since, 1) for w in waits] == sorted(round(w.since, 1) for w in waits)  # time since the last frame
     kinds = ["T" if isinstance(x, Tick) else "W" for x in got]

@@ -101,6 +101,8 @@ def test_a_file_standing_in_for_a_capture_card_matches_the_file_path(clip60):
     t0 = time.perf_counter()
     got, truths = [], []
     for t in cap:
+        if isinstance(t, Waiting):  # the reader fell behind for a moment (GitHub's shared Macs, 28 Nov): no frame
+            continue
         got.append((t.frame.copy(), t.content, t.truth_new, t.new_hint, None))
         if not t.truth_new:
             truths.append((t.content + 1, tm.gt(t.content + 1)))
