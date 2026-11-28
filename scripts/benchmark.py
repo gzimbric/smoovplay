@@ -1,5 +1,8 @@
 """GPU timing per stage for each RIFE model / resolution (synthetic frames, no decode).
 
+On NVIDIA each setting runs with and without CUDA graphs. On a Mac it runs on Apple's GPU eagerly ("eager", FastIFNet)
+and with the Metal kernels ("metal", framegen/metalrife.py).
+
   python scripts/benchmark.py
   python scripts/benchmark.py --models 4.25 4.22.lite --res 1080p 4k --scales 1.0 0.5
 """
@@ -14,20 +17,19 @@ from pathlib import Path
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from framegen import gpu  # noqa: E402
 from framegen.interpolator import MODELS, RifeInterpolator  # noqa: E402
 
 RES = {"1080p": (1920, 1080), "1440p": (2560, 1440), "4k": (3840, 2160)}
 
 
 def gpu_ms(fn, iters: int) -> float:
-    start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
-    torch.cuda.synchronize()
-    start.record()
+    start, stop = gpu.timer()
+    gpu.synchronize()
+    start()
     for _ in range(iters):
         fn()
-    end.record()
-    torch.cuda.synchronize()
-    return start.elapsed_time(end) / iters
+    return stop() / iters
 
 
 def main() -> None:
@@ -38,31 +40,45 @@ def main() -> None:
     ap.add_argument("--iters", type=int, default=50)
     a = ap.parse_args()
 
-    print(f"{torch.cuda.get_device_name(0)}  torch {torch.__version__}")
-    print(f"{'model':<10} {'res':<6} {'scale':>5} {'graph':>5} | {'prep ms':>7} {'interp ms':>9} "
-          f"{'new-frame tick':>14} {'wall/pair':>9}")
+    dev = gpu.device()
+    # (label, RifeInterpolator keywords) per setting
+    if dev == "cuda":
+        variants = [(str(graph), {"cuda_graph": graph}) for graph in (False, True)]
+    else:
+        variants = [("eager", {"metal": False}), ("metal", {"metal": True})]
+    print(f"{gpu.name()}  torch {torch.__version__}")
+    print(f"{'model':<10} {'res':<6} {'scale':>5} {'graph' if dev == 'cuda' else 'run':>5} | {'prep ms':>7} "
+          f"{'interp ms':>9} {'new-frame tick':>14} {'wall/pair':>9}")
     for res in a.res:
         w, h = RES[res]
-        frame = torch.randint(0, 256, (h, w, 3), dtype=torch.uint8, device="cuda")
+        frame = torch.randint(0, 256, (h, w, 3), dtype=torch.uint8, device=dev)
         for model in a.models:
             for scale in a.scales:
-                for graph in (False, True):
-                    it = RifeInterpolator(w, h, model, scale, cuda_graph=graph)
+                for label, kw in variants:
+                    it = RifeInterpolator(w, h, model, scale, **kw)
+                    if label == "metal" and it.metal is None:
+                        print(f"{model:<10} {res:<6} {scale:>5} {label:>5} | MetalIFNet doesn't apply here")
+                        del it
+                        continue
                     it.load(frame)
                     it.prepare(0)
+                    if dev != "cuda":  # MPS builds its kernels on the first calls, so they're kept out of the timing
+                        for _ in range(5):
+                            it.prepare(1)
+                            it.interpolate(1)
                     prep = gpu_ms(lambda: it.prepare(1), a.iters)
                     interp = gpu_ms(lambda: it.interpolate(1), a.iters)
-                    torch.cuda.synchronize()
+                    gpu.synchronize()
                     t = time.perf_counter()
                     for _ in range(a.iters):
                         it.prepare(1)
                         it.interpolate(1)
-                    torch.cuda.synchronize()
+                    gpu.synchronize()
                     wall = (time.perf_counter() - t) * 1000 / a.iters
-                    print(f"{model:<10} {res:<6} {scale:>5} {str(graph):>5} | {prep:7.2f} {interp:9.2f} "
+                    print(f"{model:<10} {res:<6} {scale:>5} {label:>5} | {prep:7.2f} {interp:9.2f} "
                           f"{prep + interp:14.2f} {wall:9.2f}")
                     del it
-                    torch.cuda.empty_cache()
+                    gpu.empty_cache()
 
 
 if __name__ == "__main__":
