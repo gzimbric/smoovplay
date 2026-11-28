@@ -277,6 +277,9 @@ def main() -> int:
                     recover_next = False
                 lost_pending = 0
                 sizes["key" if key else ("repeat" if rep else "new")].append(len(data))
+        # The reader stops at a dead header with whatever it hasn't read still in the ring, so on a slow machine
+        # ending right after the last frame loses it the last few. Give it a moment to take them first.
+        tap.wait_read(1.0)
     finally:
         tap.end()
         if sound is not None:

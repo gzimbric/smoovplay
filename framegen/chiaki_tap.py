@@ -193,6 +193,7 @@ class FrameTap:
     # Writer side, for tests, the fake PS5 (scripts/frametap_fake.py) and the decoded-frame sender
     # (scripts/frametap_send.py); chiaki-ng uses frametap.c.
     _slots, _slot_size = SLOTS, SLOT_SIZE
+    _last_push = 0  # when the last frame was pushed (qpc), for wait_read
 
     def begin(self, codec: int, width: int, height: int, max_fps: int = 60, colour: int = 0,
               features: int | None = None) -> None:
@@ -223,7 +224,8 @@ class FrameTap:
         size = min(n, self._slot_size - SLOT_HEADER)
         flags = (FLAG_TRUNCATED if size < n else 0) | {True: FLAG_NEW, False: FLAG_REPEAT, None: 0}[new]
         struct.pack_into("<Q", self.mm, off, U64_MAX)
-        struct.pack_into("<QIiII", self.mm, off + 8, qpc(), size, frames_lost, int(recovered), flags)
+        self._last_push = qpc()
+        struct.pack_into("<QIiII", self.mm, off + 8, self._last_push, size, frames_lost, int(recovered), flags)
         if isinstance(data, np.ndarray):
             np.frombuffer(self.mm, np.uint8, size, off + SLOT_HEADER)[:] = data.reshape(-1)[:size]
         else:
@@ -255,6 +257,18 @@ class FrameTap:
 
     def audio_delay_ms(self) -> int:
         return struct.unpack_from("<I", self.mm, 88)[0]
+
+    def wait_read(self, timeout_s: float) -> bool:
+        """Wait until the reader has taken the last frame pushed, or timeout_s passes: True if it has. The reader
+        writes its heartbeat while it waits for the next frame, so one newer than the last push means it has read
+        everything. For a writer about to end the stream: the reader stops at a dead header with whatever it
+        hasn't read still in the ring, and a slow machine (GitHub's shared Macs) can be several frames behind."""
+        t_end = time.perf_counter() + timeout_s
+        while struct.unpack_from("<Q", self.mm, 56)[0] < self._last_push:
+            if time.perf_counter() >= t_end:
+                return False
+            time.sleep(0.005)
+        return True
 
     def end(self) -> None:
         struct.pack_into("<I", self.mm, 0, 0)
